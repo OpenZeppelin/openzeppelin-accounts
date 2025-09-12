@@ -1,0 +1,16 @@
+{
+  "name": "open-accounts-framework",
+  "version": "0.0.1",
+  "description": "Standardized modular tooling and SDK for EVM smart accounts",
+  "scripts": {},
+  "keywords": [
+    "solidity",
+    "smart-accounts",
+    "EVM",
+    "ethereum",
+    "ERC-4337",
+    "ERC-7579"
+  ],
+  "author": "Open Accounts Framework Contributors",
+  "license": "MIT"
+}

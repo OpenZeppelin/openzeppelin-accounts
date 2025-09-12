@@ -1,0 +1,31 @@
+{
+  "name": "contracts",
+  "version": "1.0.0",
+  "description": "Contracts for the Open Accounts Framework",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test"
+  },
+  "keywords": [
+    "solidity",
+    "smart-accounts",
+    "EVM",
+    "ethereum",
+    "ERC-4337",
+    "ERC-7579"
+  ],
+  "author": "Open Accounts Framework Contributors",
+  "license": "MIT",
+  "type": "module",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-ignition": "^3.0.0",
+    "@nomicfoundation/hardhat-toolbox-viem": "^5.0.0",
+    "@openzeppelin/contracts": "^5.4.0",
+    "@types/node": "^22.8.5",
+    "forge-std": "github:foundry-rs/forge-std#v1.9.4",
+    "hardhat": "^3.0.6",
+    "hardhat-predeploy": "^0.3.0",
+    "typescript": "~5.8.0",
+    "viem": "^2.30.0"
+  }
+}
