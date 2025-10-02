@@ -10,7 +10,10 @@ import {ERC721Holder} from "@openzeppelin/contracts/token/ERC721/utils/ERC721Hol
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {MODULE_TYPE_VALIDATOR, MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 
-contract OpenAccount is
+/**
+ * @dev A modular smart account implementation.
+ */
+abstract contract OpenAccount is
     Initializable,
     Account,
     EIP712,
@@ -18,8 +21,12 @@ contract OpenAccount is
     ERC721Holder,
     ERC1155Holder
 {
-    constructor() EIP712("OpenAccount", "1") {}
-
+    /**
+     * @dev Initializes the account with a validator or executor module.
+     *
+     * The `moduleTypeId` must be either MODULE_TYPE_VALIDATOR (1) or MODULE_TYPE_EXECUTOR (2).
+     * The `module` address and `initData` are passed to the `_installModule` function.
+     */
     function initialize(
         uint256 moduleTypeId,
         address module,
@@ -32,6 +39,7 @@ contract OpenAccount is
         _installModule(moduleTypeId, module, initData);
     }
 
+    /// @inheritdoc AccountERC7579
     function _validateUserOp(
         PackedUserOperation calldata userOp,
         bytes32 userOpHash

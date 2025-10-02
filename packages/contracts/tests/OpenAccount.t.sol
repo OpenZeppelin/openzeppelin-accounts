@@ -13,7 +13,11 @@ import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IE
 import {ERC7579ValidatorMock} from "./mocks/modules/ERC7579Mock.sol";
 import {ReceiverMock} from "./mocks/ReceiverMock.sol";
 
-contract AccountERC7702Test is Test {
+contract OpenAccountMock is OpenAccount {
+    constructor() EIP712("MyAccount", "1") {}
+}
+
+contract OpenAccountTest is Test {
     using ERC7579Utils for *;
     using ERC4337Utils for PackedUserOperation;
     using Strings for *;
@@ -32,7 +36,7 @@ contract AccountERC7702Test is Test {
         _target = new ReceiverMock();
 
         // Setup account and install validator module
-        _account = new OpenAccount();
+        _account = new OpenAccountMock();
         _validator = new ERC7579ValidatorMock();
         _account.initialize(
             MODULE_TYPE_VALIDATOR,
