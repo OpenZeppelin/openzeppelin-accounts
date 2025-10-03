@@ -31,7 +31,7 @@ abstract contract OpenAccount is
         uint256 moduleTypeId,
         address module,
         bytes memory initData
-    ) public initializer {
+    ) public virtual initializer {
         require(
             moduleTypeId == MODULE_TYPE_VALIDATOR ||
                 moduleTypeId == MODULE_TYPE_EXECUTOR
@@ -43,7 +43,7 @@ abstract contract OpenAccount is
     function _validateUserOp(
         PackedUserOperation calldata userOp,
         bytes32 userOpHash
-    ) internal override(Account, AccountERC7579) returns (uint256) {
+    ) internal virtual override(Account, AccountERC7579) returns (uint256) {
         return super._validateUserOp(userOp, userOpHash);
     }
 }
