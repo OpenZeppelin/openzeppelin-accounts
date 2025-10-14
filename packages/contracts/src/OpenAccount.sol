@@ -42,8 +42,9 @@ abstract contract OpenAccount is
     /// @inheritdoc AccountERC7579
     function _validateUserOp(
         PackedUserOperation calldata userOp,
-        bytes32 userOpHash
+        bytes32 userOpHash,
+        bytes calldata signature
     ) internal virtual override(Account, AccountERC7579) returns (uint256) {
-        return super._validateUserOp(userOp, userOpHash);
+        return super._validateUserOp(userOp, userOpHash, signature);
     }
 }

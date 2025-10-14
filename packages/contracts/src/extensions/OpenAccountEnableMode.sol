@@ -44,20 +44,21 @@ abstract contract OpenAccountEnableMode is OpenAccount {
      */
     function _validateUserOp(
         PackedUserOperation calldata userOp,
-        bytes32 userOpHash
+        bytes32 userOpHash,
+        bytes calldata signature
     ) internal virtual override returns (uint256) {
         if (bytes32(userOp.nonce).extract_32_1(0) == ENABLE_MODE_PREFIX) {
             (
                 uint256 validationData,
                 bytes calldata innerSignature
-            ) = _validateEnableMode(userOp.signature, userOp.nonce, userOpHash);
+            ) = _validateEnableMode(signature, userOp.nonce);
             if (validationData == ERC4337Utils.SIG_VALIDATION_SUCCESS) {
-                userOp.signature = innerSignature; // TODO: Can't reassign the signature in the user operation
-                return super._validateUserOp(userOp, userOpHash);
+                return
+                    super._validateUserOp(userOp, userOpHash, innerSignature);
             }
             return validationData; // Prefixed but invalid signature or failed installation
         }
-        return super._validateUserOp(userOp, userOpHash);
+        return super._validateUserOp(userOp, userOpHash, signature);
     }
 
     /**
@@ -71,8 +72,7 @@ abstract contract OpenAccountEnableMode is OpenAccount {
      */
     function _validateEnableMode(
         bytes calldata signature,
-        uint256 nonce,
-        bytes32 userOpHash
+        uint256 nonce
     ) internal virtual returns (uint256, bytes calldata) {
         (
             bool success,
