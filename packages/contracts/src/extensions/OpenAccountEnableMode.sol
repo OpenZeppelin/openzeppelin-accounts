@@ -9,7 +9,8 @@ import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import {Calldata} from "@openzeppelin/contracts/utils/Calldata.sol";
 
 /**
- * @dev Extension of `OpenAccount` that implements atomic module installation and usage.
+ * @dev Extension of `OpenAccount` that implements atomic module installation and usage through
+ * _enable mode_.
  *
  * This extension allows installing and using a module within the same user operation by detecting
  * a magic nonce prefix (`0x01`) and decoding module installation data from the signature field.
@@ -18,19 +19,19 @@ import {Calldata} from "@openzeppelin/contracts/utils/Calldata.sol";
  * This pattern is particularly useful for session keys and other modules that need to be
  * installed and immediately used, improving user experience by reducing user operation count.
  */
-abstract contract OpenAccountAtomicModule is OpenAccount {
+abstract contract OpenAccountEnableMode is OpenAccount {
     using Packing for *;
 
-    bytes1 private constant ATOMIC_MODULE_PREFIX = 0x01;
+    bytes1 private constant ENABLE_MODE_PREFIX = 0x01;
     bytes32 private constant INSTALL_MODULE_TYPEHASH =
         keccak256(
-            "InstallAtomicModule(uint256 moduleTypeId,address module,bytes initData,uint256 nonce)"
+            "InstallModule(uint256 moduleTypeId,address module,bytes initData,uint256 nonce)"
         );
 
     /**
-     * @dev Validates a user operation, checking for atomic module installation pattern.
+     * @dev Validates a user operation, checking for enable mode pattern.
      *
-     * If the nonce starts with the atomic module prefix (`0x01`), attempts to decode and install
+     * If the nonce starts with the enable mode prefix (`0x01`), attempts to decode and install
      * a module from the signature before proceeding with normal validation. If prefixed, it:
      *
      * 1. Decodes module installation data from the signature
@@ -39,21 +40,17 @@ abstract contract OpenAccountAtomicModule is OpenAccount {
      * 4. Continues with normal user operation validation using the installed module
      *
      * Otherwise, falls back to OpenAccount's `_validateUserOp` function.
-     * See `_validateAtomicModule` for the validation of atomic module installation.
+     * See `_validateEnableMode` for the validation of enable mode installation.
      */
     function _validateUserOp(
         PackedUserOperation calldata userOp,
         bytes32 userOpHash
     ) internal virtual override returns (uint256) {
-        if (bytes32(userOp.nonce).extract_32_1(0) == ATOMIC_MODULE_PREFIX) {
+        if (bytes32(userOp.nonce).extract_32_1(0) == ENABLE_MODE_PREFIX) {
             (
                 uint256 validationData,
                 bytes calldata innerSignature
-            ) = _validateAtomicModule(
-                    userOp.signature,
-                    userOp.nonce,
-                    userOpHash
-                );
+            ) = _validateEnableMode(userOp.signature, userOp.nonce, userOpHash);
             if (validationData == ERC4337Utils.SIG_VALIDATION_SUCCESS) {
                 userOp.signature = innerSignature; // TODO: Can't reassign the signature in the user operation
                 return super._validateUserOp(userOp, userOpHash);
@@ -64,15 +61,15 @@ abstract contract OpenAccountAtomicModule is OpenAccount {
     }
 
     /**
-     * @dev Validates and installs a module atomically during user operation validation.
+     * @dev Validates and installs a module in enable mode during user operation validation.
      *
      * Decodes module installation data from the user operation signature, validates the
      * EIP-712 signature for module installation authorization, and installs the module
      * if validation succeeds.
      *
-     * See `_tryDecodeInstallAtomicModule` for the signature format.
+     * See `_tryDecodeInstallModule` for the signature format.
      */
-    function _validateAtomicModule(
+    function _validateEnableMode(
         bytes calldata signature,
         uint256 nonce,
         bytes32 userOpHash
@@ -82,15 +79,15 @@ abstract contract OpenAccountAtomicModule is OpenAccount {
             uint256 moduleTypeId,
             address module,
             bytes calldata initData,
-            bytes calldata atomicInstallationSignature,
+            bytes calldata installationSignature,
             bytes calldata userOpSignature
-        ) = _tryDecodeInstallAtomicModule(signature);
+        ) = _tryDecodeInstallModule(signature);
 
         if (!success) {
             return (ERC4337Utils.SIG_VALIDATION_FAILED, signature);
         }
 
-        bytes32 structHash = _installAtomicModuleStructHash(
+        bytes32 structHash = _installModuleStructHash(
             moduleTypeId,
             module,
             initData,
@@ -99,7 +96,7 @@ abstract contract OpenAccountAtomicModule is OpenAccount {
         if (
             isValidSignature(
                 _hashTypedDataV4(structHash),
-                atomicInstallationSignature
+                installationSignature
             ) == IERC1271.isValidSignature.selector
         ) {
             _installModule(moduleTypeId, module, initData);
@@ -110,12 +107,12 @@ abstract contract OpenAccountAtomicModule is OpenAccount {
     }
 
     /**
-     * @dev Computes the struct hash for the InstallAtomicModule EIP-712 message.
+     * @dev Computes the struct hash for the InstallModule EIP-712 message.
      *
      * The struct hash is used as part of the EIP-712 signature verification process
      * to ensure the module installation is properly authorized by the account owner.
      */
-    function _installAtomicModuleStructHash(
+    function _installModuleStructHash(
         uint256 moduleTypeId,
         address module,
         bytes memory initData,
@@ -134,20 +131,20 @@ abstract contract OpenAccountAtomicModule is OpenAccount {
     }
 
     /**
-     * @dev Attempts to decode atomic module installation data from a signature.
+     * @dev Attempts to decode module installation data from a signature.
      *
      * Uses calldata slicing to avoid memory allocation. Performs bounds checking
      * to ensure safe access to the signature data without reverting.
      *
-     * The signature format for atomic module installation is:
-     * `abi.encode(moduleTypeId, module, initData, atomicInstallationSignature, userOpSignature)`
+     * The signature format for _enable mode_ module installation is:
+     * `abi.encode(moduleTypeId, module, initData, installationSignature, userOpSignature)`
      *
      * Where:
      *
-     * * `atomicInstallationSignature` is an EIP-712 signature over the InstallAtomicModule struct
+     * * `installationSignature` is an EIP-712 signature over the InstallModule struct
      * * `userOpSignature` is the signature for validating the user operation itself
      */
-    function _tryDecodeInstallAtomicModule(
+    function _tryDecodeInstallModule(
         bytes calldata signature
     )
         private
@@ -157,12 +154,12 @@ abstract contract OpenAccountAtomicModule is OpenAccount {
             uint256 moduleTypeId,
             address module,
             bytes calldata initData,
-            bytes calldata atomicInstallationSignature,
+            bytes calldata installationSignature,
             bytes calldata userOpSignature
         )
     {
         // Minimum length to hold 5 objects: moduleTypeId (32), module (32), initData offset (32),
-        // atomicInstallationSignature offset (32), userOpSignature offset (32)
+        // installationSignature offset (32), userOpSignature offset (32)
         if (signature.length < 0xa0)
             return (
                 false,
@@ -179,7 +176,7 @@ abstract contract OpenAccountAtomicModule is OpenAccount {
 
         // Get offsets for dynamic data (relative to signature buffer)
         uint256 initDataOffset = uint256(bytes32(signature[0x40:0x60]));
-        uint256 atomicInstallationSignatureOffset = uint256(
+        uint256 installationSignatureOffset = uint256(
             bytes32(signature[0x60:0x80])
         );
         uint256 userOpSignatureOffset = uint256(bytes32(signature[0x80:0xa0]));
@@ -187,7 +184,7 @@ abstract contract OpenAccountAtomicModule is OpenAccount {
         // Check offsets are within bounds (need at least 32 bytes for length)
         if (
             signature.length - 0x20 < initDataOffset ||
-            signature.length - 0x20 < atomicInstallationSignatureOffset ||
+            signature.length - 0x20 < installationSignatureOffset ||
             signature.length - 0x20 < userOpSignatureOffset
         ) {
             return (
@@ -204,9 +201,9 @@ abstract contract OpenAccountAtomicModule is OpenAccount {
         uint256 initDataLength = uint256(
             bytes32(signature[initDataOffset:initDataOffset + 0x20])
         );
-        uint256 atomicInstallationSignatureLength = uint256(
+        uint256 installationSignatureLength = uint256(
             bytes32(
-                signature[atomicInstallationSignatureOffset:atomicInstallationSignatureOffset +
+                signature[installationSignatureOffset:installationSignatureOffset +
                     0x20]
             )
         );
@@ -219,8 +216,8 @@ abstract contract OpenAccountAtomicModule is OpenAccount {
         // Check that signature buffer is long enough to contain the dynamic data
         if (
             signature.length - initDataOffset - 0x20 < initDataLength ||
-            signature.length - atomicInstallationSignatureOffset - 0x20 <
-            atomicInstallationSignatureLength ||
+            signature.length - installationSignatureOffset - 0x20 <
+            installationSignatureLength ||
             signature.length - userOpSignatureOffset - 0x20 <
             userOpSignatureLength
         ) {
@@ -238,10 +235,10 @@ abstract contract OpenAccountAtomicModule is OpenAccount {
         initData = signature[initDataOffset + 0x20:initDataOffset +
             0x20 +
             initDataLength];
-        atomicInstallationSignature = signature[atomicInstallationSignatureOffset +
-            0x20:atomicInstallationSignatureOffset +
+        installationSignature = signature[installationSignatureOffset +
+            0x20:installationSignatureOffset +
             0x20 +
-            atomicInstallationSignatureLength];
+            installationSignatureLength];
         userOpSignature = signature[userOpSignatureOffset +
             0x20:userOpSignatureOffset + 0x20 + userOpSignatureLength];
 
@@ -250,7 +247,7 @@ abstract contract OpenAccountAtomicModule is OpenAccount {
             moduleTypeId,
             module,
             initData,
-            atomicInstallationSignature,
+            installationSignature,
             userOpSignature
         );
     }
