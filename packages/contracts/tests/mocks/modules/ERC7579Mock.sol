@@ -51,8 +51,8 @@ contract ERC7579ValidatorMock is
     }
 
     function validateUserOp(
-        PackedUserOperation calldata userOp,
-        bytes32 userOpHash
+        PackedUserOperation calldata /* userOp */,
+        bytes32 /* userOpHash */
     ) public view virtual returns (uint256) {
         return ERC4337Utils.SIG_VALIDATION_SUCCESS;
     }

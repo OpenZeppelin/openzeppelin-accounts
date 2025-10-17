@@ -62,6 +62,22 @@ abstract contract OpenAccountEnableMode is OpenAccount {
     }
 
     /**
+     * @dev Extracts the nonce validator from the user operation. Note
+     * that the first non-zero byte is the enable mode prefix.
+     *
+     * To construct a nonce key, set nonce as follows:
+     *
+     * ```
+     * <enable mode prefix (1 byte)> | <module address (20 bytes)> | <key (3 bytes)> | <nonce (8 bytes)>
+     * ```
+     */
+    function _extractUserOpValidator(
+        PackedUserOperation calldata userOp
+    ) internal pure virtual override returns (address) {
+        return address(bytes32(userOp.nonce).extract_32_20(1));
+    }
+
+    /**
      * @dev Validates and installs a module in enable mode during user operation validation.
      *
      * Decodes module installation data from the user operation signature, validates the
