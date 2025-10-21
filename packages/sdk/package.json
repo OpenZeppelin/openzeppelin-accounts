@@ -7,8 +7,6 @@
   "scripts": {
     "compile": "tsc",
     "compile:watch": "tsc -w",
-    "lint": "eslint . --max-warnings 0",
-    "lint:fix": "eslint . --max-warnings 0 --fix",
     "test": "npm run compile && ava",
     "test:watch": "ava -w"
   },
@@ -24,19 +22,12 @@
   },
   "devDependencies": {
     "@ava/typescript": "^5.0.0",
-    "@eslint/compat": "^1.2.9",
-    "@eslint/js": "^9.25.1",
     "@fast-check/ava": "^2.0.2",
     "ava": "^6.2.0",
-    "eslint": "^9.25.1",
-    "eslint-config-prettier": "^10.1.2",
-    "eslint-plugin-prettier": "^5.2.6",
     "fast-check": "^4.1.1",
-    "globals": "^16.0.0",
     "prettier": "^3.5.3",
     "ts-node": "^10.9.2",
-    "typescript": "^5.8.3",
-    "typescript-eslint": "^8.31.1"
+    "typescript": "^5.8.3"
   },
   "keywords": [
     "ethereum",
