@@ -1,0 +1,36 @@
+name: Test
+
+on:
+  push:
+    branches: [master]
+  pull_request: {}
+
+jobs:
+  format-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up environment
+        uses: ./.github/actions/setup
+      - name: Run linter
+        run: pnpm run lint
+
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up environment
+        uses: ./.github/actions/setup
+      - name: Run contracts tests
+        run: pnpm run test
+        working-directory: packages/contracts
+
+  sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up environment
+        uses: ./.github/actions/setup
+      - name: Run sdk tests
+        run: pnpm run test
+        working-directory: packages/sdk
