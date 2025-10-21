@@ -1,7 +1,8 @@
 {
-  "name": "contracts",
-  "version": "1.0.0",
+  "name": "@open-accounts-framework/contracts",
+  "version": "0.0.1",
   "description": "Contracts for the Open Accounts Framework",
+  "type": "module",
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test"
@@ -14,9 +15,12 @@
     "ERC-4337",
     "ERC-7579"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenZeppelin/accounts.git"
+  },
   "author": "Open Accounts Framework Contributors",
   "license": "MIT",
-  "type": "module",
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^3.0.0",
     "@nomicfoundation/hardhat-toolbox-viem": "^5.0.0",

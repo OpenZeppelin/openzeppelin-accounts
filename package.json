@@ -1,7 +1,8 @@
 {
   "name": "open-accounts-framework",
-  "version": "0.0.1",
+  "private": true,
   "description": "Standardized modular tooling and SDK for EVM smart accounts",
+  "type": "module",
   "scripts": {},
   "keywords": [
     "solidity",
