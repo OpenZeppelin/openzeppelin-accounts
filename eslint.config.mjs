@@ -16,6 +16,6 @@ export default defineConfig([
   { files: ['**/*.js'], languageOptions: { sourceType: 'commonjs' } },
   { files: ['**/*.{js,mjs,cjs,ts}'], languageOptions: { globals: { ...globals.browser, ...globals.node } } },
   tseslint.configs.recommended,
-  eslintPluginPrettierRecommended,
   eslintConfigPrettier,
+  eslintPluginPrettierRecommended,
 ]);

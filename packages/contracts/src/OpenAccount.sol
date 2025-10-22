@@ -13,29 +13,15 @@ import {MODULE_TYPE_VALIDATOR, MODULE_TYPE_EXECUTOR} from "@openzeppelin/contrac
 /**
  * @dev A modular smart account implementation.
  */
-abstract contract OpenAccount is
-    Initializable,
-    Account,
-    EIP712,
-    AccountERC7579,
-    ERC721Holder,
-    ERC1155Holder
-{
+abstract contract OpenAccount is Initializable, Account, EIP712, AccountERC7579, ERC721Holder, ERC1155Holder {
     /**
      * @dev Initializes the account with a validator or executor module.
      *
      * The `moduleTypeId` must be either MODULE_TYPE_VALIDATOR (1) or MODULE_TYPE_EXECUTOR (2).
      * The `module` address and `initData` are passed to the `_installModule` function.
      */
-    function initialize(
-        uint256 moduleTypeId,
-        address module,
-        bytes memory initData
-    ) public virtual initializer {
-        require(
-            moduleTypeId == MODULE_TYPE_VALIDATOR ||
-                moduleTypeId == MODULE_TYPE_EXECUTOR
-        );
+    function initialize(uint256 moduleTypeId, address module, bytes memory initData) public virtual initializer {
+        require(moduleTypeId == MODULE_TYPE_VALIDATOR || moduleTypeId == MODULE_TYPE_EXECUTOR);
         _installModule(moduleTypeId, module, initData);
     }
 

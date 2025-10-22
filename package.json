@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "lint": "eslint . --max-warnings 0",
-    "lint:fix": "eslint . --max-warnings 0 --fix"
+    "lint:fix": "eslint . --max-warnings 0 --fix",
+    "format:write": "prettier --write \"**/*\"",
+    "format:check": "prettier --check \"**/*\""
   },
   "keywords": [
     "solidity",
@@ -17,7 +19,7 @@
   ],
   "author": "Open Accounts Framework Contributors",
   "license": "MIT",
-  "dependencies": {
+  "devDependencies": {
     "@eslint/compat": "^1.2.9",
     "@eslint/js": "^9.25.1",
     "eslint": "^9.25.1",
@@ -25,6 +27,7 @@
     "eslint-plugin-prettier": "^5.2.6",
     "globals": "^16.0.0",
     "prettier": "^3.5.3",
+    "prettier-plugin-solidity": "^2.1.0",
     "typescript-eslint": "^8.46.2"
   }
 }

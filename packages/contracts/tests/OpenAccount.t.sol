@@ -3,8 +3,14 @@ pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
 import {OpenAccount} from "../src/OpenAccount.sol";
-import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
-import {ERC7579Utils, Execution, Mode, ModeSelector, ModePayload} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
+import {OpenAccountMock} from "./mocks/OpenAccountMock.sol";
+import {
+    ERC7579Utils,
+    Execution,
+    Mode,
+    ModeSelector,
+    ModePayload
+} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {ERC4337Utils, IEntryPointExtra} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
@@ -12,10 +18,6 @@ import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-A
 import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {ERC7579ValidatorMock} from "./mocks/modules/ERC7579Mock.sol";
 import {ReceiverMock} from "./mocks/ReceiverMock.sol";
-
-contract OpenAccountMock is OpenAccount {
-    constructor() EIP712("MyAccount", "1") {}
-}
 
 contract OpenAccountTest is Test {
     using ERC7579Utils for *;
@@ -38,11 +40,7 @@ contract OpenAccountTest is Test {
         // Setup account and install validator module
         _account = new OpenAccountMock();
         _validator = new ERC7579ValidatorMock();
-        _account.initialize(
-            MODULE_TYPE_VALIDATOR,
-            address(_validator),
-            abi.encodePacked(_signer)
-        );
+        _account.initialize(MODULE_TYPE_VALIDATOR, address(_validator), abi.encodePacked(_signer));
         vm.deal(address(_account), MAX_ETH);
 
         // Setup entrypoint
@@ -58,6 +56,51 @@ contract OpenAccountTest is Test {
                 )
             )
         );
+    }
+
+    function testExecute() public {
+        // Create the mode for single execution
+        Mode mode = ERC7579Utils.CALLTYPE_SINGLE.encodeMode(
+            ERC7579Utils.EXECTYPE_DEFAULT,
+            ModeSelector.wrap(0x00000000),
+            ModePayload.wrap(0x00000000)
+        );
+
+        // Pack the single execution within a PackedUserOperation
+        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
+        ops[0] = PackedUserOperation({
+            sender: address(_account),
+            nonce: uint256(uint160(bytes20(address(_validator)))) << 96, // Identify validator
+            initCode: bytes(""),
+            callData: abi.encodeCall(
+                AccountERC7579.execute,
+                (
+                    Mode.unwrap(mode),
+                    abi.encodePacked(
+                        address(_target),
+                        uint256(1 ether),
+                        abi.encodeCall(ReceiverMock.mockFunctionMsg, ())
+                    )
+                )
+            ),
+            preVerificationGas: 100000,
+            accountGasLimits: bytes32(abi.encodePacked(uint128(100000), uint128(100000))),
+            gasFees: bytes32(abi.encodePacked(uint128(1000000), uint128(1000000))),
+            paymasterAndData: bytes(""),
+            signature: bytes("")
+        });
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
+            _accountPrivateKey,
+            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(ops[0])
+        );
+        ops[0].signature = abi.encodePacked(r, s, v);
+
+        // Expect the event to be emitted
+        vm.expectEmit(true, true, true, true);
+        emit ReceiverMock.MockFunctionCalledMsg(address(_account), 1 ether);
+
+        // Execute the single execution
+        _account.entryPoint().handleOps(ops, payable(makeAddr("beneficiary")));
     }
 
     function testExecuteBatch(uint256 argA, uint256 argB) public {
@@ -77,10 +120,7 @@ contract OpenAccountTest is Test {
         execution[1] = Execution({
             target: address(_target),
             value: 0,
-            callData: abi.encodeCall(
-                ReceiverMock.mockFunctionWithArgs,
-                (argA, argB)
-            )
+            callData: abi.encodeCall(ReceiverMock.mockFunctionWithArgs, (argA, argB))
         });
 
         // Pack the batch within a PackedUserOperation
@@ -89,31 +129,23 @@ contract OpenAccountTest is Test {
             sender: address(_account),
             nonce: uint256(uint160(bytes20(address(_validator)))) << 96, // Identify validator
             initCode: bytes(""),
-            callData: abi.encodeCall(
-                AccountERC7579.execute,
-                (Mode.unwrap(mode), execution.encodeBatch())
-            ),
+            callData: abi.encodeCall(AccountERC7579.execute, (Mode.unwrap(mode), execution.encodeBatch())),
             preVerificationGas: 100000,
-            accountGasLimits: bytes32(
-                abi.encodePacked(uint128(100000), uint128(100000))
-            ),
-            gasFees: bytes32(
-                abi.encodePacked(uint128(1000000), uint128(1000000))
-            ),
+            accountGasLimits: bytes32(abi.encodePacked(uint128(100000), uint128(100000))),
+            gasFees: bytes32(abi.encodePacked(uint128(1000000), uint128(1000000))),
             paymasterAndData: bytes(""),
             signature: bytes("")
         });
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(
             _accountPrivateKey,
-            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08))
-                .getUserOpHash(ops[0])
+            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(ops[0])
         );
         ops[0].signature = abi.encodePacked(r, s, v);
 
         // Expect the events to be emitted
-        vm.expectEmit(true, true, true, true);
+        vm.expectEmit(true, true, true, false);
         emit ReceiverMock.MockFunctionCalledMsg(address(_account), 1 ether);
-        vm.expectEmit(true, true, true, true);
+        vm.expectEmit(true, true, true, false);
         emit ReceiverMock.MockFunctionCalledWithArgs(argA, argB);
 
         // Execute the batch

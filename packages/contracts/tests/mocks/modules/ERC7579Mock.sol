@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import {MODULE_TYPE_VALIDATOR, IERC7579Module, IERC7579Validator} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
+import {
+    MODULE_TYPE_VALIDATOR,
+    IERC7579Module,
+    IERC7579Validator
+} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
@@ -30,29 +34,22 @@ abstract contract ERC7579ModuleMock is IERC7579Module {
     }
 }
 
-contract ERC7579ValidatorMock is
-    ERC7579ModuleMock(MODULE_TYPE_VALIDATOR),
-    IERC7579Validator
-{
+contract ERC7579ValidatorMock is ERC7579ModuleMock(MODULE_TYPE_VALIDATOR), IERC7579Validator {
     mapping(address sender => address signer) private _associatedSigners;
 
-    function onInstall(
-        bytes calldata data
-    ) public virtual override(IERC7579Module, ERC7579ModuleMock) {
+    function onInstall(bytes calldata data) public virtual override(IERC7579Module, ERC7579ModuleMock) {
         _associatedSigners[msg.sender] = address(bytes20(data[0:20]));
         super.onInstall(data);
     }
 
-    function onUninstall(
-        bytes calldata data
-    ) public virtual override(IERC7579Module, ERC7579ModuleMock) {
+    function onUninstall(bytes calldata data) public virtual override(IERC7579Module, ERC7579ModuleMock) {
         delete _associatedSigners[msg.sender];
         super.onUninstall(data);
     }
 
     function validateUserOp(
-        PackedUserOperation calldata userOp,
-        bytes32 userOpHash
+        PackedUserOperation calldata /*userOp*/,
+        bytes32 /*userOpHash*/
     ) public view virtual returns (uint256) {
         return ERC4337Utils.SIG_VALIDATION_SUCCESS;
     }
@@ -63,11 +60,7 @@ contract ERC7579ValidatorMock is
         bytes calldata signature
     ) public view virtual returns (bytes4) {
         return
-            SignatureChecker.isValidSignatureNow(
-                _associatedSigners[msg.sender],
-                hash,
-                signature
-            )
+            SignatureChecker.isValidSignatureNow(_associatedSigners[msg.sender], hash, signature)
                 ? IERC1271.isValidSignature.selector
                 : bytes4(0xffffffff);
     }
