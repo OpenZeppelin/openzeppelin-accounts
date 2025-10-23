@@ -11,11 +11,12 @@ const gitignorePath = fileURLToPath(new URL('.gitignore', import.meta.url));
 
 export default defineConfig([
   includeIgnoreFile(gitignorePath),
-  globalIgnores(['packages/contracts/artifacts']),
+  globalIgnores(['packages/contracts/artifacts', 'lib']),
   { files: ['**/*.{js,mjs,cjs,ts}'], plugins: { js }, extends: ['js/recommended'] },
   { files: ['**/*.js'], languageOptions: { sourceType: 'commonjs' } },
-  { files: ['**/*.{js,mjs,cjs,ts}'], languageOptions: { globals: { ...globals.browser, ...globals.node } } },
-  tseslint.configs.recommended,
+  { files: ['**/*.{js,mjs,cjs,ts}'], languageOptions: { globals: { ...globals.browser, ...globals.mocha, ...globals.node } } },
+  { extends: [tseslint.configs.recommended], ignores: ['packages/contracts/**/*.js', 'lib'] },
+  js.configs.recommended,
   eslintConfigPrettier,
   eslintPluginPrettierRecommended,
 ]);

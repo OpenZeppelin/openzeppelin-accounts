@@ -6,8 +6,8 @@
   "scripts": {
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --max-warnings 0 --fix",
-    "format:write": "prettier --write \"**/*\"",
-    "format:check": "prettier --check \"**/*\""
+    "format:write": "prettier --write '**/*.{js,ts,sol}'",
+    "format:check": "prettier --check '**/*.{js,ts,sol}'"
   },
   "keywords": [
     "solidity",

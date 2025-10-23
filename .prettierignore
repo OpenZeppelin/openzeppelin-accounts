@@ -5,3 +5,5 @@
 LICENSE
 .prettierignore
 eslint.config.mjs
+lib
+contracts-exposed
