@@ -11,10 +11,10 @@ runs:
       with:
         node-version: 22.x
         cache: pnpm
-    - name: Install dependencies
-      run: pnpm install --frozen-lockfile --prefer-offline --network-concurrency 1
-      shell: bash
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
       with:
         version: stable
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile --prefer-offline --network-concurrency 1
+      shell: bash
