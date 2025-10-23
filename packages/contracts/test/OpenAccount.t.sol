@@ -3,7 +3,6 @@ pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
 import {OpenAccount} from "../src/OpenAccount.sol";
-import {OpenAccountMock} from "./mocks/OpenAccountMock.sol";
 import {
     ERC7579Utils,
     Execution,
@@ -12,12 +11,17 @@ import {
     ModePayload
 } from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {ERC4337Utils, IEntryPointExtra} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-AccountERC7579.sol";
 import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {ERC7579ValidatorMock} from "./mocks/modules/ERC7579Mock.sol";
-import {ReceiverMock} from "./mocks/ReceiverMock.sol";
+import {ERC7579ValidatorMock} from "../src/mocks/modules/ERC7579Mock.sol";
+import {ReceiverMock} from "../src/mocks/ReceiverMock.sol";
+
+contract OpenAccountMock is OpenAccount {
+    constructor() EIP712("MyAccount", "1") {}
+}
 
 contract OpenAccountTest is Test {
     using ERC7579Utils for *;
@@ -50,7 +54,7 @@ contract OpenAccountTest is Test {
             entrypoint,
             vm.readFileBinary(
                 string.concat(
-                    "node_modules/hardhat-predeploy/bin/",
+                    "packages/contracts/node_modules/hardhat-predeploy/bin/",
                     Strings.toChecksumHexString(entrypoint),
                     ".bytecode"
                 )
