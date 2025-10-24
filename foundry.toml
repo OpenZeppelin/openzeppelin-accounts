@@ -3,6 +3,7 @@ solc_version = '0.8.27'
 evm_version = 'prague'
 optimizer = true
 optimizer-runs = 200
+via_ir = true
 src = 'packages/contracts/src'
 out = 'packages/contracts/out'
 test = 'packages/contracts/test'
@@ -11,6 +12,8 @@ fs_permissions = [{ access = "read", path = "packages/contracts/node_modules/har
 libs = ["node_modules", "lib"]
 
 [lint]
+exclude_lints = ["mixed-case-function", "asm-keccak256", "screaming-snake-case-immutable", "incorrect-shift", "mixed-case-variable"]
+ignore = ["./packages/contracts/src/mocks/import.sol"]
 lint_on_build = false
 
 [fuzz]

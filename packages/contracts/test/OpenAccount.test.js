@@ -16,8 +16,8 @@ const {
 async function fixture() {
   // EOAs and environment
   const [other] = await ethers.getSigners();
-  const target = await ethers.deployContract('ReceiverMock');
-  const anotherTarget = await ethers.deployContract('ReceiverMock');
+  const target = await ethers.deployContract('CallReceiverMock');
+  const anotherTarget = await ethers.deployContract('CallReceiverMock');
 
   // ERC-7579 validator
   const validator = await ethers.deployContract('$ERC7579ValidatorMock');
@@ -38,7 +38,7 @@ async function fixture() {
   return { helper, validator, mock, entrypointDomain, signer, target, anotherTarget, other };
 }
 
-describe('AccountERC7579', function () {
+describe('OpenAccount', function () {
   beforeEach(async function () {
     Object.assign(this, await loadFixture(fixture));
 
