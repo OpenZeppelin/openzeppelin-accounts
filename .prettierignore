@@ -1,0 +1,9 @@
+**/artifacts
+**/cache
+.gitignore
+*.yaml
+LICENSE
+.prettierignore
+eslint.config.mjs
+lib
+contracts-exposed

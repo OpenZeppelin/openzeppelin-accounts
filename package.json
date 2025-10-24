@@ -1,8 +1,14 @@
 {
   "name": "open-accounts-framework",
-  "version": "0.0.1",
+  "private": true,
   "description": "Standardized modular tooling and SDK for EVM smart accounts",
-  "scripts": {},
+  "type": "module",
+  "scripts": {
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --max-warnings 0 --fix",
+    "format:write": "prettier --write '**/*.{js,ts,sol}'",
+    "format:check": "prettier --check '**/*.{js,ts,sol}'"
+  },
   "keywords": [
     "solidity",
     "smart-accounts",
@@ -12,5 +18,16 @@
     "ERC-7579"
   ],
   "author": "Open Accounts Framework Contributors",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@eslint/compat": "^1.2.9",
+    "@eslint/js": "^9.25.1",
+    "eslint": "^9.25.1",
+    "eslint-config-prettier": "^10.1.2",
+    "eslint-plugin-prettier": "^5.2.6",
+    "globals": "^16.0.0",
+    "prettier": "^3.5.3",
+    "prettier-plugin-solidity": "^2.1.0",
+    "typescript-eslint": "^8.46.2"
+  }
 }

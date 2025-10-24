@@ -1,9 +1,17 @@
 {
-  "name": "contracts",
-  "version": "1.0.0",
-  "description": "Contracts for the Open Accounts Framework",
+  "name": "@open-accounts-framework/contracts",
+  "version": "0.0.1",
+  "description": "Standardized modular tooling and SDK for EVM smart accounts",
+  "author": "Open Accounts Framework Contributors",
+  "license": "MIT",
+  "files": [
+    "/contracts/**/*.sol",
+    "!/contracts/mocks/**/*"
+  ],
   "scripts": {
     "compile": "hardhat compile",
+    "clean": "hardhat clean && rimraf build contracts/build",
+    "coverage": "scripts/checks/coverage.sh",
     "test": "hardhat test"
   },
   "keywords": [
@@ -14,18 +22,15 @@
     "ERC-4337",
     "ERC-7579"
   ],
-  "author": "Open Accounts Framework Contributors",
-  "license": "MIT",
-  "type": "module",
   "devDependencies": {
-    "@nomicfoundation/hardhat-ignition": "^3.0.0",
-    "@nomicfoundation/hardhat-toolbox-viem": "^5.0.0",
-    "@openzeppelin/contracts": "^5.5.0-rc.1",
-    "@types/node": "^22.8.5",
-    "forge-std": "github:foundry-rs/forge-std#v1.9.4",
-    "hardhat": "^3.0.6",
+    "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
+    "@nomicfoundation/hardhat-ethers": "^3.1.0",
+    "@nomicfoundation/hardhat-network-helpers": "^1.1.0",
+    "@openzeppelin/contracts": "file:../../lib/@openzeppelin-contracts",
+    "hardhat": "^2.26.3",
+    "hardhat-exposed": "^0.3.19",
     "hardhat-predeploy": "^0.3.0",
-    "typescript": "~5.8.0",
-    "viem": "^2.30.0"
+    "rimraf": "^6.0.1",
+    "solidity-coverage": "^0.8.16"
   }
 }

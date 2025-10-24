@@ -1,0 +1,18 @@
+[profile.default]
+solc_version = '0.8.27'
+evm_version = 'prague'
+optimizer = true
+optimizer-runs = 200
+src = 'packages/contracts/src'
+out = 'packages/contracts/out'
+test = 'packages/contracts/test'
+cache_path = 'packages/contracts/cache_forge'
+fs_permissions = [{ access = "read", path = "packages/contracts/node_modules/hardhat-predeploy/bin/0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108.bytecode"}]
+libs = ["node_modules", "lib"]
+
+[lint]
+lint_on_build = false
+
+[fuzz]
+runs = 5000
+max_test_rejects = 150000
