@@ -3,7 +3,6 @@ solc_version = '0.8.27'
 evm_version = 'prague'
 optimizer = true
 optimizer-runs = 200
-via_ir = true
 src = 'packages/contracts/src'
 out = 'packages/contracts/out'
 test = 'packages/contracts/test'
