@@ -4,7 +4,7 @@ pragma solidity ^0.8.27;
 import {Test} from "forge-std/Test.sol";
 import {ERC7579MultisigWeighted} from "../../src/modules/ERC7579MultisigWeighted.sol";
 import {ERC7579Multisig} from "../../src/modules/ERC7579Multisig.sol";
-import {CallReceiverMock} from "@openzeppelin/contracts/mocks/CallReceiverMock.sol";
+import {CallReceiverMock} from "../../src/mocks/CallReceiverMock.sol";
 import {
     ERC7579Utils,
     Mode,

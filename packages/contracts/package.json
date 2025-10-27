@@ -27,7 +27,6 @@
     "@nomicfoundation/hardhat-ethers": "^3.1.0",
     "@nomicfoundation/hardhat-network-helpers": "^1.1.0",
     "@openzeppelin/contracts": "file:../../lib/@openzeppelin-contracts",
-    "@openzeppelin/contracts/mocks": "file:../../lib/@openzeppelin-contracts/contracts/mocks",
     "hardhat": "^2.26.3",
     "hardhat-exposed": "^0.3.19",
     "hardhat-predeploy": "^0.3.0",

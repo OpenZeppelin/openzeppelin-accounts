@@ -16,5 +16,5 @@ runs:
       with:
         version: stable
     - name: Install dependencies
-      run: pnpm install --frozen-lockfile --prefer-offline
+      run: pnpm install --frozen-lockfile --prefer-offline --network-concurrency 1
       shell: bash

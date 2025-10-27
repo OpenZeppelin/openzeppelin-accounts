@@ -3,7 +3,7 @@ pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
 import {ERC7579ValidatorMock} from "../../src/mocks/modules/ERC7579Mock.sol";
-import {CallReceiverMock} from "@openzeppelin/contracts/mocks/CallReceiverMock.sol";
+import {CallReceiverMock} from "../../src/mocks/CallReceiverMock.sol";
 import {
     ERC7579Utils,
     Mode,

@@ -17,7 +17,7 @@ import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC
 import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-AccountERC7579.sol";
 import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {ERC7579ValidatorMock} from "../src/mocks/modules/ERC7579Mock.sol";
-import {CallReceiverMock} from "@openzeppelin/contracts/mocks/CallReceiverMock.sol";
+import {CallReceiverMock} from "../src/mocks/CallReceiverMock.sol";
 
 contract OpenAccountMock is OpenAccount {
     constructor() EIP712("MyAccount", "1") {}
