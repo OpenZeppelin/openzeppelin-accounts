@@ -2,17 +2,13 @@
 pragma solidity ^0.8.27;
 
 import {
-    MODULE_TYPE_VALIDATOR,
     MODULE_TYPE_FALLBACK,
     MODULE_TYPE_HOOK,
     IERC7579Module,
-    IERC7579Validator,
     IERC7579Hook
 } from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
-import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
-import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
-import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
+import {ERC7579Validator} from "../../modules/ERC7579Validator.sol";
 
 abstract contract ERC7579ModuleMock is IERC7579Module {
     uint256 private _moduleTypeId;
@@ -85,37 +81,22 @@ abstract contract ERC7579FallbackHandlerMock is ERC7579ModuleMock(MODULE_TYPE_FA
     }
 }
 
-contract ERC7579ValidatorMock is ERC7579ModuleMock(MODULE_TYPE_VALIDATOR), IERC7579Validator {
+contract ERC7579ValidatorMock is ERC7579Validator {
     mapping(address sender => address signer) private _associatedSigners;
 
-    function onInstall(bytes calldata data) public virtual override(IERC7579Module, ERC7579ModuleMock) {
+    function onInstall(bytes calldata data) public virtual override {
         _associatedSigners[msg.sender] = address(bytes20(data[0:20]));
-        super.onInstall(data);
     }
 
-    function onUninstall(bytes calldata data) public virtual override(IERC7579Module, ERC7579ModuleMock) {
+    function onUninstall(bytes calldata /* data */) public virtual override {
         delete _associatedSigners[msg.sender];
-        super.onUninstall(data);
     }
 
-    function validateUserOp(
-        PackedUserOperation calldata userOp,
-        bytes32 userOpHash
-    ) public view virtual returns (uint256) {
-        return
-            SignatureChecker.isValidSignatureNow(_associatedSigners[msg.sender], userOpHash, userOp.signature)
-                ? ERC4337Utils.SIG_VALIDATION_SUCCESS
-                : ERC4337Utils.SIG_VALIDATION_FAILED;
-    }
-
-    function isValidSignatureWithSender(
-        address /*sender*/,
+    function _rawERC7579Validation(
+        address account,
         bytes32 hash,
         bytes calldata signature
-    ) public view virtual returns (bytes4) {
-        return
-            SignatureChecker.isValidSignatureNow(_associatedSigners[msg.sender], hash, signature)
-                ? IERC1271.isValidSignature.selector
-                : bytes4(0xffffffff);
+    ) internal view virtual override returns (bool) {
+        return SignatureChecker.isValidSignatureNow(_associatedSigners[account], hash, signature);
     }
 }
