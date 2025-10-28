@@ -11,6 +11,8 @@ fs_permissions = [{ access = "read", path = "packages/contracts/node_modules/har
 libs = ["node_modules", "lib"]
 
 [lint]
+exclude_lints = ["mixed-case-function", "asm-keccak256", "screaming-snake-case-immutable", "incorrect-shift", "mixed-case-variable"]
+ignore = ["./packages/contracts/src/mocks/import.sol"]
 lint_on_build = false
 
 [fuzz]

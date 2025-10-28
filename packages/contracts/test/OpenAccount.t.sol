@@ -17,7 +17,7 @@ import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC
 import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-AccountERC7579.sol";
 import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {ERC7579ValidatorMock} from "../src/mocks/modules/ERC7579Mock.sol";
-import {ReceiverMock} from "../src/mocks/ReceiverMock.sol";
+import {CallReceiverMock} from "../src/mocks/CallReceiverMock.sol";
 
 contract OpenAccountMock is OpenAccount {
     constructor() EIP712("MyAccount", "1") {}
@@ -30,7 +30,7 @@ contract OpenAccountTest is Test {
 
     uint256 private constant MAX_ETH = type(uint128).max;
 
-    ReceiverMock private _target;
+    CallReceiverMock private _target;
 
     uint256 private _accountPrivateKey = 0x1234;
     address private _signer = vm.addr(_accountPrivateKey);
@@ -39,7 +39,7 @@ contract OpenAccountTest is Test {
 
     function setUp() public {
         // Deploy target contract
-        _target = new ReceiverMock();
+        _target = new CallReceiverMock();
 
         // Setup account and install validator module
         _account = new OpenAccountMock();
@@ -83,7 +83,7 @@ contract OpenAccountTest is Test {
                     abi.encodePacked(
                         address(_target),
                         uint256(1 ether),
-                        abi.encodeCall(ReceiverMock.mockFunctionMsg, ())
+                        abi.encodeCall(CallReceiverMock.mockFunctionExtra, ())
                     )
                 )
             ),
@@ -101,7 +101,7 @@ contract OpenAccountTest is Test {
 
         // Expect the event to be emitted
         vm.expectEmit(true, true, true, true);
-        emit ReceiverMock.MockFunctionCalledMsg(address(_account), 1 ether);
+        emit CallReceiverMock.MockFunctionCalledExtra(address(_account), 1 ether);
 
         // Execute the single execution
         _account.entryPoint().handleOps(ops, payable(makeAddr("beneficiary")));
@@ -119,12 +119,12 @@ contract OpenAccountTest is Test {
         execution[0] = Execution({
             target: address(_target),
             value: 1 ether,
-            callData: abi.encodeCall(ReceiverMock.mockFunctionMsg, ())
+            callData: abi.encodeCall(CallReceiverMock.mockFunctionExtra, ())
         });
         execution[1] = Execution({
             target: address(_target),
             value: 0,
-            callData: abi.encodeCall(ReceiverMock.mockFunctionWithArgs, (argA, argB))
+            callData: abi.encodeCall(CallReceiverMock.mockFunctionWithArgs, (argA, argB))
         });
 
         // Pack the batch within a PackedUserOperation
@@ -148,9 +148,9 @@ contract OpenAccountTest is Test {
 
         // Expect the events to be emitted
         vm.expectEmit(true, true, true, false);
-        emit ReceiverMock.MockFunctionCalledMsg(address(_account), 1 ether);
+        emit CallReceiverMock.MockFunctionCalledExtra(address(_account), 1 ether);
         vm.expectEmit(true, true, true, false);
-        emit ReceiverMock.MockFunctionCalledWithArgs(argA, argB);
+        emit CallReceiverMock.MockFunctionCalledWithArgs(argA, argB);
 
         // Execute the batch
         _account.entryPoint().handleOps(ops, payable(makeAddr("beneficiary")));
