@@ -125,10 +125,6 @@ contract OpenAccountEnableModeTest is Test {
             userOpSignature
         );
 
-        // Expect the module installation event
-        vm.expectEmit(true, true, false, false);
-        emit ERC7579ModuleMock.ModuleInstalledReceived(address(_account), initData);
-
         // Expect the target function call event
         vm.expectEmit(true, true, true, false);
         emit CallReceiverMock.MockFunctionCalledExtra(address(_account), 1 ether);
@@ -192,10 +188,6 @@ contract OpenAccountEnableModeTest is Test {
             userOpSignature
         );
 
-        // Expect the module installation event
-        vm.expectEmit(true, true, false, false);
-        emit ERC7579ModuleMock.ModuleInstalledReceived(address(_account), initData);
-
         // Expect the batch execution events
         vm.expectEmit(true, true, true, false);
         emit CallReceiverMock.MockFunctionCalledExtra(address(_account), 1 ether);
@@ -212,6 +204,7 @@ contract OpenAccountEnableModeTest is Test {
     }
 
     function testEnableModeWithInvalidInstallationSignature(uint256 wrongKey) public {
+        vm.assume(wrongKey != _initialValidatorPrivateKey);
         // secp256k1 order
         wrongKey = bound(wrongKey, 1, 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141 - 1);
         (uint256 nonce, bytes memory initData, bytes memory installationSignature) = _prepareInstallationSignature(

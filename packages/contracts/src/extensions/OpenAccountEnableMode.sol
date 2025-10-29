@@ -2,6 +2,7 @@
 pragma solidity ^0.8.27;
 
 import {OpenAccount} from "../OpenAccount.sol";
+import {IERC7579Validator, MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
 import {Packing} from "@openzeppelin/contracts/utils/Packing.sol";
@@ -24,9 +25,7 @@ abstract contract OpenAccountEnableMode is OpenAccount {
 
     bytes1 private constant ENABLE_MODE_PREFIX = 0x01;
     bytes32 private constant INSTALL_MODULE_TYPEHASH =
-        keccak256(
-            "InstallModule(uint256 moduleTypeId,address module,bytes initData,uint256 nonce)"
-        );
+        keccak256("InstallModule(uint256 moduleTypeId,address module,bytes initData,uint256 nonce)");
 
     /**
      * @dev Validates a user operation, checking for enable mode pattern.
@@ -41,6 +40,8 @@ abstract contract OpenAccountEnableMode is OpenAccount {
      *
      * Otherwise, falls back to OpenAccount's `_validateUserOp` function.
      * See `_validateEnableMode` for the validation of enable mode installation.
+     *
+     * NOTE: When enable mode is used, if successful, this function doesn't call `super._validateUserOp`.
      */
     function _validateUserOp(
         PackedUserOperation calldata userOp,
@@ -48,13 +49,16 @@ abstract contract OpenAccountEnableMode is OpenAccount {
         bytes calldata signature
     ) internal virtual override returns (uint256) {
         if (bytes32(userOp.nonce).extract_32_1(0) == ENABLE_MODE_PREFIX) {
-            (
-                uint256 validationData,
-                bytes calldata innerSignature
-            ) = _validateEnableMode(signature, userOp.nonce);
+            (uint256 validationData, bytes calldata innerSignature) = _validateEnableMode(signature, userOp.nonce);
             if (validationData == ERC4337Utils.SIG_VALIDATION_SUCCESS) {
-                return
-                    super._validateUserOp(userOp, userOpHash, innerSignature);
+                address module = _extractUserOpValidator(userOp);
+                if (isModuleInstalled(MODULE_TYPE_VALIDATOR, module, Calldata.emptyBytes())) {
+                    PackedUserOperation memory userOpMemory = userOp;
+                    userOpMemory.signature = innerSignature;
+                    return
+                        IERC7579Validator(module).validateUserOp(userOpMemory, _signableUserOpHash(userOp, userOpHash));
+                }
+                return super._validateUserOp(userOp, userOpHash, innerSignature);
             }
             return validationData; // Prefixed but invalid signature or failed installation
         }
@@ -103,17 +107,9 @@ abstract contract OpenAccountEnableMode is OpenAccount {
             return (ERC4337Utils.SIG_VALIDATION_FAILED, signature);
         }
 
-        bytes32 structHash = _installModuleStructHash(
-            moduleTypeId,
-            module,
-            initData,
-            nonce
-        );
+        bytes32 structHash = _installModuleStructHash(moduleTypeId, module, initData, nonce);
         if (
-            isValidSignature(
-                _hashTypedDataV4(structHash),
-                installationSignature
-            ) == IERC1271.isValidSignature.selector
+            isValidSignature(_hashTypedDataV4(structHash), installationSignature) == IERC1271.isValidSignature.selector
         ) {
             _installModule(moduleTypeId, module, initData);
             return (ERC4337Utils.SIG_VALIDATION_SUCCESS, userOpSignature);
@@ -134,16 +130,7 @@ abstract contract OpenAccountEnableMode is OpenAccount {
         bytes memory initData,
         uint256 nonce
     ) internal pure virtual returns (bytes32) {
-        return
-            keccak256(
-                abi.encode(
-                    INSTALL_MODULE_TYPEHASH,
-                    moduleTypeId,
-                    module,
-                    keccak256(initData),
-                    nonce
-                )
-            );
+        return keccak256(abi.encode(INSTALL_MODULE_TYPEHASH, moduleTypeId, module, keccak256(initData), nonce));
     }
 
     /**
@@ -177,14 +164,7 @@ abstract contract OpenAccountEnableMode is OpenAccount {
         // Minimum length to hold 5 objects: moduleTypeId (32), module (32), initData offset (32),
         // installationSignature offset (32), userOpSignature offset (32)
         if (signature.length < 0xa0)
-            return (
-                false,
-                0,
-                address(0),
-                Calldata.emptyBytes(),
-                Calldata.emptyBytes(),
-                Calldata.emptyBytes()
-            );
+            return (false, 0, address(0), Calldata.emptyBytes(), Calldata.emptyBytes(), Calldata.emptyBytes());
 
         // Extract the fixed-size values directly
         moduleTypeId = uint256(bytes32(signature[0x00:0x20]));
@@ -192,9 +172,7 @@ abstract contract OpenAccountEnableMode is OpenAccount {
 
         // Get offsets for dynamic data (relative to signature buffer)
         uint256 initDataOffset = uint256(bytes32(signature[0x40:0x60]));
-        uint256 installationSignatureOffset = uint256(
-            bytes32(signature[0x60:0x80])
-        );
+        uint256 installationSignatureOffset = uint256(bytes32(signature[0x60:0x80]));
         uint256 userOpSignatureOffset = uint256(bytes32(signature[0x80:0xa0]));
 
         // Check offsets are within bounds (need at least 32 bytes for length)
@@ -203,68 +181,32 @@ abstract contract OpenAccountEnableMode is OpenAccount {
             signature.length - 0x20 < installationSignatureOffset ||
             signature.length - 0x20 < userOpSignatureOffset
         ) {
-            return (
-                false,
-                0,
-                address(0),
-                Calldata.emptyBytes(),
-                Calldata.emptyBytes(),
-                Calldata.emptyBytes()
-            );
+            return (false, 0, address(0), Calldata.emptyBytes(), Calldata.emptyBytes(), Calldata.emptyBytes());
         }
 
         // Get the lengths of dynamic data
-        uint256 initDataLength = uint256(
-            bytes32(signature[initDataOffset:initDataOffset + 0x20])
-        );
+        uint256 initDataLength = uint256(bytes32(signature[initDataOffset:initDataOffset + 0x20]));
         uint256 installationSignatureLength = uint256(
-            bytes32(
-                signature[installationSignatureOffset:installationSignatureOffset +
-                    0x20]
-            )
+            bytes32(signature[installationSignatureOffset:installationSignatureOffset + 0x20])
         );
-        uint256 userOpSignatureLength = uint256(
-            bytes32(
-                signature[userOpSignatureOffset:userOpSignatureOffset + 0x20]
-            )
-        );
+        uint256 userOpSignatureLength = uint256(bytes32(signature[userOpSignatureOffset:userOpSignatureOffset + 0x20]));
 
         // Check that signature buffer is long enough to contain the dynamic data
         if (
             signature.length - initDataOffset - 0x20 < initDataLength ||
-            signature.length - installationSignatureOffset - 0x20 <
-            installationSignatureLength ||
-            signature.length - userOpSignatureOffset - 0x20 <
-            userOpSignatureLength
+            signature.length - installationSignatureOffset - 0x20 < installationSignatureLength ||
+            signature.length - userOpSignatureOffset - 0x20 < userOpSignatureLength
         ) {
-            return (
-                false,
-                0,
-                address(0),
-                Calldata.emptyBytes(),
-                Calldata.emptyBytes(),
-                Calldata.emptyBytes()
-            );
+            return (false, 0, address(0), Calldata.emptyBytes(), Calldata.emptyBytes(), Calldata.emptyBytes());
         }
 
         // Extract calldata slices for dynamic data (skip the 32-byte length prefix)
-        initData = signature[initDataOffset + 0x20:initDataOffset +
-            0x20 +
-            initDataLength];
-        installationSignature = signature[installationSignatureOffset +
-            0x20:installationSignatureOffset +
-            0x20 +
-            installationSignatureLength];
-        userOpSignature = signature[userOpSignatureOffset +
-            0x20:userOpSignatureOffset + 0x20 + userOpSignatureLength];
+        initData = signature[initDataOffset + 0x20:initDataOffset + 0x20 + initDataLength];
+        installationSignature = signature[
+            installationSignatureOffset + 0x20:installationSignatureOffset + 0x20 + installationSignatureLength
+        ];
+        userOpSignature = signature[userOpSignatureOffset + 0x20:userOpSignatureOffset + 0x20 + userOpSignatureLength];
 
-        return (
-            true,
-            moduleTypeId,
-            module,
-            initData,
-            installationSignature,
-            userOpSignature
-        );
+        return (true, moduleTypeId, module, initData, installationSignature, userOpSignature);
     }
 }
