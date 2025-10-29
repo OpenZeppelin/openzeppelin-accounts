@@ -103,7 +103,7 @@ contract ERC7579ValidatorMock is ERC7579Validator {
     }
 }
 
-abstract contract ERC7579ExecutorMock is ERC7579Executor {
+contract ERC7579ExecutorMock is ERC7579Executor {
     function onInstall(bytes calldata data) external {}
 
     function onUninstall(bytes calldata data) external {}
