@@ -22,9 +22,7 @@ import {CallReceiverMock} from "../../src/mocks/CallReceiverMock.sol";
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {ERC7579ModuleMock} from "../../src/mocks/modules/ERC7579Mock.sol";
-import {console} from "forge-std/console.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
-import {console2} from "forge-std/console2.sol";
 
 contract OpenAccountEnableModeMock is OpenAccountEnableMode {
     constructor() EIP712("MyAccount", "1") {}
@@ -37,8 +35,8 @@ contract OpenAccountEnableModeTest is Test {
 
     uint256 private constant MAX_ETH = type(uint128).max;
     bytes1 private constant ENABLE_MODE_PREFIX = 0x01;
-    bytes32 private constant INSTALL_MODULE_TYPEHASH =
-        keccak256("InstallModule(uint256 moduleTypeId,address module,bytes initData,uint256 nonce)");
+    bytes32 private constant ENABLE_MODULES_TYPEHASH =
+        keccak256("EnableModules(uint256[] moduleTypeIds,address[] modules,bytes[] initDatas,uint256 nonce)");
     string private constant NAME = "MyAccount";
     string private constant VERSION = "1";
 
@@ -117,10 +115,17 @@ contract OpenAccountEnableModeTest is Test {
         bytes memory userOpSignature = abi.encodePacked(r, s, v);
 
         // Encode the enable mode signature
+        uint256[] memory moduleTypeIds = new uint256[](1);
+        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
+        address[] memory modules = new address[](1);
+        modules[0] = address(_newValidator);
+        bytes[] memory initDatas = new bytes[](1);
+        initDatas[0] = initData;
+
         userOp.signature = abi.encode(
-            MODULE_TYPE_VALIDATOR,
-            address(_newValidator),
-            initData,
+            moduleTypeIds,
+            modules,
+            initDatas,
             abi.encodePacked(_initialValidator, installationSignature),
             userOpSignature
         );
@@ -180,10 +185,17 @@ contract OpenAccountEnableModeTest is Test {
         bytes memory userOpSignature = abi.encodePacked(r, s, v);
 
         // Encode the enable mode signature
+        uint256[] memory moduleTypeIds = new uint256[](1);
+        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
+        address[] memory modules = new address[](1);
+        modules[0] = address(_newValidator);
+        bytes[] memory initDatas = new bytes[](1);
+        initDatas[0] = initData;
+
         userOp.signature = abi.encode(
-            MODULE_TYPE_VALIDATOR,
-            address(_newValidator),
-            initData,
+            moduleTypeIds,
+            modules,
+            initDatas,
             abi.encodePacked(_initialValidator, installationSignature),
             userOpSignature
         );
@@ -224,10 +236,17 @@ contract OpenAccountEnableModeTest is Test {
         bytes memory userOpSignature = abi.encodePacked(r, s, v);
 
         // Encode the enable mode signature
+        uint256[] memory moduleTypeIds = new uint256[](1);
+        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
+        address[] memory modules = new address[](1);
+        modules[0] = address(_newValidator);
+        bytes[] memory initDatas = new bytes[](1);
+        initDatas[0] = initData;
+
         userOp.signature = abi.encode(
-            MODULE_TYPE_VALIDATOR,
-            address(_newValidator),
-            initData,
+            moduleTypeIds,
+            modules,
+            initDatas,
             abi.encodePacked(_initialValidator, installationSignature),
             userOpSignature
         );
@@ -284,6 +303,96 @@ contract OpenAccountEnableModeTest is Test {
         assertFalse(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
     }
 
+    function testEnableModeWithMultipleModules() public {
+        // Deploy additional validators
+        ERC7579ValidatorMock validator2 = new ERC7579ValidatorMock();
+        ERC7579ValidatorMock validator3 = new ERC7579ValidatorMock();
+
+        uint256 validator2PrivateKey = 0x9999;
+        address validator2Signer = vm.addr(validator2PrivateKey);
+
+        uint256 validator3PrivateKey = 0xaaaa;
+        address validator3Signer = vm.addr(validator3PrivateKey);
+
+        // Create nonce with enable mode prefix followed by the first validator address
+        uint256 nonce = _prepareNonce(address(_newValidator));
+
+        // Create init data for all validators
+        bytes memory initData1 = abi.encodePacked(_newValidatorSigner);
+        bytes memory initData2 = abi.encodePacked(validator2Signer);
+        bytes memory initData3 = abi.encodePacked(validator3Signer);
+
+        // Create arrays for multiple modules
+        uint256[] memory moduleTypeIds = new uint256[](3);
+        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
+        moduleTypeIds[1] = MODULE_TYPE_VALIDATOR;
+        moduleTypeIds[2] = MODULE_TYPE_VALIDATOR;
+
+        address[] memory modules = new address[](3);
+        modules[0] = address(_newValidator);
+        modules[1] = address(validator2);
+        modules[2] = address(validator3);
+
+        bytes[] memory initDatas = new bytes[](3);
+        initDatas[0] = initData1;
+        initDatas[1] = initData2;
+        initDatas[2] = initData3;
+
+        // Create EIP-712 signature for multiple module installation
+        bytes32[] memory initDataHashes = new bytes32[](3);
+        initDataHashes[0] = keccak256(initData1);
+        initDataHashes[1] = keccak256(initData2);
+        initDataHashes[2] = keccak256(initData3);
+
+        bytes32 typedDataHash = MessageHashUtils.toTypedDataHash(
+            _accountDomainSeparator,
+            keccak256(
+                abi.encode(
+                    ENABLE_MODULES_TYPEHASH,
+                    keccak256(abi.encodePacked(moduleTypeIds)),
+                    keccak256(abi.encodePacked(modules)),
+                    keccak256(abi.encodePacked(initDataHashes)),
+                    nonce
+                )
+            )
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(_initialValidatorPrivateKey, typedDataHash);
+        bytes memory installationSignature = abi.encodePacked(r, s, v);
+
+        // Create user operation that will be validated by the first newly installed validator
+        PackedUserOperation memory userOp = _prepareUserOperation(nonce);
+
+        // Sign the user operation with the first new validator's signer
+        (uint8 v2, bytes32 r2, bytes32 s2) = vm.sign(
+            _newValidatorPrivateKey,
+            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(userOp)
+        );
+        bytes memory userOpSignature = abi.encodePacked(r2, s2, v2);
+
+        // Encode the enable mode signature for multiple modules
+        userOp.signature = abi.encode(
+            moduleTypeIds,
+            modules,
+            initDatas,
+            abi.encodePacked(_initialValidator, installationSignature),
+            userOpSignature
+        );
+
+        // Expect the target function call event
+        vm.expectEmit(true, true, true, false);
+        emit CallReceiverMock.MockFunctionCalledExtra(address(_account), 1 ether);
+
+        // Execute the user operation
+        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
+        ops[0] = userOp;
+        _account.entryPoint().handleOps(ops, payable(makeAddr("beneficiary")));
+
+        // Verify all modules were installed
+        assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
+        assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(validator2), bytes("")));
+        assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(validator3), bytes("")));
+    }
+
     function _prepareNonce(address validator) internal pure returns (uint256 nonce) {
         return (uint256(uint8(ENABLE_MODE_PREFIX)) << 248) | (uint256(uint160(address(validator))) << 88);
     }
@@ -300,14 +409,21 @@ contract OpenAccountEnableModeTest is Test {
         initData = abi.encodePacked(newSigner);
 
         // Create EIP-712 signature for module installation
+        uint256[] memory moduleTypeIds = new uint256[](1);
+        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
+        address[] memory modules = new address[](1);
+        modules[0] = address(newValidator);
+        bytes32[] memory initDataHashes = new bytes32[](1);
+        initDataHashes[0] = keccak256(initData);
+
         bytes32 typedDataHash = MessageHashUtils.toTypedDataHash(
             _accountDomainSeparator,
             keccak256(
                 abi.encode(
-                    INSTALL_MODULE_TYPEHASH,
-                    MODULE_TYPE_VALIDATOR,
-                    address(newValidator),
-                    keccak256(initData),
+                    ENABLE_MODULES_TYPEHASH,
+                    keccak256(abi.encodePacked(moduleTypeIds)),
+                    keccak256(abi.encodePacked(modules)),
+                    keccak256(abi.encodePacked(initDataHashes)),
                     nonce
                 )
             )
@@ -340,7 +456,7 @@ contract OpenAccountEnableModeTest is Test {
                     )
                 ),
                 preVerificationGas: 100000,
-                accountGasLimits: bytes32(abi.encodePacked(uint128(200000), uint128(200000))),
+                accountGasLimits: bytes32(abi.encodePacked(uint128(500000), uint128(200000))),
                 gasFees: bytes32(abi.encodePacked(uint128(1000000), uint128(1000000))),
                 paymasterAndData: bytes(""),
                 signature: bytes("")

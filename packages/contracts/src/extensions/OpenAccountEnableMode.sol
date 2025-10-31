@@ -13,19 +13,20 @@ import {Calldata} from "@openzeppelin/contracts/utils/Calldata.sol";
  * @dev Extension of `OpenAccount` that implements atomic module installation and usage through
  * _enable mode_.
  *
- * This extension allows installing and using a module within the same user operation by detecting
- * a magic nonce prefix (`0x01`) and decoding module installation data from the signature field.
- * The account owner authorizes module installation through EIP-712 signatures.
+ * This extension allows installing and using one or more modules within the same user operation
+ * by detecting a magic nonce prefix (`0x01`) and decoding module installation data from the
+ * signature field. The account owner authorizes module installations through EIP-712 signatures.
  *
  * This pattern is particularly useful for session keys and other modules that need to be
  * installed and immediately used, improving user experience by reducing user operation count.
+ * Multiple modules can be installed atomically in a single operation.
  */
 abstract contract OpenAccountEnableMode is OpenAccount {
     using Packing for *;
 
     bytes1 private constant ENABLE_MODE_PREFIX = 0x01;
-    bytes32 private constant INSTALL_MODULE_TYPEHASH =
-        keccak256("InstallModule(uint256 moduleTypeId,address module,bytes initData,uint256 nonce)");
+    bytes32 private constant ENABLE_MODULES_TYPEHASH =
+        keccak256("EnableModules(uint256[] moduleTypeIds,address[] modules,bytes[] initDatas,uint256 nonce)");
 
     /**
      * @dev Validates a user operation, checking for enable mode pattern.
@@ -48,21 +49,20 @@ abstract contract OpenAccountEnableMode is OpenAccount {
         bytes32 userOpHash,
         bytes calldata signature
     ) internal virtual override returns (uint256) {
-        if (bytes32(userOp.nonce).extract_32_1(0) == ENABLE_MODE_PREFIX) {
-            (uint256 validationData, bytes calldata innerSignature) = _validateEnableMode(signature, userOp.nonce);
-            if (validationData == ERC4337Utils.SIG_VALIDATION_SUCCESS) {
-                address module = _extractUserOpValidator(userOp);
-                if (isModuleInstalled(MODULE_TYPE_VALIDATOR, module, Calldata.emptyBytes())) {
-                    PackedUserOperation memory userOpMemory = userOp;
-                    userOpMemory.signature = innerSignature;
-                    return
-                        IERC7579Validator(module).validateUserOp(userOpMemory, _signableUserOpHash(userOp, userOpHash));
-                }
-                return super._validateUserOp(userOp, userOpHash, innerSignature);
+        if (bytes32(userOp.nonce).extract_32_1(0) != ENABLE_MODE_PREFIX)
+            return super._validateUserOp(userOp, userOpHash, signature);
+
+        (uint256 validationData, bytes calldata innerSignature) = _validateEnableMode(signature, userOp.nonce);
+        if (validationData != ERC4337Utils.SIG_VALIDATION_SUCCESS) {
+            address module = _extractUserOpValidator(userOp);
+            if (isModuleInstalled(MODULE_TYPE_VALIDATOR, module, Calldata.emptyBytes())) {
+                PackedUserOperation memory userOpMemory = userOp;
+                userOpMemory.signature = innerSignature;
+                return IERC7579Validator(module).validateUserOp(userOpMemory, _signableUserOpHash(userOp, userOpHash));
             }
-            return validationData; // Prefixed but invalid signature or failed installation
+            return super._validateUserOp(userOp, userOpHash, innerSignature);
         }
-        return super._validateUserOp(userOp, userOpHash, signature);
+        return validationData; // Prefixed but invalid signature or failed installation
     }
 
     /**
@@ -88,7 +88,7 @@ abstract contract OpenAccountEnableMode is OpenAccount {
      * EIP-712 signature for module installation authorization, and installs the module
      * if validation succeeds.
      *
-     * See `_tryDecodeInstallModule` for the signature format.
+     * See `_tryDecodeInstallModules` for the signature format.
      */
     function _validateEnableMode(
         bytes calldata signature,
@@ -96,22 +96,25 @@ abstract contract OpenAccountEnableMode is OpenAccount {
     ) internal virtual returns (uint256, bytes calldata) {
         (
             bool success,
-            uint256 moduleTypeId,
-            address module,
-            bytes calldata initData,
+            uint256[] calldata moduleTypeIds,
+            address[] calldata modules,
+            bytes[] calldata initDatas,
             bytes calldata installationSignature,
             bytes calldata userOpSignature
-        ) = _tryDecodeInstallModule(signature);
+        ) = _tryDecodeInstallModules(signature);
 
         if (!success) {
             return (ERC4337Utils.SIG_VALIDATION_FAILED, signature);
         }
 
-        bytes32 structHash = _installModuleStructHash(moduleTypeId, module, initData, nonce);
+        bytes32 structHash = _installModulesStructHash(moduleTypeIds, modules, initDatas, nonce);
         if (
             isValidSignature(_hashTypedDataV4(structHash), installationSignature) == IERC1271.isValidSignature.selector
         ) {
-            _installModule(moduleTypeId, module, initData);
+            // Install all modules
+            for (uint256 i = 0; i < modules.length; i++) {
+                _installModule(moduleTypeIds[i], modules[i], initDatas[i]);
+            }
             return (ERC4337Utils.SIG_VALIDATION_SUCCESS, userOpSignature);
         }
 
@@ -119,18 +122,33 @@ abstract contract OpenAccountEnableMode is OpenAccount {
     }
 
     /**
-     * @dev Computes the struct hash for the InstallModule EIP-712 message.
+     * @dev Computes the struct hash for the EnableModules EIP-712 message.
      *
      * The struct hash is used as part of the EIP-712 signature verification process
-     * to ensure the module installation is properly authorized by the account owner.
+     * to ensure the module installations are properly authorized by the account owner.
      */
-    function _installModuleStructHash(
-        uint256 moduleTypeId,
-        address module,
-        bytes memory initData,
+    function _installModulesStructHash(
+        uint256[] calldata moduleTypeIds,
+        address[] calldata modules,
+        bytes[] calldata initDatas,
         uint256 nonce
     ) internal pure virtual returns (bytes32) {
-        return keccak256(abi.encode(INSTALL_MODULE_TYPEHASH, moduleTypeId, module, keccak256(initData), nonce));
+        // Hash each initData element
+        bytes32[] memory initDataHashes = new bytes32[](initDatas.length);
+        for (uint256 i = 0; i < initDatas.length; i++) {
+            initDataHashes[i] = keccak256(initDatas[i]);
+        }
+
+        return
+            keccak256(
+                abi.encode(
+                    ENABLE_MODULES_TYPEHASH,
+                    keccak256(abi.encodePacked(moduleTypeIds)),
+                    keccak256(abi.encodePacked(modules)),
+                    keccak256(abi.encodePacked(initDataHashes)),
+                    nonce
+                )
+            );
     }
 
     /**
@@ -140,73 +158,203 @@ abstract contract OpenAccountEnableMode is OpenAccount {
      * to ensure safe access to the signature data without reverting.
      *
      * The signature format for _enable mode_ module installation is:
-     * `abi.encode(moduleTypeId, module, initData, installationSignature, userOpSignature)`
+     * `abi.encode(moduleTypeIds, modules, initDatas, installationSignature, userOpSignature)`
      *
      * Where:
      *
-     * * `installationSignature` is an EIP-712 signature over the InstallModule struct
+     * * `installationSignature` is an EIP-712 signature over the EnableModules struct
      * * `userOpSignature` is the signature for validating the user operation itself
      */
-    function _tryDecodeInstallModule(
+    function _tryDecodeInstallModules(
         bytes calldata signature
     )
         private
         pure
         returns (
             bool success,
-            uint256 moduleTypeId,
-            address module,
-            bytes calldata initData,
+            uint256[] calldata moduleTypeIds,
+            address[] calldata modules,
+            bytes[] calldata initDatas,
             bytes calldata installationSignature,
             bytes calldata userOpSignature
         )
     {
-        // Minimum length to hold 5 objects: moduleTypeId (32), module (32), initData offset (32),
-        // installationSignature offset (32), userOpSignature offset (32)
-        if (signature.length < 0xa0)
-            return (false, 0, address(0), Calldata.emptyBytes(), Calldata.emptyBytes(), Calldata.emptyBytes());
+        // Minimum length to hold 5 offset pointers: 5 * 32 = 160 bytes (0xa0)
+        if (signature.length < 0xa0) {
+            return _emptyDecodeInstallModules();
+        }
 
-        // Extract the fixed-size values directly
-        moduleTypeId = uint256(bytes32(signature[0x00:0x20]));
-        module = address(bytes20(signature[0x2c:0x40])); // Skip 12 bytes padding for address
-
-        // Get offsets for dynamic data (relative to signature buffer)
-        uint256 initDataOffset = uint256(bytes32(signature[0x40:0x60]));
+        uint256 moduleTypeIdsOffset = uint256(bytes32(signature[0x00:0x20]));
+        uint256 modulesOffset = uint256(bytes32(signature[0x20:0x40]));
+        uint256 initDatasOffset = uint256(bytes32(signature[0x40:0x60]));
         uint256 installationSignatureOffset = uint256(bytes32(signature[0x60:0x80]));
         uint256 userOpSignatureOffset = uint256(bytes32(signature[0x80:0xa0]));
 
-        // Check offsets are within bounds (need at least 32 bytes for length)
+        // Check all offsets are within bounds (need at least 32 bytes for length)
         if (
-            signature.length - 0x20 < initDataOffset ||
-            signature.length - 0x20 < installationSignatureOffset ||
-            signature.length - 0x20 < userOpSignatureOffset
+            signature.length < moduleTypeIdsOffset + 0x20 ||
+            moduleTypeIdsOffset < 0xa0 ||
+            signature.length < modulesOffset + 0x20 ||
+            modulesOffset < 0xa0 ||
+            signature.length < initDatasOffset + 0x20 ||
+            initDatasOffset < 0xa0 ||
+            signature.length < installationSignatureOffset + 0x20 ||
+            installationSignatureOffset < 0xa0 ||
+            signature.length < userOpSignatureOffset + 0x20 ||
+            userOpSignatureOffset < 0xa0
         ) {
-            return (false, 0, address(0), Calldata.emptyBytes(), Calldata.emptyBytes(), Calldata.emptyBytes());
+            return _emptyDecodeInstallModules();
         }
 
-        // Get the lengths of dynamic data
-        uint256 initDataLength = uint256(bytes32(signature[initDataOffset:initDataOffset + 0x20]));
+        // Get array lengths
+        uint256 moduleTypeIdsLength = uint256(bytes32(signature[moduleTypeIdsOffset:moduleTypeIdsOffset + 0x20]));
+        uint256 modulesLength = uint256(bytes32(signature[modulesOffset:modulesOffset + 0x20]));
+        uint256 initDatasLength = uint256(bytes32(signature[initDatasOffset:initDatasOffset + 0x20]));
+
+        if (moduleTypeIdsLength != modulesLength || modulesLength != initDatasLength) {
+            return _emptyDecodeInstallModules();
+        }
+
+        // Check bounds for fixed-size arrays (uint256[] and address[])
+        if (
+            signature.length < moduleTypeIdsOffset + 0x20 + moduleTypeIdsLength * 0x20 ||
+            signature.length < modulesOffset + 0x20 + modulesLength * 0x20
+        ) {
+            return _emptyDecodeInstallModules();
+        }
+
+        // Extract arrays directly from calldata
+        assembly ("memory-safe") {
+            moduleTypeIds.offset := add(signature.offset, add(moduleTypeIdsOffset, 0x20))
+            moduleTypeIds.length := moduleTypeIdsLength // Length in elements
+            modules.offset := add(signature.offset, add(modulesOffset, 0x20))
+            modules.length := modulesLength // Length in elements
+        }
+
+        initDatas = _extractBytesArray(signature, initDatasOffset, initDatasLength);
+        if (initDatas.length == 0 && initDatasLength > 0) {
+            return _emptyDecodeInstallModules();
+        }
+
+        // Get lengths of the signature data
         uint256 installationSignatureLength = uint256(
             bytes32(signature[installationSignatureOffset:installationSignatureOffset + 0x20])
         );
         uint256 userOpSignatureLength = uint256(bytes32(signature[userOpSignatureOffset:userOpSignatureOffset + 0x20]));
 
-        // Check that signature buffer is long enough to contain the dynamic data
+        // Check bounds for signature data
         if (
-            signature.length - initDataOffset - 0x20 < initDataLength ||
-            signature.length - installationSignatureOffset - 0x20 < installationSignatureLength ||
-            signature.length - userOpSignatureOffset - 0x20 < userOpSignatureLength
+            installationSignatureLength > signature.length ||
+            userOpSignatureLength > signature.length ||
+            signature.length < installationSignatureOffset + 0x20 + installationSignatureLength ||
+            signature.length < userOpSignatureOffset + 0x20 + userOpSignatureLength
         ) {
-            return (false, 0, address(0), Calldata.emptyBytes(), Calldata.emptyBytes(), Calldata.emptyBytes());
+            return _emptyDecodeInstallModules();
         }
 
-        // Extract calldata slices for dynamic data (skip the 32-byte length prefix)
-        initData = signature[initDataOffset + 0x20:initDataOffset + 0x20 + initDataLength];
+        // Extract signature data (skip the 32-byte length prefix)
         installationSignature = signature[
             installationSignatureOffset + 0x20:installationSignatureOffset + 0x20 + installationSignatureLength
         ];
         userOpSignature = signature[userOpSignatureOffset + 0x20:userOpSignatureOffset + 0x20 + userOpSignatureLength];
 
-        return (true, moduleTypeId, module, initData, installationSignature, userOpSignature);
+        return (true, moduleTypeIds, modules, initDatas, installationSignature, userOpSignature);
+    }
+
+    /**
+     * @dev Validates and determines the end offset of a bytes[] array structure.
+     *
+     * This function checks that:
+     * 1. The array length is within bounds
+     * 2. All offset pointers are valid
+     * 3. All individual bytes elements are within bounds
+     */
+    function _extractBytesArray(
+        bytes calldata data,
+        uint256 arrayOffset,
+        uint256 arrayLength
+    ) private pure returns (bytes[] calldata result) {
+        // Start after the array length (32 bytes)
+        uint256 currentOffset = arrayOffset + 0x20;
+
+        // Check if we have enough space for all offset pointers (arrayLength * 32 bytes)
+        if (data.length < currentOffset + arrayLength * 0x20) return _emptyBytesArray();
+
+        // Track the maximum end position we've seen
+        uint256 maxEndOffset = currentOffset + arrayLength * 0x20;
+
+        // Validate each bytes element
+        for (uint256 i = 0; i < arrayLength; (i++, currentOffset += 0x20)) {
+            // Get the offset for this bytes element
+            uint256 elementOffset = uint256(bytes32(data[currentOffset:currentOffset + 0x20]));
+
+            // Check if the element offset is within bounds (need at least 32 bytes for length)
+            if (data.length < elementOffset + 0x20) return _emptyBytesArray();
+
+            // Get the length of this bytes element
+            uint256 elementLength = uint256(bytes32(data[elementOffset:elementOffset + 0x20]));
+
+            // Check if the element data is within bounds
+            uint256 elementEnd = elementOffset + 0x20 + elementLength;
+            if (data.length < elementEnd) return _emptyBytesArray();
+
+            // Update max end offset
+            if (elementEnd > maxEndOffset) maxEndOffset = elementEnd;
+        }
+
+        // Extract bytes array directly from calldata
+        assembly ("memory-safe") {
+            result.offset := add(data.offset, add(arrayOffset, 0x20))
+            result.length := arrayLength
+        }
+
+        return result;
+    }
+
+    /// @dev Returns empty arrays for module type ids, modules, init datas, installation signature, and user operation signature.
+    function _emptyDecodeInstallModules()
+        private
+        pure
+        returns (
+            bool success,
+            uint256[] calldata moduleTypeIds,
+            address[] calldata modules,
+            bytes[] calldata initDatas,
+            bytes calldata installationSignature,
+            bytes calldata userOpSignature
+        )
+    {
+        return (
+            false,
+            _emptyUint256Array(),
+            _emptyAddressArray(),
+            _emptyBytesArray(),
+            Calldata.emptyBytes(),
+            Calldata.emptyBytes()
+        );
+    }
+
+    /// @dev Returns empty bytes array.
+    function _emptyBytesArray() private pure returns (bytes[] calldata result) {
+        assembly ("memory-safe") {
+            result.offset := 0
+            result.length := 0
+        }
+    }
+
+    /// @dev Returns empty address array.
+    function _emptyAddressArray() private pure returns (address[] calldata result) {
+        assembly ("memory-safe") {
+            result.offset := 0
+            result.length := 0
+        }
+    }
+
+    /// @dev Returns empty uint256 array.
+    function _emptyUint256Array() private pure returns (uint256[] calldata result) {
+        assembly ("memory-safe") {
+            result.offset := 0
+            result.length := 0
+        }
     }
 }
