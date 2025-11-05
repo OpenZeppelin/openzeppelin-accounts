@@ -96,6 +96,8 @@ contract ERC7579ECDSAValidatorTest is Test {
     }
 
     function testSetSigner(address newSigner) public {
+        vm.assume(newSigner != address(0));
+
         // Install initial signer
         vm.prank(address(_account));
         _validator.onInstall(abi.encodePacked(_signer));

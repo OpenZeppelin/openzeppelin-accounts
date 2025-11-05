@@ -26,6 +26,12 @@ abstract contract ERC7579ECDSAValidator is ERC7579Validator {
     /// @dev The caller is not authorized to set the signer for the specified account.
     error ERC7579ECDSAValidatorNotAuthorized(address caller, address account);
 
+    /// @dev The provided signer address is invalid.
+    error ERC7579ECDSAValidatorInvalidSigner(address signer);
+
+    /// @dev Emitted when the signer is set.
+    event ERC7579ECDSAValidatorSignerSet(address indexed account, address signer);
+
     mapping(address account => address signer) private _signers;
 
     /// @dev Returns the authorized signer for the specified account.
@@ -59,7 +65,8 @@ abstract contract ERC7579ECDSAValidator is ERC7579Validator {
      */
     function onUninstall(bytes calldata /* data */) public virtual override {
         if (signer(msg.sender) != address(0)) {
-            _setSigner(msg.sender, address(0));
+            delete _signers[msg.sender];
+            emit ERC7579ECDSAValidatorSignerSet(msg.sender, address(0));
         }
     }
 
@@ -71,7 +78,9 @@ abstract contract ERC7579ECDSAValidator is ERC7579Validator {
 
     /// @dev Internal version of {setSigner} without access control.
     function _setSigner(address account, address newSigner) internal virtual {
+        require(newSigner != address(0), ERC7579ECDSAValidatorInvalidSigner(newSigner));
         _signers[account] = newSigner;
+        emit ERC7579ECDSAValidatorSignerSet(account, newSigner);
     }
 
     /// @dev Extracts the signer address from the provided data.

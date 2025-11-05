@@ -80,7 +80,9 @@ describe('ERC7579ECDSAValidator', function () {
 
     describe('onInstall', function () {
       it('sets signer on first installation', async function () {
-        await expect(this.mockFromAccount.onInstall(this.installData)).to.not.be.reverted;
+        await expect(this.mockFromAccount.onInstall(this.installData))
+          .to.emit(this.mock, 'ERC7579ECDSAValidatorSignerSet')
+          .withArgs(this.mockAccount.address, this.signer.address);
         await expect(this.mock.signer(this.mockAccount.address)).to.eventually.equal(this.signer.address);
       });
 
@@ -88,7 +90,9 @@ describe('ERC7579ECDSAValidator', function () {
         await this.mockFromAccount.onInstall(this.installData);
         const originalSigner = await this.mock.signer(this.mockAccount.address);
 
-        await this.mockFromAccount.onInstall(this.newSignerInstallData);
+        // Subsequent installation should not emit event since it's a no-op
+        await expect(this.mockFromAccount.onInstall(this.newSignerInstallData))
+          .to.not.emit(this.mock, 'ERC7579ECDSAValidatorSignerSet');
         await expect(this.mock.signer(this.mockAccount.address)).to.eventually.equal(originalSigner);
       });
 
@@ -102,13 +106,24 @@ describe('ERC7579ECDSAValidator', function () {
 
       it('accepts data with exactly 20 bytes', async function () {
         const exactData = ethers.solidityPacked(['address'], [this.signer.address]);
-        await expect(this.mockFromAccount.onInstall(exactData)).to.not.be.reverted;
+        await expect(this.mockFromAccount.onInstall(exactData))
+          .to.emit(this.mock, 'ERC7579ECDSAValidatorSignerSet')
+          .withArgs(this.mockAccount.address, this.signer.address);
       });
 
       it('accepts data longer than 20 bytes and uses first 20 bytes', async function () {
         const longData = ethers.solidityPacked(['address', 'uint256'], [this.signer.address, 12345]);
-        await this.mockFromAccount.onInstall(longData);
+        await expect(this.mockFromAccount.onInstall(longData))
+          .to.emit(this.mock, 'ERC7579ECDSAValidatorSignerSet')
+          .withArgs(this.mockAccount.address, this.signer.address);
         await expect(this.mock.signer(this.mockAccount.address)).to.eventually.equal(this.signer.address);
+      });
+
+      it('reverts when trying to install with zero address', async function () {
+        const zeroAddressData = ethers.solidityPacked(['address'], [ethers.ZeroAddress]);
+        await expect(this.mockFromAccount.onInstall(zeroAddressData))
+          .to.be.revertedWithCustomError(this.mock, 'ERC7579ECDSAValidatorInvalidSigner')
+          .withArgs(ethers.ZeroAddress);
       });
     });
 
@@ -117,12 +132,16 @@ describe('ERC7579ECDSAValidator', function () {
         await this.mockFromAccount.onInstall(this.installData);
         await expect(this.mock.signer(this.mockAccount.address)).to.eventually.equal(this.signer.address);
 
-        await this.mockFromAccount.onUninstall('0x');
+        await expect(this.mockFromAccount.onUninstall('0x'))
+          .to.emit(this.mock, 'ERC7579ECDSAValidatorSignerSet')
+          .withArgs(this.mockAccount.address, ethers.ZeroAddress);
         await expect(this.mock.signer(this.mockAccount.address)).to.eventually.equal(ethers.ZeroAddress);
       });
 
       it('does nothing when no signer is configured', async function () {
-        await expect(this.mockFromAccount.onUninstall('0x')).to.not.be.reverted;
+        // Should not emit event when no signer is configured (no-op)
+        await expect(this.mockFromAccount.onUninstall('0x'))
+          .to.not.emit(this.mock, 'ERC7579ECDSAValidatorSignerSet');
 
         await expect(this.mock.signer(this.mockAccount.address)).to.eventually.equal(ethers.ZeroAddress);
       });
@@ -134,15 +153,17 @@ describe('ERC7579ECDSAValidator', function () {
       });
 
       it('allows account to set new signer', async function () {
-        await expect(this.mockFromAccount.setSigner(this.mockAccount.address, this.newSigner.address)).to.not.be
-          .reverted;
+        await expect(this.mockFromAccount.setSigner(this.mockAccount.address, this.newSigner.address))
+          .to.emit(this.mock, 'ERC7579ECDSAValidatorSignerSet')
+          .withArgs(this.mockAccount.address, this.newSigner.address);
 
         await expect(this.mock.signer(this.mockAccount.address)).to.eventually.equal(this.newSigner.address);
       });
 
-      it('allows account to clear signer', async function () {
-        await this.mockFromAccount.setSigner(this.mockAccount.address, ethers.ZeroAddress);
-        await expect(this.mock.signer(this.mockAccount.address)).to.eventually.equal(ethers.ZeroAddress);
+      it('reverts when trying to set signer to zero address', async function () {
+        await expect(this.mockFromAccount.setSigner(this.mockAccount.address, ethers.ZeroAddress))
+          .to.be.revertedWithCustomError(this.mock, 'ERC7579ECDSAValidatorInvalidSigner')
+          .withArgs(ethers.ZeroAddress);
       });
 
       it('reverts when called by unauthorized address', async function () {
@@ -243,15 +264,21 @@ describe('ERC7579ECDSAValidator', function () {
 
   it('handles reinstallation after uninstallation', async function () {
     // Install
-    await this.mockFromAccount.onInstall(this.installData);
+    await expect(this.mockFromAccount.onInstall(this.installData))
+      .to.emit(this.mock, 'ERC7579ECDSAValidatorSignerSet')
+      .withArgs(this.mockAccount.address, this.signer.address);
     await expect(this.mock.signer(this.mockAccount.address)).to.eventually.equal(this.signer.address);
 
     // Uninstall
-    await this.mockFromAccount.onUninstall('0x');
+    await expect(this.mockFromAccount.onUninstall('0x'))
+      .to.emit(this.mock, 'ERC7579ECDSAValidatorSignerSet')
+      .withArgs(this.mockAccount.address, ethers.ZeroAddress);
     await expect(this.mock.signer(this.mockAccount.address)).to.eventually.equal(ethers.ZeroAddress);
 
     // Reinstall with different signer
-    await this.mockFromAccount.onInstall(this.newSignerInstallData);
+    await expect(this.mockFromAccount.onInstall(this.newSignerInstallData))
+      .to.emit(this.mock, 'ERC7579ECDSAValidatorSignerSet')
+      .withArgs(this.mockAccount.address, this.newSigner.address);
     await expect(this.mock.signer(this.mockAccount.address)).to.eventually.equal(this.newSigner.address);
   });
 
@@ -259,13 +286,22 @@ describe('ERC7579ECDSAValidator', function () {
     await this.mockFromAccount.onInstall(this.installData);
 
     // Change signer multiple times
-    await this.mockFromAccount.setSigner(this.mockAccount.address, this.newSigner.address);
+    await expect(this.mockFromAccount.setSigner(this.mockAccount.address, this.newSigner.address))
+      .to.emit(this.mock, 'ERC7579ECDSAValidatorSignerSet')
+      .withArgs(this.mockAccount.address, this.newSigner.address);
     await expect(this.mock.signer(this.mockAccount.address)).to.eventually.equal(this.newSigner.address);
 
-    await this.mockFromAccount.setSigner(this.mockAccount.address, this.signer.address);
+    await expect(this.mockFromAccount.setSigner(this.mockAccount.address, this.signer.address))
+      .to.emit(this.mock, 'ERC7579ECDSAValidatorSignerSet')
+      .withArgs(this.mockAccount.address, this.signer.address);
     await expect(this.mock.signer(this.mockAccount.address)).to.eventually.equal(this.signer.address);
 
-    await this.mockFromAccount.setSigner(this.mockAccount.address, ethers.ZeroAddress);
-    await expect(this.mock.signer(this.mockAccount.address)).to.eventually.equal(ethers.ZeroAddress);
+    // Attempting to set to zero address should fail
+    await expect(this.mockFromAccount.setSigner(this.mockAccount.address, ethers.ZeroAddress))
+      .to.be.revertedWithCustomError(this.mock, 'ERC7579ECDSAValidatorInvalidSigner')
+      .withArgs(ethers.ZeroAddress);
+
+    // Signer should remain unchanged
+    await expect(this.mock.signer(this.mockAccount.address)).to.eventually.equal(this.signer.address);
   });
 });
