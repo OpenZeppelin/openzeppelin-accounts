@@ -1,0 +1,261 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.27;
+
+import {Test} from "forge-std/Test.sol";
+import {ERC7579ECDSAValidator} from "../../src/modules/ERC7579ECDSAValidator.sol";
+import {CallReceiverMock} from "../../src/mocks/CallReceiverMock.sol";
+import {
+    ERC7579Utils,
+    Mode,
+    ModeSelector,
+    ModePayload
+} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
+import {ERC4337Utils, IEntryPointExtra} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
+import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-AccountERC7579.sol";
+import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
+import {OpenAccount} from "../../src/OpenAccount.sol";
+import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+
+contract OpenAccountMock is OpenAccount {
+    constructor() EIP712("TestAccount", "1") {}
+}
+
+contract ERC7579ECDSAValidatorMock is ERC7579ECDSAValidator {
+    // Concrete implementation for testing
+}
+
+contract ERC7579ECDSAValidatorTest is Test {
+    using ERC7579Utils for *;
+    using ERC4337Utils for PackedUserOperation;
+    using Strings for *;
+
+    uint256 private constant MAX_ETH = type(uint128).max;
+    uint256 private constant SECP256K1_CURVE_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141;
+
+    CallReceiverMock private _target;
+    ERC7579ECDSAValidatorMock private _validator;
+    OpenAccount private _account;
+    uint256 private _signerPrivateKey = 0x1234;
+    address private _signer = vm.addr(_signerPrivateKey);
+    uint256 private _otherPrivateKey = 0x5678;
+    address private _other = vm.addr(_otherPrivateKey);
+
+    event ERC7579ECDSAValidatorInvalidSignerLength();
+    event ERC7579ECDSAValidatorNotAuthorized(address caller, address account);
+
+    function setUp() public {
+        // Deploy target contract
+        _target = new CallReceiverMock();
+
+        // Deploy validator
+        _validator = new ERC7579ECDSAValidatorMock();
+
+        // Deploy account
+        _account = new OpenAccountMock();
+
+        vm.deal(address(_account), MAX_ETH);
+
+        // Setup entrypoint
+        address entrypoint = address(ERC4337Utils.ENTRYPOINT_V08);
+        vm.deal(entrypoint, MAX_ETH);
+        vm.etch(
+            entrypoint,
+            vm.readFileBinary(
+                string.concat(
+                    "packages/contracts/node_modules/hardhat-predeploy/bin/",
+                    Strings.toChecksumHexString(entrypoint),
+                    ".bytecode"
+                )
+            )
+        );
+    }
+
+    function testOnInstall(address signerAddr) public {
+        vm.assume(signerAddr != address(0));
+
+        vm.prank(address(_account));
+        _validator.onInstall(abi.encodePacked(signerAddr));
+
+        assertEq(_validator.signer(address(_account)), signerAddr);
+    }
+
+    function testOnUninstall(address signerAddr) public {
+        vm.assume(signerAddr != address(0));
+
+        // Install first
+        vm.prank(address(_account));
+        _validator.onInstall(abi.encodePacked(signerAddr));
+        assertEq(_validator.signer(address(_account)), signerAddr);
+
+        // Uninstall
+        vm.prank(address(_account));
+        _validator.onUninstall("");
+        assertEq(_validator.signer(address(_account)), address(0));
+    }
+
+    function testSetSigner(address newSigner) public {
+        // Install initial signer
+        vm.prank(address(_account));
+        _validator.onInstall(abi.encodePacked(_signer));
+
+        // Set new signer
+        vm.prank(address(_account));
+        _validator.setSigner(address(_account), newSigner);
+
+        assertEq(_validator.signer(address(_account)), newSigner);
+    }
+
+    function testIsValidSignatureWithSender(bytes32 messageHash, uint256 privateKey) public {
+        privateKey = bound(privateKey, 1, SECP256K1_CURVE_ORDER - 1);
+        address signerAddr = vm.addr(privateKey);
+
+        // Install signer
+        vm.prank(address(_account));
+        _validator.onInstall(abi.encodePacked(signerAddr));
+
+        // Sign message
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, messageHash);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        // Test validation through isValidSignatureWithSender
+        vm.prank(address(_account));
+        bytes4 result = _validator.isValidSignatureWithSender(address(this), messageHash, signature);
+
+        assertEq(result, IERC1271.isValidSignature.selector);
+    }
+
+    function testIsValidSignatureWithSenderWrongSigner(
+        bytes32 messageHash,
+        uint256 correctKey,
+        uint256 wrongKey
+    ) public {
+        correctKey = bound(correctKey, 1, SECP256K1_CURVE_ORDER - 1);
+        wrongKey = bound(wrongKey, 1, SECP256K1_CURVE_ORDER - 1);
+        vm.assume(correctKey != wrongKey);
+
+        address correctSigner = vm.addr(correctKey);
+
+        // Install correct signer
+        vm.prank(address(_account));
+        _validator.onInstall(abi.encodePacked(correctSigner));
+
+        // Sign with wrong key
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(wrongKey, messageHash);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        // Test validation should fail
+        vm.prank(address(_account));
+        bytes4 result = _validator.isValidSignatureWithSender(address(this), messageHash, signature);
+
+        assertEq(result, bytes4(0xffffffff));
+    }
+
+    function testIsValidSignatureWithSenderInvalidSignature(bytes32 messageHash, bytes memory invalidSignature) public {
+        vm.assume(invalidSignature.length != 65); // Valid ECDSA signature is 65 bytes
+
+        // Install signer
+        vm.prank(address(_account));
+        _validator.onInstall(abi.encodePacked(_signer));
+
+        // Test validation with invalid signature
+        vm.prank(address(_account));
+        bytes4 result = _validator.isValidSignatureWithSender(address(this), messageHash, invalidSignature);
+
+        assertEq(result, bytes4(0xffffffff));
+    }
+
+    function testIsValidSignatureWithSenderNoSigner(bytes32 messageHash, uint256 privateKey) public {
+        privateKey = bound(privateKey, 1, SECP256K1_CURVE_ORDER - 1);
+
+        // Don't install any signer
+
+        // Sign message
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, messageHash);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        // Test validation should fail
+        vm.prank(address(_account));
+        bytes4 result = _validator.isValidSignatureWithSender(address(this), messageHash, signature);
+
+        assertEq(result, bytes4(0xffffffff));
+    }
+
+    function testValidateUserOp(uint256 privateKey, uint256 nonce, uint256 value) public {
+        privateKey = bound(privateKey, 1, SECP256K1_CURVE_ORDER - 1);
+        vm.assume(value <= MAX_ETH);
+        address signerAddr = vm.addr(privateKey);
+
+        // Install signer
+        vm.prank(address(_account));
+        _validator.onInstall(abi.encodePacked(signerAddr));
+
+        PackedUserOperation memory userOp = _prepareUserOperation(nonce, value);
+        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(userOp);
+
+        // Sign with correct key
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, userOpHash);
+        bytes memory signature = abi.encodePacked(r, s, v);
+        userOp.signature = signature;
+
+        vm.prank(address(_account));
+        uint256 result = _validator.validateUserOp(userOp, userOpHash);
+
+        assertEq(result, ERC4337Utils.SIG_VALIDATION_SUCCESS);
+    }
+
+    function testValidateUserOpWrongSigner(uint256 correctKey, uint256 wrongKey, uint256 nonce) public {
+        correctKey = bound(correctKey, 1, SECP256K1_CURVE_ORDER - 1);
+        wrongKey = bound(wrongKey, 1, SECP256K1_CURVE_ORDER - 1);
+        vm.assume(correctKey != wrongKey);
+
+        address correctSigner = vm.addr(correctKey);
+
+        // Install correct signer
+        vm.prank(address(_account));
+        _validator.onInstall(abi.encodePacked(correctSigner));
+
+        PackedUserOperation memory userOp = _prepareUserOperation(nonce, 0);
+        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(userOp);
+
+        // Sign with wrong key
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(wrongKey, userOpHash);
+        bytes memory signature = abi.encodePacked(r, s, v);
+        userOp.signature = signature;
+
+        vm.prank(address(_account));
+        uint256 result = _validator.validateUserOp(userOp, userOpHash);
+
+        assertEq(result, ERC4337Utils.SIG_VALIDATION_FAILED);
+    }
+
+    function _prepareUserOperation(uint256 nonce, uint256 value) private view returns (PackedUserOperation memory) {
+        return
+            PackedUserOperation({
+                sender: address(_account),
+                nonce: (uint256(uint160(bytes20(address(_validator)))) << 96) | nonce,
+                initCode: bytes(""),
+                callData: abi.encodeCall(
+                    AccountERC7579.execute,
+                    (
+                        Mode.unwrap(
+                            ERC7579Utils.CALLTYPE_SINGLE.encodeMode(
+                                ERC7579Utils.EXECTYPE_DEFAULT,
+                                ModeSelector.wrap(0x00000000),
+                                ModePayload.wrap(0x00000000)
+                            )
+                        ),
+                        abi.encodePacked(address(_target), value, abi.encodeCall(CallReceiverMock.mockFunction, ()))
+                    )
+                ),
+                preVerificationGas: 100000,
+                accountGasLimits: bytes32(abi.encodePacked(uint128(100000), uint128(100000))),
+                gasFees: bytes32(abi.encodePacked(uint128(1000000), uint128(1000000))),
+                paymasterAndData: bytes(""),
+                signature: bytes("")
+            });
+    }
+}
