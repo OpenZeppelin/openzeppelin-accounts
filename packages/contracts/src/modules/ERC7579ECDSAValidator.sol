@@ -45,6 +45,7 @@ abstract contract ERC7579ECDSAValidator is ERC7579Validator {
      *
      * If the account doesn't already have a signer configured, the first 20 bytes
      * of `data` will be used as the authorized signer address.
+     * See {_extractSigner} for more details about the encoding.
      *
      * Requirements:
      *
