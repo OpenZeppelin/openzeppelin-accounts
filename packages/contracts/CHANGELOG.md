@@ -6,7 +6,6 @@
 - Add `ERC7579Executor.sol` abstract contract, a minimal ERC-7579 executor module allowing arbitrary operation execution from a smart account, with extensibility hooks for custom validation and access control.
 - Add `ERC7579DelayedExecutor.sol` abstract contract module. Extends `ERC7579Executor` with scheduling and time-delayed execution support for operations, including customizable per-account delay and expiration windows.
 
-
 ## 12-09-2025
 
 - Add `OpenAccount` contract, a modular smart account implementation following the ERC-7579 standard.
