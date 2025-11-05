@@ -46,8 +46,15 @@ abstract contract ERC7579ECDSAValidator is ERC7579Validator {
      * If the account doesn't already have a signer configured, the first 20 bytes
      * of `data` will be used as the authorized signer address.
      *
+     * Requirements:
+     *
+     * * The `data` must be at least 20 bytes.
+     * * The `data` must contain a valid signer address.
+     *
      * NOTE: An account can only set a signer once. If called directly by an account
      * that already has a signer configured, this function will behave as a no-op.
+     *
+     * Emits a {ERC7579ECDSAValidatorSignerSet} event if the signer is set.
      */
     function onInstall(bytes calldata data) public virtual override {
         require(data.length >= 20, ERC7579ECDSAValidatorInvalidSignerLength());
@@ -62,6 +69,8 @@ abstract contract ERC7579ECDSAValidator is ERC7579Validator {
      *
      * If the account has a configured signer, it will be cleared. If no signer
      * is configured, this function will behave as a no-op.
+     *
+     * Emits a {ERC7579ECDSAValidatorSignerSet} event if the signer is cleared.
      */
     function onUninstall(bytes calldata /* data */) public virtual override {
         if (signer(msg.sender) != address(0)) {
@@ -70,20 +79,37 @@ abstract contract ERC7579ECDSAValidator is ERC7579Validator {
         }
     }
 
-    /// @dev Sets the signer for the specified account.
+    /**
+     * @dev Sets the signer for the specified account.
+     *
+     * Requirements:
+     *
+     * * The `newSigner` must not be the zero address.
+     * * The caller must be the specified account.
+     *
+     * Emits a {ERC7579ECDSAValidatorSignerSet} event.
+     */
     function setSigner(address account, address newSigner) public virtual {
         require(msg.sender == account, ERC7579ECDSAValidatorNotAuthorized(msg.sender, account));
         _setSigner(account, newSigner);
     }
 
-    /// @dev Internal version of {setSigner} without access control.
+    /**
+     * @dev Internal version of {setSigner} without access control.
+     *
+     * Requirements:
+     *
+     * * The `newSigner` must not be the zero address.
+     *
+     * Emits a {ERC7579ECDSAValidatorSignerSet} event.
+     */
     function _setSigner(address account, address newSigner) internal virtual {
         require(newSigner != address(0), ERC7579ECDSAValidatorInvalidSigner(newSigner));
         _signers[account] = newSigner;
         emit ERC7579ECDSAValidatorSignerSet(account, newSigner);
     }
 
-    /// @dev Extracts the signer address from the provided data.
+    /// @dev Extracts the signer address from the provided data for onInstall.
     function _extractSigner(bytes calldata data) internal pure virtual returns (address) {
         return address(bytes20(data[:20]));
     }
