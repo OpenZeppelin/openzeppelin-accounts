@@ -15,10 +15,8 @@ import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-AccountERC7579.sol";
-import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {OpenAccount} from "../../src/OpenAccount.sol";
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
-import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 contract OpenAccountMock is OpenAccount {
     constructor() EIP712("TestAccount", "1") {}
@@ -29,7 +27,6 @@ contract ERC7579ECDSAValidatorMock is ERC7579ECDSAValidator {}
 contract ERC7579ECDSAValidatorTest is Test {
     using ERC7579Utils for *;
     using ERC4337Utils for PackedUserOperation;
-    using Strings for *;
 
     uint256 private constant MAX_ETH = type(uint128).max;
     uint256 private constant SECP256K1_CURVE_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141;
@@ -37,13 +34,6 @@ contract ERC7579ECDSAValidatorTest is Test {
     CallReceiverMock private _target;
     ERC7579ECDSAValidatorMock private _validator;
     OpenAccount private _account;
-    uint256 private _signerPrivateKey = 0x1234;
-    address private _signer = vm.addr(_signerPrivateKey);
-    uint256 private _otherPrivateKey = 0x5678;
-    address private _other = vm.addr(_otherPrivateKey);
-
-    event ERC7579ECDSAValidatorInvalidSignerLength();
-    event ERC7579ECDSAValidatorNotAuthorized(address caller, address account);
 
     function setUp() public {
         // Deploy target contract
@@ -95,12 +85,12 @@ contract ERC7579ECDSAValidatorTest is Test {
         assertEq(_validator.signer(address(_account)), address(0));
     }
 
-    function testSetSigner(address newSigner) public {
-        vm.assume(newSigner != address(0));
+    function testSetSigner(address initialSigner, address newSigner) public {
+        vm.assume(newSigner != address(0) && initialSigner != address(0));
 
         // Install initial signer
         vm.prank(address(_account));
-        _validator.onInstall(abi.encodePacked(_signer));
+        _validator.onInstall(abi.encodePacked(initialSigner));
 
         // Set new signer
         vm.prank(address(_account));
@@ -154,12 +144,16 @@ contract ERC7579ECDSAValidatorTest is Test {
         assertEq(result, bytes4(0xffffffff));
     }
 
-    function testIsValidSignatureWithSenderInvalidSignature(bytes32 messageHash, bytes memory invalidSignature) public {
-        vm.assume(invalidSignature.length != 65); // Valid ECDSA signature is 65 bytes
+    function testIsValidSignatureWithSenderInvalidSignature(
+        address initialSigner,
+        bytes32 messageHash,
+        bytes memory invalidSignature
+    ) public {
+        vm.assume(initialSigner != address(0));
 
         // Install signer
         vm.prank(address(_account));
-        _validator.onInstall(abi.encodePacked(_signer));
+        _validator.onInstall(abi.encodePacked(initialSigner));
 
         // Test validation with invalid signature
         vm.prank(address(_account));
@@ -186,7 +180,7 @@ contract ERC7579ECDSAValidatorTest is Test {
 
     function testValidateUserOp(uint256 privateKey, uint256 nonce, uint256 value) public {
         privateKey = bound(privateKey, 1, SECP256K1_CURVE_ORDER - 1);
-        vm.assume(value <= MAX_ETH);
+        value = bound(value, 0, MAX_ETH);
         address signerAddr = vm.addr(privateKey);
 
         // Install signer
