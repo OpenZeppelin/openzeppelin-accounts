@@ -92,21 +92,23 @@ contract ERC7579P256ValidatorTest is Test {
         assertEq(_qy2, bytes32(0));
     }
 
-    function testSetSigner(uint256 seed) public {
-        uint256 privateKey = bound(seed, 1, P256.N - 1);
-        (uint256 newQx, uint256 newQy) = vm.publicKeyP256(privateKey);
+    function testSetSigner(uint256 seedA, uint256 seedB) public {
+        uint256 privateKeyA = bound(seedA, 1, P256.N - 1);
+        (uint256 newQxA, uint256 newQyA) = vm.publicKeyP256(privateKeyA);
 
         // Install initial signer
         vm.prank(address(_account));
-        _validator.onInstall(abi.encodePacked(newQx, newQy));
+        _validator.onInstall(abi.encodePacked(newQxA, newQyA));
 
         // Set new signer
+        uint256 privateKeyB = bound(seedB, 1, P256.N - 1);
+        (uint256 newQxB, uint256 newQyB) = vm.publicKeyP256(privateKeyB);
         vm.prank(address(_account));
-        _validator.setSigner(address(_account), bytes32(newQx), bytes32(newQy));
+        _validator.setSigner(address(_account), bytes32(newQxB), bytes32(newQyB));
 
         (bytes32 _qx2, bytes32 _qy2) = _validator.signer(address(_account));
-        assertEq(_qx2, bytes32(newQx));
-        assertEq(_qy2, bytes32(newQy));
+        assertEq(_qx2, bytes32(newQxB));
+        assertEq(_qy2, bytes32(newQyB));
     }
 
     function testIsValidSignatureWithSender(bytes32 messageHash, uint256 seed) public {

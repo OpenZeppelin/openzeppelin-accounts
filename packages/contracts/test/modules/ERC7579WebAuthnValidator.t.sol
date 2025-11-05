@@ -18,6 +18,7 @@ import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-A
 import {OpenAccount} from "../../src/OpenAccount.sol";
 import {P256} from "@openzeppelin/contracts/utils/cryptography/P256.sol";
 import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
+import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 
 contract OpenAccountMock is OpenAccount {
     constructor() EIP712("TestAccount", "1") {}
@@ -58,6 +59,31 @@ contract ERC7579WebAuthnValidatorTest is Test {
                     ".bytecode"
                 )
             )
+        );
+    }
+
+    function testIsValidSignatureWithSender(bytes32 messageHash, uint256 seed) public {
+        uint256 privateKey = bound(seed, 1, P256.N - 1);
+        (uint256 qx, uint256 qy) = vm.publicKeyP256(privateKey);
+
+        // Install WebAuthn signer
+        vm.prank(address(_account));
+        _validator.onInstall(abi.encodePacked(qx, qy));
+
+        // Prepare WebAuthn message
+        (bytes32 hashToSign, bytes memory authenticatorData, string memory clientDataJSON) = _prepareWebAuthnMessage(
+            messageHash
+        );
+
+        // Sign message
+        (bytes32 r, bytes32 s) = vm.signP256(privateKey, hashToSign);
+        bytes memory signature = abi.encode(r, s, 23, 1, authenticatorData, clientDataJSON);
+
+        // Test validation through isValidSignatureWithSender
+        vm.prank(address(_account));
+        assertEq(
+            _validator.isValidSignatureWithSender(address(this), messageHash, signature),
+            IERC1271.isValidSignature.selector
         );
     }
 
