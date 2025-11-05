@@ -91,8 +91,10 @@ describe('ERC7579ECDSAValidator', function () {
         const originalSigner = await this.mock.signer(this.mockAccount.address);
 
         // Subsequent installation should not emit event since it's a no-op
-        await expect(this.mockFromAccount.onInstall(this.newSignerInstallData))
-          .to.not.emit(this.mock, 'ERC7579ECDSAValidatorSignerSet');
+        await expect(this.mockFromAccount.onInstall(this.newSignerInstallData)).to.not.emit(
+          this.mock,
+          'ERC7579ECDSAValidatorSignerSet',
+        );
         await expect(this.mock.signer(this.mockAccount.address)).to.eventually.equal(originalSigner);
       });
 
@@ -140,8 +142,7 @@ describe('ERC7579ECDSAValidator', function () {
 
       it('does nothing when no signer is configured', async function () {
         // Should not emit event when no signer is configured (no-op)
-        await expect(this.mockFromAccount.onUninstall('0x'))
-          .to.not.emit(this.mock, 'ERC7579ECDSAValidatorSignerSet');
+        await expect(this.mockFromAccount.onUninstall('0x')).to.not.emit(this.mock, 'ERC7579ECDSAValidatorSignerSet');
 
         await expect(this.mock.signer(this.mockAccount.address)).to.eventually.equal(ethers.ZeroAddress);
       });
