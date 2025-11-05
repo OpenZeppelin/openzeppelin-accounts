@@ -24,9 +24,7 @@ contract OpenAccountMock is OpenAccount {
     constructor() EIP712("TestAccount", "1") {}
 }
 
-contract ERC7579ECDSAValidatorMock is ERC7579ECDSAValidator {
-    // Concrete implementation for testing
-}
+contract ERC7579ECDSAValidatorMock is ERC7579ECDSAValidator {}
 
 contract ERC7579ECDSAValidatorTest is Test {
     using ERC7579Utils for *;
