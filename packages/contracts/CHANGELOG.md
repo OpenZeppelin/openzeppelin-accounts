@@ -3,6 +3,10 @@
 - Add `ERC7579P256Validator` module, implementing P256-based signature validation for ERC-7579 accounts.
 - Add `ERC7579WebAuthnValidator` module, implementing WebAuthn-based signature validation for ERC-7579 accounts.
 
+## 07-11-2025
+
+- Add `ERC7579ECDSAValidator` module, implementing ECDSA-based signature validation for ERC-7579 accounts.
+
 ## 28-10-2025
 
 - Add `ERC7579Validator` abstract contract, providing a base interface for ERC-7579 validator modules. Implements basic validator wiring, including the `_rawERC7579Validation` interface for custom signature validation logic.
