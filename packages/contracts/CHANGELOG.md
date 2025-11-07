@@ -1,4 +1,4 @@
-## 05-11-2025
+## 07-11-2025
 
 - Add `ERC7579ECDSAValidator` module, implementing ECDSA-based signature validation for ERC-7579 accounts.
 
