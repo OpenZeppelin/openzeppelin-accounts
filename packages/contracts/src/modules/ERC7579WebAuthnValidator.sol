@@ -39,11 +39,9 @@ abstract contract ERC7579WebAuthnValidator is ERC7579P256Validator {
         bytes32 hash,
         bytes calldata signature
     ) internal view virtual override returns (bool) {
-        (bytes32 qx, bytes32 qy) = signer(account);
         (bool decodeSuccess, WebAuthn.WebAuthnAuth calldata auth) = WebAuthn.tryDecodeAuth(signature);
-        return
-            decodeSuccess
-                ? WebAuthn.verify(abi.encodePacked(hash), auth, qx, qy)
-                : super._rawERC7579Validation(account, hash, signature);
+        if (!decodeSuccess) return super._rawERC7579Validation(account, hash, signature);
+        (bytes32 qx, bytes32 qy) = signer(account);
+        return WebAuthn.verify(abi.encodePacked(hash), auth, qx, qy);
     }
 }
