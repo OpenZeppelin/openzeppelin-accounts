@@ -183,7 +183,7 @@ describe('ERC7579P256Validator', function () {
       it('reverts when trying to install with zero coordinates', async function () {
         const zeroData = ethers.solidityPacked(['bytes32', 'bytes32'], [ethers.ZeroHash, ethers.ZeroHash]);
         await expect(this.mockFromAccount.onInstall(zeroData))
-          .to.be.revertedWithCustomError(this.mock, 'ERC7579P256ValidatorInvalidSigner')
+          .to.be.revertedWithCustomError(this.mock, 'ERC7579P256ValidatorInvalidPublicKey')
           .withArgs(ethers.ZeroHash, ethers.ZeroHash);
       });
     });
@@ -240,7 +240,7 @@ describe('ERC7579P256Validator', function () {
 
       it('reverts when trying to set signer to zero coordinates', async function () {
         await expect(this.mockFromAccount.setSigner(this.mockAccount.address, ethers.ZeroHash, ethers.ZeroHash))
-          .to.be.revertedWithCustomError(this.mock, 'ERC7579P256ValidatorInvalidSigner')
+          .to.be.revertedWithCustomError(this.mock, 'ERC7579P256ValidatorInvalidPublicKey')
           .withArgs(ethers.ZeroHash, ethers.ZeroHash);
       });
 
@@ -438,7 +438,7 @@ describe('ERC7579P256Validator', function () {
 
       // Attempting to set to zero coordinates should fail
       await expect(this.mockFromAccount.setSigner(this.mockAccount.address, ethers.ZeroHash, ethers.ZeroHash))
-        .to.be.revertedWithCustomError(this.mock, 'ERC7579P256ValidatorInvalidSigner')
+        .to.be.revertedWithCustomError(this.mock, 'ERC7579P256ValidatorInvalidPublicKey')
         .withArgs(ethers.ZeroHash, ethers.ZeroHash);
 
       // Signer should remain unchanged

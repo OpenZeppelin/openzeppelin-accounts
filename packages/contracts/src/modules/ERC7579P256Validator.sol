@@ -33,9 +33,6 @@ abstract contract ERC7579P256Validator is ERC7579Validator {
     /// @dev The provided P256 public key is invalid.
     error ERC7579P256ValidatorInvalidPublicKey(bytes32 qx, bytes32 qy);
 
-    /// @dev The provided signer coordinates are invalid.
-    error ERC7579P256ValidatorInvalidSigner(bytes32 qx, bytes32 qy);
-
     /// @dev Emitted when the signer is set.
     event ERC7579P256ValidatorSignerSet(address indexed account, bytes32 qx, bytes32 qy);
 
@@ -124,7 +121,6 @@ abstract contract ERC7579P256Validator is ERC7579Validator {
      * Emits a {ERC7579P256ValidatorSignerSet} event.
      */
     function _setSigner(address account, bytes32 qx, bytes32 qy) internal virtual {
-        require(qx != bytes32(0) || qy != bytes32(0), ERC7579P256ValidatorInvalidSigner(qx, qy));
         require(P256.isValidPublicKey(qx, qy), ERC7579P256ValidatorInvalidPublicKey(qx, qy));
 
         _signers[account].qx = qx;
