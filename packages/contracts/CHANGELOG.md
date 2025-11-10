@@ -1,4 +1,4 @@
-## XX-11-2025
+## 10-11-2025
 
 - Add `ERC7579P256Validator` module, implementing P256-based signature validation for ERC-7579 accounts.
 - Add `ERC7579WebAuthnValidator` module, implementing WebAuthn-based signature validation for ERC-7579 accounts.
