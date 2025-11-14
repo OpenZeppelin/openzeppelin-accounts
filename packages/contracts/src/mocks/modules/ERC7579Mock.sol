@@ -8,7 +8,9 @@ import {
     IERC7579Hook
 } from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
-import {ERC7579Validator} from "../../modules/ERC7579Validator.sol";
+import {ERC7579Validator} from "../../modules/validators/ERC7579Validator.sol";
+import {ERC7579Executor} from "../../modules/executors/ERC7579Executor.sol";
+import {ERC7579DelayedExecutor} from "../../modules/executors/ERC7579DelayedExecutor.sol";
 
 abstract contract ERC7579ModuleMock is IERC7579Module {
     uint256 private _moduleTypeId;
@@ -98,5 +100,30 @@ contract ERC7579ValidatorMock is ERC7579Validator {
         bytes calldata signature
     ) internal view virtual override returns (bool) {
         return SignatureChecker.isValidSignatureNow(_associatedSigners[account], hash, signature);
+    }
+}
+
+contract ERC7579ExecutorMock is ERC7579Executor {
+    function onInstall(bytes calldata data) external {}
+
+    function onUninstall(bytes calldata data) external {}
+
+    function _validateExecution(
+        address,
+        bytes32,
+        bytes32,
+        bytes calldata data
+    ) internal pure override returns (bytes calldata) {
+        return data;
+    }
+}
+
+abstract contract ERC7579DelayedExecutorMock is ERC7579DelayedExecutor {
+    function _validateSchedule(address account, bytes32, bytes32, bytes calldata) internal view override {
+        require(msg.sender == account);
+    }
+
+    function _validateCancel(address account, bytes32, bytes32, bytes calldata) internal view override {
+        require(msg.sender == account);
     }
 }
