@@ -11,18 +11,21 @@ import {ERC7579MultisigWeighted} from "../ERC7579MultisigWeighted.sol";
  * with weighted signatures.
  */
 abstract contract ERC7579MultisigWeightedValidator is ERC7579MultisigValidator, ERC7579MultisigWeighted {
+    /// @inheritdoc ERC7579MultisigWeighted
     function onInstall(
         bytes calldata initData
     ) public virtual override(ERC7579Multisig, ERC7579MultisigWeighted, IERC7579Module) {
         super.onInstall(initData);
     }
 
+    /// @inheritdoc ERC7579MultisigWeighted
     function onUninstall(
         bytes calldata data
     ) public virtual override(ERC7579Multisig, ERC7579MultisigWeighted, IERC7579Module) {
         super.onUninstall(data);
     }
 
+    /// @inheritdoc ERC7579MultisigWeighted
     function _addSigners(
         address account,
         bytes[] memory newSigners
@@ -30,6 +33,7 @@ abstract contract ERC7579MultisigWeightedValidator is ERC7579MultisigValidator, 
         super._addSigners(account, newSigners);
     }
 
+    /// @inheritdoc ERC7579MultisigWeighted
     function _removeSigners(
         address account,
         bytes[] memory oldSigners
@@ -37,12 +41,14 @@ abstract contract ERC7579MultisigWeightedValidator is ERC7579MultisigValidator, 
         super._removeSigners(account, oldSigners);
     }
 
+    /// @inheritdoc ERC7579MultisigWeighted
     function _validateReachableThreshold(
         address account
     ) internal view virtual override(ERC7579Multisig, ERC7579MultisigWeighted) {
         super._validateReachableThreshold(account);
     }
 
+    /// @inheritdoc ERC7579MultisigWeighted
     function _validateThreshold(
         address account,
         bytes[] calldata validatingSigners
