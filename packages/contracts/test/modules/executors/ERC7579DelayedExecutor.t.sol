@@ -2,8 +2,8 @@
 pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC7579DelayedExecutorMock} from "../../src/mocks/modules/ERC7579Mock.sol";
-import {CallReceiverMock} from "../../src/mocks/CallReceiverMock.sol";
+import {ERC7579DelayedExecutorMock} from "../../../src/mocks/modules/ERC7579Mock.sol";
+import {CallReceiverMock} from "../../../src/mocks/CallReceiverMock.sol";
 import {
     ERC7579Utils,
     Mode,
@@ -16,8 +16,8 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-AccountERC7579.sol";
 import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {OpenAccount} from "../../src/OpenAccount.sol";
-import {ERC7579DelayedExecutor} from "../../src/modules/ERC7579DelayedExecutor.sol";
+import {OpenAccount} from "../../../src/OpenAccount.sol";
+import {ERC7579DelayedExecutor} from "../../../src/modules/executors/ERC7579DelayedExecutor.sol";
 import {console} from "forge-std/console.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 

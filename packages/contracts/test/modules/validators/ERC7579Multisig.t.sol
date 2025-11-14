@@ -2,8 +2,8 @@
 pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC7579Multisig} from "../../src/modules/ERC7579Multisig.sol";
-import {CallReceiverMock} from "../../src/mocks/CallReceiverMock.sol";
+import {ERC7579Multisig} from "../../../src/modules/validators/ERC7579Multisig.sol";
+import {CallReceiverMock} from "../../../src/mocks/CallReceiverMock.sol";
 import {
     ERC7579Utils,
     Mode,
@@ -16,7 +16,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-AccountERC7579.sol";
 import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {OpenAccount} from "../../src/OpenAccount.sol";
+import {OpenAccount} from "../../../src/OpenAccount.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 contract OpenAccountMock is OpenAccount {

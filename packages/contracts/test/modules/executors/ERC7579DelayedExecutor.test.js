@@ -2,18 +2,18 @@ const { ethers, predeploy } = require('hardhat');
 const { expect } = require('chai');
 const { loadFixture, time } = require('@nomicfoundation/hardhat-network-helpers');
 
-const { impersonate } = require('../../../../lib/@openzeppelin-contracts/test/helpers/account');
-const { ERC4337Helper } = require('../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
+const { impersonate } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/account');
+const { ERC4337Helper } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
 const {
   MODULE_TYPE_EXECUTOR,
   CALL_TYPE_CALL,
   EXEC_TYPE_DEFAULT,
   encodeMode,
   encodeSingle,
-} = require('../../../../lib/@openzeppelin-contracts/test/helpers/erc7579');
-const { ERC7579OperationState } = require('../helpers/enums');
+} = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc7579');
+const { ERC7579OperationState } = require('../../helpers/enums');
 
-const { shouldBehaveLikeERC7579Module } = require('./ERC7579Module.behavior');
+const { shouldBehaveLikeERC7579Module } = require('../ERC7579Module.behavior');
 const { solidityPacked } = require('ethers');
 
 async function fixture() {

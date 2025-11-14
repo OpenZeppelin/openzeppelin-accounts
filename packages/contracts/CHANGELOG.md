@@ -1,3 +1,9 @@
+## 14-11-2025
+
+- Rearrange modules folder into `validators` and `executors` folders.
+  - `ERC7579Validator`, `ERC7579Multisig`, `ERC7579MultisigWeighted`, `ERC7579P256Validator`, `ERC7579WebAuthnValidator`, `ERC7579ECDSAValidator` contracts are now in the `validators` folder.
+  - `ERC7579Executor`, `ERC7579DelayedExecutor` contracts are now in the `executors` folder.
+
 ## 10-11-2025
 
 - Add `ERC7579P256Validator` module, implementing P256-based signature validation for ERC-7579 accounts.

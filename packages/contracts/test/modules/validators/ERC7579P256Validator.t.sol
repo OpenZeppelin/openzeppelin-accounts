@@ -2,8 +2,8 @@
 pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC7579P256Validator} from "../../src/modules/ERC7579P256Validator.sol";
-import {CallReceiverMock} from "../../src/mocks/CallReceiverMock.sol";
+import {ERC7579P256Validator} from "../../../src/modules/validators/ERC7579P256Validator.sol";
+import {CallReceiverMock} from "../../../src/mocks/CallReceiverMock.sol";
 import {
     ERC7579Utils,
     Mode,
@@ -15,7 +15,7 @@ import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-AccountERC7579.sol";
-import {OpenAccount} from "../../src/OpenAccount.sol";
+import {OpenAccount} from "../../../src/OpenAccount.sol";
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import {P256} from "@openzeppelin/contracts/utils/cryptography/P256.sol";
 
