@@ -2,85 +2,24 @@
 pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC7579MultisigWeighted} from "../../../src/modules/validators/ERC7579MultisigWeighted.sol";
-import {ERC7579Multisig} from "../../../src/modules/validators/ERC7579Multisig.sol";
-import {CallReceiverMock} from "../../../src/mocks/CallReceiverMock.sol";
-import {
-    ERC7579Utils,
-    Mode,
-    ModeSelector,
-    ModePayload
-} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
-import {ERC4337Utils, IEntryPointExtra} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
+import {ERC7579Multisig} from "../../src/modules/ERC7579Multisig.sol";
+import {ERC7579MultisigWeighted} from "../../src/modules/ERC7579MultisigWeighted.sol";
+import {CallReceiverMock} from "../../src/mocks/CallReceiverMock.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
-import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-AccountERC7579.sol";
 import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {OpenAccount} from "../../../src/OpenAccount.sol";
-import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+import {OpenAccount} from "../../src/OpenAccount.sol";
 
 contract OpenAccountMock is OpenAccount {
     constructor() EIP712("TestAccount", "1") {}
 }
 
 contract ERC7579MultisigWeightedMock is ERC7579MultisigWeighted {
-    function onInstall(bytes calldata initData) public override {
-        super.onInstall(initData);
-    }
-
-    function onUninstall(bytes calldata data) public override {
-        super.onUninstall(data);
-    }
-
-    // Expose internal function for testing
-    function exposed_rawERC7579Validation(
-        address account,
-        bytes32 hash,
-        bytes calldata signature
-    ) external view returns (bool) {
-        return _rawERC7579Validation(account, hash, signature);
-    }
-
-    // Expose internal functions for testing
-    function exposed_decodeMultisigWeightedInitData(
-        bytes calldata initData
-    ) external pure returns (bytes[] calldata signers, uint64 threshold, uint64[] calldata weights) {
-        return _decodeMultisigWeightedInitData(initData);
-    }
-
-    function exposed_setSignerWeights(address account, bytes[] memory signers, uint64[] memory weights) external {
-        _setSignerWeights(account, signers, weights);
-    }
-
-    function exposed_addSigners(address account, bytes[] memory newSigners) external {
-        _addSigners(account, newSigners);
-    }
-
-    function exposed_removeSigners(address account, bytes[] memory oldSigners) external {
-        _removeSigners(account, oldSigners);
-    }
-
-    function exposed_validateReachableThreshold(address account) external view {
-        _validateReachableThreshold(account);
-    }
-
-    function exposed_validateThreshold(
-        address account,
-        bytes[] calldata validatingSigners
-    ) external view returns (bool) {
-        return _validateThreshold(account, validatingSigners);
+    function isModuleType(uint256) public pure override returns (bool) {
+        return true; // All types are valid for this mock
     }
 }
 
 contract ERC7579MultisigWeightedTest is Test {
-    using ERC7579Utils for *;
-    using ERC4337Utils for PackedUserOperation;
-    using Strings for *;
-    using SignatureChecker for bytes32;
-
-    uint256 private constant MAX_ETH = type(uint128).max;
-
     CallReceiverMock private _target;
     ERC7579MultisigWeightedMock private _multisig;
     OpenAccount private _account;
@@ -94,22 +33,6 @@ contract ERC7579MultisigWeightedTest is Test {
 
         // Deploy account
         _account = new OpenAccountMock();
-
-        vm.deal(address(_account), MAX_ETH);
-
-        // Setup entrypoint
-        address entrypoint = address(ERC4337Utils.ENTRYPOINT_V08);
-        vm.deal(entrypoint, MAX_ETH);
-        vm.etch(
-            entrypoint,
-            vm.readFileBinary(
-                string.concat(
-                    "packages/contracts/node_modules/hardhat-predeploy/bin/",
-                    Strings.toChecksumHexString(entrypoint),
-                    ".bytecode"
-                )
-            )
-        );
     }
 
     function testWeightedMultisigInstallation(uint64 numSigners) public {
@@ -128,61 +51,6 @@ contract ERC7579MultisigWeightedTest is Test {
             assertTrue(_multisig.isSigner(address(_account), signers[i]));
             assertEq(_multisig.signerWeight(address(_account), signers[i]), weights[i]);
         }
-    }
-
-    function testValidateUserOp(uint256 numSigners) public {
-        numSigners = bound(numSigners, 1, 10);
-        (uint256[] memory keys, bytes[] memory signers) = _buildSigners(numSigners);
-        (uint64[] memory weights, uint64 totalWeight) = _buildWeights(numSigners);
-
-        bytes memory initData = abi.encode(signers, totalWeight, weights);
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), initData);
-
-        PackedUserOperation memory userOp = _prepareUserOperation();
-        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(userOp);
-
-        bytes[] memory signatures = new bytes[](signers.length);
-
-        for (uint256 i = 0; i < signers.length; i++) {
-            (uint8 v, bytes32 r, bytes32 s) = vm.sign(keys[i], userOpHash);
-            signatures[i] = abi.encodePacked(r, s, v);
-        }
-
-        bytes memory multisigSignature = abi.encode(signers, signatures);
-        userOp.signature = multisigSignature;
-
-        vm.prank(address(_account));
-        uint256 result = _multisig.validateUserOp(userOp, userOpHash);
-
-        assertEq(result, ERC4337Utils.SIG_VALIDATION_SUCCESS);
-    }
-
-    function testValidateUserOpInsufficientWeight(uint256 numSigners) public {
-        numSigners = bound(numSigners, 1, 10);
-        (, bytes[] memory signers) = _buildSigners(numSigners);
-        (uint64[] memory weights, uint64 totalWeight) = _buildWeights(numSigners);
-
-        bytes memory initData = abi.encode(signers, totalWeight, weights);
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), initData);
-
-        PackedUserOperation memory userOp = _prepareUserOperation();
-        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(userOp);
-
-        (uint256[] memory signingKeys, bytes[] memory signingSigners) = _buildSigners(numSigners - 1, 1);
-        bytes[] memory signatures = new bytes[](signingSigners.length);
-
-        for (uint256 i = 0; i < signingSigners.length; i++) {
-            (uint8 v, bytes32 r, bytes32 s) = vm.sign(signingKeys[i], userOpHash);
-            signatures[i] = abi.encodePacked(r, s, v);
-        }
-
-        bytes memory multisigSignature = abi.encode(signingSigners, signatures);
-        userOp.signature = multisigSignature;
-
-        vm.prank(address(_account));
-        uint256 result = _multisig.validateUserOp(userOp, userOpHash);
-
-        assertEq(result, ERC4337Utils.SIG_VALIDATION_FAILED);
     }
 
     function testSetSignerWeights(uint64 numSigners, uint256 updateCount) public {
@@ -407,36 +275,5 @@ contract ERC7579MultisigWeightedTest is Test {
             totalWeight += weights[i];
         }
         return (weights, totalWeight);
-    }
-
-    function _prepareUserOperation() private view returns (PackedUserOperation memory) {
-        return
-            PackedUserOperation({
-                sender: address(_account),
-                nonce: uint256(uint160(bytes20(address(_multisig)))) << 96,
-                initCode: bytes(""),
-                callData: abi.encodeCall(
-                    AccountERC7579.execute,
-                    (
-                        Mode.unwrap(
-                            ERC7579Utils.CALLTYPE_SINGLE.encodeMode(
-                                ERC7579Utils.EXECTYPE_DEFAULT,
-                                ModeSelector.wrap(0x00000000),
-                                ModePayload.wrap(0x00000000)
-                            )
-                        ),
-                        abi.encodePacked(
-                            address(_target),
-                            uint256(0),
-                            abi.encodeCall(CallReceiverMock.mockFunction, ())
-                        )
-                    )
-                ),
-                preVerificationGas: 100000,
-                accountGasLimits: bytes32(abi.encodePacked(uint128(100000), uint128(100000))),
-                gasFees: bytes32(abi.encodePacked(uint128(1000000), uint128(1000000))),
-                paymasterAndData: bytes(""),
-                signature: bytes("")
-            });
     }
 }

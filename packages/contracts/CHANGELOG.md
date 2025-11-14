@@ -3,6 +3,8 @@
 - Rearrange modules folder into `validators` and `executors` folders.
   - `ERC7579Validator`, `ERC7579Multisig`, `ERC7579MultisigWeighted`, `ERC7579P256Validator`, `ERC7579WebAuthnValidator`, `ERC7579ECDSAValidator` contracts are now in the `validators` folder.
   - `ERC7579Executor`, `ERC7579DelayedExecutor` contracts are now in the `executors` folder.
+- Rename `ERC7579Multisig` and `ERC7579MultisigWeighted` to `ERC7579MultisigValidator` and `ERC7579MultisigWeightedValidator`, respectively.
+- Add `ERC7579Multisig` and `ERC7579MultisigWeighted` abstract contracts, providing a base interface for multisignature authorization for ERC-7579 accounts.
 
 ## 10-11-2025
 
