@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
+import {ERC7579Multisig} from "./ERC7579Multisig.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import {ERC7579Multisig} from "./ERC7579Multisig.sol";
 
 /**
  * @dev Extension of {ERC7579Multisig} that supports weighted signatures.
