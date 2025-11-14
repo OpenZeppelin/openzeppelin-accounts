@@ -2,17 +2,17 @@ const { ethers, predeploy } = require('hardhat');
 const { expect } = require('chai');
 const { loadFixture } = require('@nomicfoundation/hardhat-network-helpers');
 
-const { impersonate } = require('../../../../lib/@openzeppelin-contracts/test/helpers/account');
-const { ERC4337Helper } = require('../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
+const { impersonate } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/account');
+const { ERC4337Helper } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
 const {
   MODULE_TYPE_EXECUTOR,
   encodeSingle,
   encodeMode,
   CALL_TYPE_CALL,
   EXEC_TYPE_DEFAULT,
-} = require('../../../../lib/@openzeppelin-contracts/test/helpers/erc7579');
+} = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc7579');
 
-const { shouldBehaveLikeERC7579Module } = require('./ERC7579Module.behavior');
+const { shouldBehaveLikeERC7579Module } = require('../ERC7579Module.behavior');
 
 async function fixture() {
   // Deploy ERC-7579 validator module

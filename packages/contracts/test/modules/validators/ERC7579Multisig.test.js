@@ -2,22 +2,22 @@ const { ethers, predeploy } = require('hardhat');
 const { expect } = require('chai');
 const { loadFixture } = require('@nomicfoundation/hardhat-network-helpers');
 
-const { impersonate } = require('../../../../lib/@openzeppelin-contracts/test/helpers/account');
-const { ERC4337Helper } = require('../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
+const { impersonate } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/account');
+const { ERC4337Helper } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
 const {
   MODULE_TYPE_VALIDATOR,
   CALL_TYPE_CALL,
   EXEC_TYPE_DEFAULT,
   encodeMode,
   encodeSingle,
-} = require('../../../../lib/@openzeppelin-contracts/test/helpers/erc7579');
+} = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc7579');
 const {
   NonNativeSigner,
   MultiERC7913SigningKey,
-} = require('../../../../lib/@openzeppelin-contracts/test/helpers/signers');
-const { MAX_UINT64 } = require('../../../../lib/@openzeppelin-contracts/test/helpers/constants');
+} = require('../../../../../lib/@openzeppelin-contracts/test/helpers/signers');
+const { MAX_UINT64 } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/constants');
 
-const { shouldBehaveLikeERC7579Module } = require('./ERC7579Module.behavior');
+const { shouldBehaveLikeERC7579Module } = require('../ERC7579Module.behavior');
 
 // Prepare signers in advance
 const signerECDSA1 = ethers.Wallet.createRandom();

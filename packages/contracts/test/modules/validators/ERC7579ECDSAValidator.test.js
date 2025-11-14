@@ -2,12 +2,12 @@ const { ethers, predeploy } = require('hardhat');
 const { loadFixture } = require('@nomicfoundation/hardhat-network-helpers');
 const { expect } = require('chai');
 
-const { impersonate } = require('../../../../lib/@openzeppelin-contracts/test/helpers/account');
-const { getDomain, PackedUserOperation } = require('../../../../lib/@openzeppelin-contracts/test/helpers/eip712');
-const { ERC4337Helper } = require('../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
-const { MODULE_TYPE_VALIDATOR } = require('../../../../lib/@openzeppelin-contracts/test/helpers/erc7579');
+const { impersonate } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/account');
+const { getDomain, PackedUserOperation } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/eip712');
+const { ERC4337Helper } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
+const { MODULE_TYPE_VALIDATOR } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc7579');
 
-const { shouldBehaveLikeERC7579Module, shouldBehaveLikeERC7579Validator } = require('./ERC7579Module.behavior');
+const { shouldBehaveLikeERC7579Module, shouldBehaveLikeERC7579Validator } = require('../ERC7579Module.behavior');
 
 async function fixture() {
   const [other] = await ethers.getSigners();
