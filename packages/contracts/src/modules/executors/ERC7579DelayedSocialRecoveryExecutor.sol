@@ -98,7 +98,9 @@ abstract contract ERC7579DelayedSocialRecoveryExecutor is
         bytes32 mode,
         bytes calldata data
     ) internal virtual override(ERC7579DelayedExecutor, ERC7579SocialRecoveryExecutor) returns (bytes calldata) {
-        return super._validateExecution(account, salt, mode, data);
+        // Intentionally misses side effects of ERC7579SocialRecoveryExecutor._validateExecution
+        // since we want validation to be done by _validateSchedule
+        return ERC7579DelayedExecutor._validateExecution(account, salt, mode, data);
     }
 
     /**
