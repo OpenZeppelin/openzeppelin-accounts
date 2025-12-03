@@ -54,8 +54,7 @@ abstract contract ERC7579Multisig is IERC7579Module {
 
     /**
      * @dev Sets up the module's initial configuration when installed by an account.
-     * See {IERC7579Module-onInstall}. Besides the delay setup, the `initdata` can
-     * include `signers` and `threshold`.
+     * See {IERC7579Module-onInstall}. The `initData` encodes `signers` and `threshold`.
      *
      * See {_decodeMultisigInitData} for the encoding details.
      *
@@ -63,7 +62,7 @@ abstract contract ERC7579Multisig is IERC7579Module {
      * disabled until they are added later.
      *
      * NOTE: An account can only call onInstall once. If called directly by the account,
-     * the signer will be set to the provided data. Future installations will behave as a no-op.
+     * the signers will be set to the provided data. Future installations will behave as a no-op.
      */
     function onInstall(bytes calldata initData) public virtual {
         if (initData.length > 32 && getSignerCount(msg.sender) == 0) {
@@ -271,12 +270,16 @@ abstract contract ERC7579Multisig is IERC7579Module {
     /**
      * @dev Validates that the number of signers meets the {threshold} requirement.
      * Assumes the signers were already validated. See {_validateSignatures} for more details.
+     *
+     * NOTE: Returns `false` if the threshold is 0 to prevent unconfigured multisigs
+     * from being bypassed with empty signatures.
      */
     function _validateThreshold(
         address account,
         bytes[] calldata validatingSigners
     ) internal view virtual returns (bool) {
-        return validatingSigners.length >= threshold(account);
+        uint64 requiredThreshold = threshold(account);
+        return requiredThreshold > 0 && validatingSigners.length >= requiredThreshold;
     }
 
     /**

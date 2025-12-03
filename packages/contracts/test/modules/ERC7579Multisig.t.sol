@@ -16,6 +16,16 @@ contract ERC7579MultisigMock is ERC7579Multisig {
     function isModuleType(uint256) public pure override returns (bool) {
         return true; // All types are valid for this mock
     }
+
+    /// @dev Exposes internal `_validateMultisig` for testing
+    function validateMultisig(
+        address account,
+        bytes32 hash,
+        bytes[] calldata signingSigners,
+        bytes[] calldata signatures
+    ) external view returns (bool) {
+        return _validateMultisig(account, hash, signingSigners, signatures);
+    }
 }
 
 contract ERC7579MultisigTest is Test {
@@ -193,6 +203,20 @@ contract ERC7579MultisigTest is Test {
             abi.encodeWithSelector(ERC7579Multisig.ERC7579MultisigNonexistentSigner.selector, nonExistentSigners[0])
         );
         _multisig.removeSigners(nonExistentSigners);
+    }
+
+    function testUnconfiguredMultisigRejectsEmptySignatures() public {
+        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), "");
+
+        assertEq(_multisig.getSignerCount(address(_account)), 0);
+        assertEq(_multisig.threshold(address(_account)), 0);
+
+        bytes32 hash = keccak256("test message");
+        bytes[] memory emptySigners = new bytes[](0);
+        bytes[] memory emptySignatures = new bytes[](0);
+
+        bool isValid = _multisig.validateMultisig(address(_account), hash, emptySigners, emptySignatures);
+        assertFalse(isValid, "Unconfigured multisig should reject empty signatures");
     }
 
     function _buildSigners(uint256 numSigners) private pure returns (uint256[] memory keys, bytes[] memory signers) {
