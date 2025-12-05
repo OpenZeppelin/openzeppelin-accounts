@@ -86,16 +86,14 @@ describe('ERC7579ECDSAValidator', function () {
         await expect(this.mock.signer(this.mockAccount.address)).to.eventually.equal(this.signer.address);
       });
 
-      it('does not change signer on subsequent installations', async function () {
+      it('reverts when installing twice', async function () {
         await this.mockFromAccount.onInstall(this.installData);
-        const originalSigner = await this.mock.signer(this.mockAccount.address);
 
-        // Subsequent installation should not emit event since it's a no-op
-        await expect(this.mockFromAccount.onInstall(this.newSignerInstallData)).to.not.emit(
+        // Subsequent installation should revert
+        await expect(this.mockFromAccount.onInstall(this.newSignerInstallData)).to.be.revertedWithCustomError(
           this.mock,
-          'ERC7579ECDSAValidatorSignerSet',
+          'ERC7579ECDSAValidatorAlreadyInstalled',
         );
-        await expect(this.mock.signer(this.mockAccount.address)).to.eventually.equal(originalSigner);
       });
 
       it('reverts if data is too short', async function () {

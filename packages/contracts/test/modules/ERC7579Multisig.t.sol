@@ -16,6 +16,16 @@ contract ERC7579MultisigMock is ERC7579Multisig {
     function isModuleType(uint256) public pure override returns (bool) {
         return true; // All types are valid for this mock
     }
+
+    /// @dev Exposes internal `_validateMultisig` for testing
+    function validateMultisig(
+        address account,
+        bytes32 hash,
+        bytes[] calldata signingSigners,
+        bytes[] calldata signatures
+    ) external view returns (bool) {
+        return _validateMultisig(account, hash, signingSigners, signatures);
+    }
 }
 
 contract ERC7579MultisigTest is Test {

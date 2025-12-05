@@ -24,17 +24,23 @@ function shouldBehaveLikeERC7579Multisig() {
         this.signers,
       );
       await expect(this.mock.threshold(this.mockAccount.address)).to.eventually.equal(this.threshold);
+    });
 
-      // onInstall is allowed again but is a noop
-      await this.mockFromAccount.onInstall(
-        ethers.AbiCoder.defaultAbiCoder().encode(['bytes[]', 'uint256'], [[this.nonSigner], 2]),
-      );
+    it('reverts when installing twice', async function () {
+      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
 
-      // Should still have the original signers and threshold
-      await expect(this.mock.getSigners(this.mockAccount.address, 0, MAX_UINT64)).to.eventually.deep.equal(
-        this.signers,
-      );
-      await expect(this.mock.threshold(this.mockAccount.address)).to.eventually.equal(this.threshold);
+      // onInstall reverts if already installed
+      await expect(
+        this.mockFromAccount.onInstall(
+          ethers.AbiCoder.defaultAbiCoder().encode(['bytes[]', 'uint256'], [[this.nonSigner], 2]),
+        ),
+      ).to.be.revertedWithCustomError(this.mock, 'ERC7579MultisigAlreadyInstalled');
+    });
+
+    it('reverts when installing with empty signers', async function () {
+      await expect(
+        this.mockFromAccount.onInstall(ethers.AbiCoder.defaultAbiCoder().encode(['bytes[]', 'uint256'], [[], 1])),
+      ).to.be.revertedWithCustomError(this.mock, 'ERC7579MultisigEmptySigners');
     });
 
     it('cleans up signers and threshold on uninstallation', async function () {
@@ -166,25 +172,32 @@ function shouldBehaveLikeERC7579MultisigWeighted() {
 
       // Verify threshold was set correctly
       await expect(this.mock.threshold(this.mockAccount.address)).to.eventually.equal(this.threshold);
+    });
 
-      // onInstall is allowed again but is a noop
+    it('reverts when installing twice', async function () {
+      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
+
+      // onInstall reverts if already installed
       const newSigners = [this.nonSigner];
       const newWeights = [5];
       const newThreshold = 10;
 
-      await this.mockFromAccount.onInstall(
-        ethers.AbiCoder.defaultAbiCoder().encode(
-          ['bytes[]', 'uint256', 'uint256[]'],
-          [newSigners, newThreshold, newWeights],
+      await expect(
+        this.mockFromAccount.onInstall(
+          ethers.AbiCoder.defaultAbiCoder().encode(
+            ['bytes[]', 'uint256', 'uint256[]'],
+            [newSigners, newThreshold, newWeights],
+          ),
         ),
-      );
+      ).to.be.revertedWithCustomError(this.mock, 'ERC7579MultisigAlreadyInstalled');
+    });
 
-      // Should still have the original signers, weights, and threshold
-      await expect(this.mock.getSigners(this.mockAccount.address, 0, MAX_UINT64)).to.eventually.deep.equal(
-        this.signers,
-      );
-
-      await expect(this.mock.threshold(this.mockAccount.address)).to.eventually.equal(this.threshold);
+    it('reverts when installing with empty signers', async function () {
+      await expect(
+        this.mockFromAccount.onInstall(
+          ethers.AbiCoder.defaultAbiCoder().encode(['bytes[]', 'uint256', 'uint256[]'], [[], 1, []]),
+        ),
+      ).to.be.revertedWithCustomError(this.mock, 'ERC7579MultisigEmptySigners');
     });
 
     it('cleans up signers, weights, and threshold on uninstallation', async function () {
