@@ -140,12 +140,17 @@ describe('ERC7579DelayedExecutor', function () {
       .withArgs(this.mockAccount.address, this.delay, now)
       .to.emit(this.mock, 'ERC7579ExecutorExpirationUpdated')
       .withArgs(this.mockAccount.address, this.expiration);
+  });
 
-    // onInstall is allowed again but a noop
-    await this.mockFromAccount.onInstall(
-      ethers.AbiCoder.defaultAbiCoder().encode(['uint32', 'uint32'], [time.duration.days(3), time.duration.hours(12)]),
-    );
-    await expect(this.mock.getDelay(this.mockAccount.address)).to.eventually.deep.equal([this.delay, 0, 0]);
+  it('reverts when installing twice', async function () {
+    await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
+
+    // onInstall reverts if already installed
+    await expect(
+      this.mockFromAccount.onInstall(
+        ethers.AbiCoder.defaultAbiCoder().encode(['uint32', 'uint32'], [time.duration.days(3), time.duration.hours(12)]),
+      ),
+    ).to.be.revertedWithCustomError(this.mock, 'ERC7579DelayedExecutorAlreadyInstalled');
   });
 
   it('sets default delay and expiration on installation', async function () {

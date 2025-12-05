@@ -78,6 +78,9 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
         uint48 schedule
     );
 
+    // @dev Throws if the module is already installed on the account.
+    error ERC7579DelayedExecutorAlreadyInstalled();
+
     /// @dev Emitted when a new operation is canceled.
     event ERC7579ExecutorOperationCanceled(address indexed account, bytes32 indexed operationId);
 
@@ -184,7 +187,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      * @dev Sets up the module's initial configuration when installed by an account.
      * The account calling this function becomes registered with the module.
      *
-     * The `initData` may be `abi.encodePacked(uint32(initialDelay), uint32(initialExpiration))`.
+     * The `initData` must be `abi.encodePacked(uint32(initialDelay), uint32(initialExpiration))`.
      * The delay will be set to the maximum of this value and the minimum delay if provided.
      * Otherwise, the delay will be set to {minSetback} and {defaultExpiration} respectively.
      *
@@ -192,18 +195,17 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      *
      * Requirements:
      *
-     * * The account (i.e `msg.sender`) must implement the {IERC7579ModuleConfig} interface.
+     * * The module must not be already installed on the account. Reverts with {ERC7579DelayedExecutorAlreadyInstalled} if not.
      * * `initData` must be empty or decode correctly to `(uint32, uint32)`.
      */
     function onInstall(bytes calldata initData) public virtual {
-        if (!_configs[msg.sender].installed) {
-            _configs[msg.sender].installed = true;
-            (uint32 initialDelay, uint32 initialExpiration) = _decodeDelayedExecutorInitData(initData);
-            // An old delay might be still present
-            // So we set 0 for the minimum setback relying on any old value as the minimum delay
-            _setDelay(msg.sender, initialDelay, 0);
-            _setExpiration(msg.sender, initialExpiration);
-        }
+        require(!_configs[msg.sender].installed, ERC7579DelayedExecutorAlreadyInstalled());
+        _configs[msg.sender].installed = true;
+        (uint32 initialDelay, uint32 initialExpiration) = _decodeDelayedExecutorInitData(initData);
+        // An old delay might be still present
+        // So we set 0 for the minimum setback relying on any old value as the minimum delay
+        _setDelay(msg.sender, initialDelay, 0);
+        _setExpiration(msg.sender, initialExpiration);
     }
 
     /**

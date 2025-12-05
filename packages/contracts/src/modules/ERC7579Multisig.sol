@@ -34,6 +34,9 @@ abstract contract ERC7579Multisig is IERC7579Module {
     /// @dev The `initData` is invalid.
     error ERC7579MultisigInvalidInitData();
 
+    /// @dev The `signers` array is empty.
+    error ERC7579MultisigEmptySigners();
+
     /// @dev The `signer` already exists.
     error ERC7579MultisigAlreadyExists(bytes signer);
 
@@ -49,6 +52,9 @@ abstract contract ERC7579Multisig is IERC7579Module {
     /// @dev The `threshold` is unreachable given the number of `signers`.
     error ERC7579MultisigUnreachableThreshold(uint64 signers, uint64 threshold);
 
+    /// @dev The `account` has already installed the module.
+    error ERC7579MultisigAlreadyInstalled();
+
     mapping(address account => EnumerableSet.BytesSet) private _signersSetByAccount;
     mapping(address account => uint64) private _thresholdByAccount;
 
@@ -58,18 +64,23 @@ abstract contract ERC7579Multisig is IERC7579Module {
      *
      * See {_decodeMultisigInitData} for the encoding details.
      *
-     * If no signers or threshold are provided, the multisignature functionality will be
-     * disabled until they are added later.
-     *
      * NOTE: An account can only call onInstall once. If called directly by the account,
-     * the signers will be set to the provided data. Future installations will behave as a no-op.
+     * the signers will be set to the provided data. Future installations will revert with
+     * {ERC7579MultisigAlreadyInstalled}.
+     *
+     * Requirements:
+     *
+     * * The `account` must have no signers installed. Reverts with {ERC7579MultisigAlreadyInstalled} if not.
+     * * The `signers` array must be non-empty. Reverts with {ERC7579MultisigInvalidInitData} if not.
+     * * Those of {_decodeMultisigInitData} for the decoding requirements.
+     * * Those of {_addSigners} and {_setThreshold} for signer configuration requirements.
      */
     function onInstall(bytes calldata initData) public virtual {
-        if (initData.length > 32 && getSignerCount(msg.sender) == 0) {
-            (bytes[] calldata signers_, uint64 threshold_) = _decodeMultisigInitData(initData);
-            _addSigners(msg.sender, signers_);
-            _setThreshold(msg.sender, threshold_);
-        }
+        require(getSignerCount(msg.sender) == 0, ERC7579MultisigAlreadyInstalled());
+        (bytes[] calldata signers_, uint64 threshold_) = _decodeMultisigInitData(initData);
+        require(signers_.length > 0, ERC7579MultisigEmptySigners());
+        _addSigners(msg.sender, signers_);
+        _setThreshold(msg.sender, threshold_);
     }
 
     /**
@@ -270,16 +281,12 @@ abstract contract ERC7579Multisig is IERC7579Module {
     /**
      * @dev Validates that the number of signers meets the {threshold} requirement.
      * Assumes the signers were already validated. See {_validateSignatures} for more details.
-     *
-     * NOTE: Returns `false` if the threshold is 0 to prevent unconfigured multisigs
-     * from being bypassed with empty signatures.
      */
     function _validateThreshold(
         address account,
         bytes[] calldata validatingSigners
     ) internal view virtual returns (bool) {
-        uint64 requiredThreshold = threshold(account);
-        return requiredThreshold > 0 && validatingSigners.length >= requiredThreshold;
+        return validatingSigners.length >= threshold(account);
     }
 
     /**

@@ -29,6 +29,9 @@ abstract contract ERC7579ECDSAValidator is ERC7579Validator {
     /// @dev The provided signer address is invalid.
     error ERC7579ECDSAValidatorInvalidSigner(address signer);
 
+    /// @dev The `account` has already installed the module.
+    error ERC7579ECDSAValidatorAlreadyInstalled();
+
     /// @dev Emitted when the signer is set.
     event ERC7579ECDSAValidatorSignerSet(address indexed account, address signer);
 
@@ -49,8 +52,9 @@ abstract contract ERC7579ECDSAValidator is ERC7579Validator {
      *
      * Requirements:
      *
-     * * The `data` must be at least 20 bytes.
-     * * The `data` must contain a valid signer address.
+     * * The `data` must be at least 20 bytes. Reverts with {ERC7579ECDSAValidatorInvalidSignerLength} if not.
+     * * The `data` must contain a valid signer address. Reverts with {ERC7579ECDSAValidatorInvalidSigner} if not.
+     * * The `account` must have no signer installed. Reverts with {ERC7579ECDSAValidatorAlreadyInstalled} if not.
      *
      * NOTE: An account can only set a signer once. If called directly by an account
      * that already has a signer configured, this function will behave as a no-op.
@@ -59,9 +63,8 @@ abstract contract ERC7579ECDSAValidator is ERC7579Validator {
      */
     function onInstall(bytes calldata data) public virtual override {
         require(data.length >= 20, ERC7579ECDSAValidatorInvalidSignerLength());
-        if (signer(msg.sender) == address(0)) {
-            _setSigner(msg.sender, _extractSigner(data));
-        }
+        require(signer(msg.sender) == address(0), ERC7579ECDSAValidatorAlreadyInstalled());
+        _setSigner(msg.sender, _extractSigner(data));
     }
 
     /**

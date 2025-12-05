@@ -58,22 +58,27 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
      * If weights are not provided but signers are, all signers default to weight 1.
      *
      * NOTE: An account can only call onInstall once. If called directly by the account,
-     * the signer will be set to the provided data. Future installations will behave as a no-op.
+     * the signer will be set to the provided data. Future installations will revert with
+     * {ERC7579MultisigAlreadyInstalled}.
      *
      * NOTE: This function skips `super.onInstall` to avoid setting the threshold during installation
      * since it can be greater than the total amount of signers. This functions adds the signers, sets the weights,
      * and sets the threshold.
+     *
+     * Requirements:
+     *
+     * * The `account` must have no signers installed. Reverts with {ERC7579MultisigAlreadyInstalled} if not.
+     * * Those of {_decodeMultisigWeightedInitData} for the decoding requirements.
      */
     function onInstall(bytes calldata initData) public virtual override {
-        bool installed = getSignerCount(msg.sender) > 0;
-        if (initData.length > 96 && !installed) {
-            (bytes[] calldata signers, uint64 threshold_, uint64[] calldata weights) = _decodeMultisigWeightedInitData(
-                initData
-            );
-            _addSigners(msg.sender, signers);
-            _setSignerWeights(msg.sender, signers, weights);
-            _setThreshold(msg.sender, threshold_);
-        }
+        require(getSignerCount(msg.sender) == 0, ERC7579MultisigAlreadyInstalled());
+        (bytes[] calldata signers, uint64 threshold_, uint64[] calldata weights) = _decodeMultisigWeightedInitData(
+            initData
+        );
+        require(signers.length > 0, ERC7579MultisigEmptySigners());
+        _addSigners(msg.sender, signers);
+        _setSignerWeights(msg.sender, signers, weights);
+        _setThreshold(msg.sender, threshold_);
     }
 
     /**

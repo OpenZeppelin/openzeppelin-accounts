@@ -205,20 +205,6 @@ contract ERC7579MultisigTest is Test {
         _multisig.removeSigners(nonExistentSigners);
     }
 
-    function testUnconfiguredMultisigRejectsEmptySignatures() public {
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), "");
-
-        assertEq(_multisig.getSignerCount(address(_account)), 0);
-        assertEq(_multisig.threshold(address(_account)), 0);
-
-        bytes32 hash = keccak256("test message");
-        bytes[] memory emptySigners = new bytes[](0);
-        bytes[] memory emptySignatures = new bytes[](0);
-
-        bool isValid = _multisig.validateMultisig(address(_account), hash, emptySigners, emptySignatures);
-        assertFalse(isValid, "Unconfigured multisig should reject empty signatures");
-    }
-
     function _buildSigners(uint256 numSigners) private pure returns (uint256[] memory keys, bytes[] memory signers) {
         return _buildSigners(numSigners, 0);
     }
