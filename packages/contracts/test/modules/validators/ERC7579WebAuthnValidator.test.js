@@ -141,16 +141,14 @@ describe('ERC7579WebAuthnValidator', function () {
         ]);
       });
 
-      it('does not change signer on subsequent installations', async function () {
+      it('reverts when installing twice', async function () {
         await this.mockFromAccount.onInstall(this.installData);
-        const [originalQx, originalQy] = await this.mock.signer(this.mockAccount.address);
 
-        // Subsequent installation should not emit event since it's a no-op
-        await expect(this.mockFromAccount.onInstall(this.newSignerInstallData)).to.not.emit(
+        // Subsequent installation should revert
+        await expect(this.mockFromAccount.onInstall(this.newSignerInstallData)).to.be.revertedWithCustomError(
           this.mock,
-          'ERC7579P256ValidatorSignerSet',
+          'ERC7579P256ValidatorAlreadyInstalled',
         );
-        await expect(this.mock.signer(this.mockAccount.address)).to.eventually.deep.equal([originalQx, originalQy]);
       });
 
       it('reverts if data is too short', async function () {

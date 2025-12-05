@@ -148,7 +148,10 @@ describe('ERC7579DelayedExecutor', function () {
     // onInstall reverts if already installed
     await expect(
       this.mockFromAccount.onInstall(
-        ethers.AbiCoder.defaultAbiCoder().encode(['uint32', 'uint32'], [time.duration.days(3), time.duration.hours(12)]),
+        ethers.AbiCoder.defaultAbiCoder().encode(
+          ['uint32', 'uint32'],
+          [time.duration.days(3), time.duration.hours(12)],
+        ),
       ),
     ).to.be.revertedWithCustomError(this.mock, 'ERC7579DelayedExecutorAlreadyInstalled');
   });
