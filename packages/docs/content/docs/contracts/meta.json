@@ -1,0 +1,13 @@
+{
+  "title": "Contracts",
+  "root": true,
+  "icon": "NotebookText",
+  "pages": [
+    "index",
+    "erc7579",
+    "---Modules---",
+    "multisig",
+    "validators",
+    "executors"
+  ]
+}

@@ -1,7 +1,8 @@
 {
-  "name": "docs",
-  "version": "0.0.0",
+  "name": "@open-accounts-framework/docs",
+  "version": "0.0.1",
   "private": true,
+  "description": "Documentation for the Open Accounts Framework",
   "scripts": {
     "build": "next build",
     "dev": "next dev",
@@ -15,6 +16,8 @@
     "fumadocs-mdx": "14.1.0",
     "fumadocs-ui": "16.2.3",
     "lucide-react": "^0.552.0",
+    "mermaid": "^11.12.2",
+    "next-themes": "^0.4.6",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
