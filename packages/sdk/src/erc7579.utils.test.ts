@@ -6,6 +6,9 @@ import {
   CALL_TYPE_DELEGATE,
   EXEC_TYPE_DEFAULT,
   EXEC_TYPE_TRY,
+  parseModuleTypeId,
+  parseCallType,
+  parseExecType,
   encodeMode,
   decodeMode,
   encodeSingle,
@@ -16,6 +19,9 @@ import {
   decodeDelegate,
   encodeCalls,
   decodeCalls,
+  CallType,
+  ExecType,
+  ModuleType,
 } from './erc7579.utils.js';
 
 function hexa(): fc.Arbitrary<string> {
@@ -35,6 +41,62 @@ const executionArbitrary = fc.record({
 });
 const callTypeArbitrary = fc.constantFrom(CALL_TYPE_CALL, CALL_TYPE_BATCH, CALL_TYPE_DELEGATE);
 const execTypeArbitrary = fc.constantFrom(EXEC_TYPE_DEFAULT, EXEC_TYPE_TRY);
+
+test('parseModuleTypeId handles string types correctly', t => {
+  t.is(parseModuleTypeId('validator'), 1n);
+  t.is(parseModuleTypeId('executor'), 2n);
+  t.is(parseModuleTypeId('fallback'), 3n);
+  t.is(parseModuleTypeId('hook'), 4n);
+});
+
+test('parseModuleTypeId handles numeric types correctly', t => {
+  t.is(parseModuleTypeId(1), 1n);
+  t.is(parseModuleTypeId(2), 2n);
+  t.is(parseModuleTypeId(3), 3n);
+  t.is(parseModuleTypeId(4), 4n);
+});
+
+test('parseModuleTypeId throws on invalid input', t => {
+  t.throws(() => parseModuleTypeId('invalid' as ModuleType), { message: /Invalid module type/ });
+  t.throws(() => parseModuleTypeId(5 as ModuleType), { message: /Invalid module type/ });
+  t.throws(() => parseModuleTypeId(0 as ModuleType), { message: /Invalid module type/ });
+});
+
+test('parseCallType handles string types correctly', t => {
+  t.is(parseCallType('call'), CALL_TYPE_CALL);
+  t.is(parseCallType('batchcall'), CALL_TYPE_BATCH);
+  t.is(parseCallType('delegatecall'), CALL_TYPE_DELEGATE);
+});
+
+test('parseCallType handles hex types correctly', t => {
+  t.is(parseCallType('0x00'), CALL_TYPE_CALL);
+  t.is(parseCallType('0x01'), CALL_TYPE_BATCH);
+  t.is(parseCallType('0xff'), CALL_TYPE_DELEGATE);
+  t.is(parseCallType('0xab' as CallType), '0xab');
+});
+
+test('parseCallType throws on invalid input', t => {
+  t.throws(() => parseCallType('invalid' as CallType), { message: /Invalid call type/ });
+  t.throws(() => parseCallType('nothex' as CallType), { message: /Invalid call type/ });
+});
+
+test('parseExecType handles string types correctly', t => {
+  t.is(parseExecType('default'), EXEC_TYPE_DEFAULT);
+  t.is(parseExecType('try'), EXEC_TYPE_TRY);
+});
+
+test('parseExecType handles hex types correctly', t => {
+  t.is(parseExecType('0x00'), EXEC_TYPE_DEFAULT);
+  t.is(parseExecType('0x01'), EXEC_TYPE_TRY);
+  t.is(parseExecType('0xab' as ExecType), '0xab');
+});
+
+test('parseExecType throws on invalid input', t => {
+  // @ts-expect-error - testing invalid input
+  t.throws(() => parseExecType('invalid'), { message: /Invalid exec type/ });
+  // @ts-expect-error - testing invalid input
+  t.throws(() => parseExecType('nothex'), { message: /Invalid exec type/ });
+});
 
 testProp(
   'encodeMode and decodeMode are inverses',
@@ -165,5 +227,5 @@ test('decodeSingle handles minimal data correctly', t => {
 });
 
 test('encodeBatch handles empty array', async t => {
-  await t.throwsAsync(() => encodeCalls([]), { message: /undefined/ });
+  t.throws(() => encodeCalls([]), { message: /undefined/ });
 });

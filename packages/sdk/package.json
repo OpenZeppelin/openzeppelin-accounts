@@ -18,7 +18,7 @@
   "license": "MIT",
   "dependencies": {
     "@noble/curves": "^1.9.0",
-    "viem": "^2.28.1"
+    "viem": "^2.42.0"
   },
   "devDependencies": {
     "@ava/typescript": "^5.0.0",
