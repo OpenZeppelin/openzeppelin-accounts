@@ -92,10 +92,8 @@ test('parseExecType handles hex types correctly', t => {
 });
 
 test('parseExecType throws on invalid input', t => {
-  // @ts-expect-error - testing invalid input
-  t.throws(() => parseExecType('invalid'), { message: /Invalid exec type/ });
-  // @ts-expect-error - testing invalid input
-  t.throws(() => parseExecType('nothex'), { message: /Invalid exec type/ });
+  t.throws(() => parseExecType('invalid' as ExecType), { message: /Invalid exec type/ });
+  t.throws(() => parseExecType('nothex' as ExecType), { message: /Invalid exec type/ });
 });
 
 testProp(
