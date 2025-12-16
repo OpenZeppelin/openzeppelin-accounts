@@ -51,7 +51,7 @@ contract ERC7579ValidatorTest is Test {
         vm.deal(address(_account), MAX_ETH);
 
         // Setup entrypoint
-        address entrypoint = address(ERC4337Utils.ENTRYPOINT_V08);
+        address entrypoint = address(ERC4337Utils.ENTRYPOINT_V09);
         vm.deal(entrypoint, MAX_ETH);
         vm.etch(
             entrypoint,
@@ -76,7 +76,7 @@ contract ERC7579ValidatorTest is Test {
 
         PackedUserOperation memory userOp = _prepareUserOperation();
 
-        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(userOp);
+        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
 
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(_signerPrivateKey, userOpHash);
         bytes memory signature = abi.encodePacked(r, s, v);
@@ -93,7 +93,7 @@ contract ERC7579ValidatorTest is Test {
 
         PackedUserOperation memory userOp = _prepareUserOperation();
 
-        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(userOp);
+        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
 
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(_otherPrivateKey, userOpHash);
         bytes memory signature = abi.encodePacked(r, s, v);
