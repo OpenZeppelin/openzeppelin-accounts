@@ -71,7 +71,7 @@ contract OpenAccountEnableModeTest is Test {
         _newValidator = new ERC7579ValidatorMock();
 
         // Setup entrypoint
-        address entrypoint = address(ERC4337Utils.ENTRYPOINT_V08);
+        address entrypoint = address(ERC4337Utils.ENTRYPOINT_V09);
         vm.deal(entrypoint, MAX_ETH);
         vm.etch(
             entrypoint,
@@ -97,7 +97,9 @@ contract OpenAccountEnableModeTest is Test {
         );
     }
 
-    function testEnableMode() public {
+    function testEnableMode(address bundler) public {
+        vm.assume(bundler.code.length == 0);
+
         (uint256 nonce, bytes memory initData, bytes memory installationSignature) = _prepareInstallationSignature(
             address(_newValidator),
             _newValidatorSigner,
@@ -110,7 +112,7 @@ contract OpenAccountEnableModeTest is Test {
         // Sign the user operation with the new validator's signer
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(
             _newValidatorPrivateKey,
-            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(userOp)
+            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp)
         );
         bytes memory userOpSignature = abi.encodePacked(r, s, v);
 
@@ -137,13 +139,16 @@ contract OpenAccountEnableModeTest is Test {
         // Execute the user operation
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = userOp;
-        _account.entryPoint().handleOps(ops, payable(makeAddr("beneficiary")));
+        vm.prank(bundler, bundler);
+        ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
 
         // Verify the module was installed
         assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
     }
 
-    function testEnableModeWithBatchExecution(uint256 argA, uint256 argB) public {
+    function testEnableModeWithBatchExecution(address bundler, uint256 argA, uint256 argB) public {
+        vm.assume(bundler.code.length == 0);
+
         (uint256 nonce, bytes memory initData, bytes memory installationSignature) = _prepareInstallationSignature(
             address(_newValidator),
             _newValidatorSigner,
@@ -180,7 +185,7 @@ contract OpenAccountEnableModeTest is Test {
         );
 
         // Sign the user operation with the new validator's signer
-        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(userOp);
+        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(_newValidatorPrivateKey, userOpHash);
         bytes memory userOpSignature = abi.encodePacked(r, s, v);
 
@@ -209,14 +214,17 @@ contract OpenAccountEnableModeTest is Test {
         // Execute the user operation
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = userOp;
-        _account.entryPoint().handleOps(ops, payable(makeAddr("beneficiary")));
+        vm.prank(bundler, bundler);
+        ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
 
         // Verify the module was installed
         assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
     }
 
-    function testEnableModeWithInvalidInstallationSignature(uint256 wrongKey) public {
+    function testEnableModeWithInvalidInstallationSignature(address bundler, uint256 wrongKey) public {
+        vm.assume(bundler.code.length == 0);
         vm.assume(wrongKey != _initialValidatorPrivateKey);
+
         // secp256k1 order
         wrongKey = bound(wrongKey, 1, 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141 - 1);
         (uint256 nonce, bytes memory initData, bytes memory installationSignature) = _prepareInstallationSignature(
@@ -231,7 +239,7 @@ contract OpenAccountEnableModeTest is Test {
         // Sign the user operation with the new validator's signer
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(
             _newValidatorPrivateKey,
-            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(userOp)
+            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp)
         );
         bytes memory userOpSignature = abi.encodePacked(r, s, v);
 
@@ -255,15 +263,17 @@ contract OpenAccountEnableModeTest is Test {
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = userOp;
 
-        IEntryPoint entrypoint = _account.entryPoint();
         vm.expectRevert(); // Should revert due to signature validation failure
-        entrypoint.handleOps(ops, payable(makeAddr("beneficiary")));
+        vm.prank(bundler, bundler);
+        ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
 
         // Verify the module was NOT installed
         assertFalse(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
     }
 
-    function testEnableModeWithMalformedSignature(bytes memory malformedSignature) public {
+    function testEnableModeWithMalformedSignature(address bundler, bytes memory malformedSignature) public {
+        vm.assume(bundler.code.length == 0);
+
         // Create user operation with malformed signature (too short)
         PackedUserOperation memory userOp = _prepareUserOperation(_prepareNonce(address(_newValidator)));
         userOp.signature = malformedSignature;
@@ -272,13 +282,15 @@ contract OpenAccountEnableModeTest is Test {
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = userOp;
 
-        IEntryPoint entrypoint = _account.entryPoint();
         vm.expectRevert(); // Should revert due to signature decoding failure
-        entrypoint.handleOps(ops, payable(makeAddr("beneficiary")));
+        vm.prank(bundler, bundler);
+        ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
     }
 
-    function testNormalOperationWithoutEnableMode(bytes1 prefix) public {
+    function testNormalOperationWithoutEnableMode(address bundler, bytes1 prefix) public {
+        vm.assume(bundler.code.length == 0);
         vm.assume(prefix != ENABLE_MODE_PREFIX);
+
         // Create normal nonce (without enable mode prefix);
         uint256 nonce = (uint256(uint8(prefix)) << 248) | (uint256(uint160(address(_initialValidator))) << 88);
 
@@ -286,7 +298,7 @@ contract OpenAccountEnableModeTest is Test {
         PackedUserOperation memory userOp = _prepareUserOperation(nonce);
 
         // Sign with initial validator's signer
-        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(userOp);
+        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(_initialValidatorPrivateKey, userOpHash);
         userOp.signature = abi.encodePacked(r, s, v);
 
@@ -297,13 +309,16 @@ contract OpenAccountEnableModeTest is Test {
         // Execute the user operation
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = userOp;
-        _account.entryPoint().handleOps(ops, payable(makeAddr("beneficiary")));
+        vm.prank(bundler, bundler);
+        ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
 
         // Verify the new validator was NOT installed (since enable mode wasn't triggered)
         assertFalse(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
     }
 
-    function testEnableModeWithMultipleModules() public {
+    function testEnableModeWithMultipleModules(address bundler) public {
+        vm.assume(bundler.code.length == 0);
+
         // Deploy additional validators
         ERC7579ValidatorMock validator2 = new ERC7579ValidatorMock();
         ERC7579ValidatorMock validator3 = new ERC7579ValidatorMock();
@@ -365,7 +380,7 @@ contract OpenAccountEnableModeTest is Test {
         // Sign the user operation with the first new validator's signer
         (uint8 v2, bytes32 r2, bytes32 s2) = vm.sign(
             _newValidatorPrivateKey,
-            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(userOp)
+            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp)
         );
         bytes memory userOpSignature = abi.encodePacked(r2, s2, v2);
 
@@ -385,7 +400,8 @@ contract OpenAccountEnableModeTest is Test {
         // Execute the user operation
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = userOp;
-        _account.entryPoint().handleOps(ops, payable(makeAddr("beneficiary")));
+        vm.prank(bundler, bundler);
+        ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
 
         // Verify all modules were installed
         assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));

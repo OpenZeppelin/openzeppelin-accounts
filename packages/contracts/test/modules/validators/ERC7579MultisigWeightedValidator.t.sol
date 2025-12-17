@@ -46,7 +46,7 @@ contract ERC7579MultisigWeightedValidatorTest is Test {
         vm.deal(address(_account), MAX_ETH);
 
         // Setup entrypoint
-        address entrypoint = address(ERC4337Utils.ENTRYPOINT_V08);
+        address entrypoint = address(ERC4337Utils.ENTRYPOINT_V09);
         vm.deal(entrypoint, MAX_ETH);
         vm.etch(
             entrypoint,
@@ -69,7 +69,7 @@ contract ERC7579MultisigWeightedValidatorTest is Test {
         _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), initData);
 
         PackedUserOperation memory userOp = _prepareUserOperation();
-        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(userOp);
+        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
 
         bytes[] memory signatures = new bytes[](signers.length);
 
@@ -96,7 +96,7 @@ contract ERC7579MultisigWeightedValidatorTest is Test {
         _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), initData);
 
         PackedUserOperation memory userOp = _prepareUserOperation();
-        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(userOp);
+        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
 
         (uint256[] memory signingKeys, bytes[] memory signingSigners) = _buildSigners(numSigners - 1, 1);
         bytes[] memory signatures = new bytes[](signingSigners.length);

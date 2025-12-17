@@ -10,7 +10,11 @@ import {
     ModeSelector,
     ModePayload
 } from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
-import {ERC4337Utils, IEntryPointExtra} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
+import {
+    ERC4337Utils,
+    IEntryPointExtra,
+    IEntryPoint
+} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
@@ -48,7 +52,7 @@ contract OpenAccountTest is Test {
         vm.deal(address(_account), MAX_ETH);
 
         // Setup entrypoint
-        address entrypoint = address(ERC4337Utils.ENTRYPOINT_V08);
+        address entrypoint = address(ERC4337Utils.ENTRYPOINT_V09);
         vm.deal(entrypoint, MAX_ETH);
         vm.etch(
             entrypoint,
@@ -62,7 +66,9 @@ contract OpenAccountTest is Test {
         );
     }
 
-    function testExecute() public {
+    function testExecute(address bundler) public {
+        vm.assume(bundler.code.length == 0);
+
         // Create the mode for single execution
         Mode mode = ERC7579Utils.CALLTYPE_SINGLE.encodeMode(
             ERC7579Utils.EXECTYPE_DEFAULT,
@@ -95,7 +101,7 @@ contract OpenAccountTest is Test {
         });
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(
             _accountPrivateKey,
-            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(ops[0])
+            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(ops[0])
         );
         ops[0].signature = abi.encodePacked(r, s, v);
 
@@ -104,10 +110,13 @@ contract OpenAccountTest is Test {
         emit CallReceiverMock.MockFunctionCalledExtra(address(_account), 1 ether);
 
         // Execute the single execution
-        _account.entryPoint().handleOps(ops, payable(makeAddr("beneficiary")));
+        vm.prank(bundler, bundler);
+        ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
     }
 
-    function testExecuteBatch(uint256 argA, uint256 argB) public {
+    function testExecuteBatch(address bundler, uint256 argA, uint256 argB) public {
+        vm.assume(bundler.code.length == 0);
+
         // Create the mode for batch execution
         Mode mode = ERC7579Utils.CALLTYPE_BATCH.encodeMode(
             ERC7579Utils.EXECTYPE_DEFAULT,
@@ -142,7 +151,7 @@ contract OpenAccountTest is Test {
         });
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(
             _accountPrivateKey,
-            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(ops[0])
+            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(ops[0])
         );
         ops[0].signature = abi.encodePacked(r, s, v);
 
@@ -153,6 +162,7 @@ contract OpenAccountTest is Test {
         emit CallReceiverMock.MockFunctionCalledWithArgs(argA, argB);
 
         // Execute the batch
-        _account.entryPoint().handleOps(ops, payable(makeAddr("beneficiary")));
+        vm.prank(bundler, bundler);
+        ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
     }
 }
