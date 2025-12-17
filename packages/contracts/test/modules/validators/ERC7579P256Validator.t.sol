@@ -47,7 +47,7 @@ contract ERC7579P256ValidatorTest is Test {
         vm.deal(address(_account), MAX_ETH);
 
         // Setup entrypoint
-        address entrypoint = address(ERC4337Utils.ENTRYPOINT_V08);
+        address entrypoint = address(ERC4337Utils.ENTRYPOINT_V09);
         vm.deal(entrypoint, MAX_ETH);
         vm.etch(
             entrypoint,
@@ -199,7 +199,7 @@ contract ERC7579P256ValidatorTest is Test {
         _validator.onInstall(abi.encodePacked(qx, qy));
 
         PackedUserOperation memory userOp = _prepareUserOperation(nonce, value);
-        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(userOp);
+        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
 
         // Sign with correct key
         (bytes32 r, bytes32 s) = vm.signP256(privateKey, userOpHash);
@@ -222,7 +222,7 @@ contract ERC7579P256ValidatorTest is Test {
         _validator.onInstall(abi.encodePacked(correctQx, correctQy));
 
         PackedUserOperation memory userOp = _prepareUserOperation(nonce, 0);
-        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(userOp);
+        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
 
         // Sign with wrong key
         (bytes32 r, bytes32 s) = vm.signP256(wrongKey, userOpHash);

@@ -48,7 +48,7 @@ contract ERC7579WebAuthnValidatorTest is Test {
         vm.deal(address(_account), MAX_ETH);
 
         // Setup entrypoint
-        address entrypoint = address(ERC4337Utils.ENTRYPOINT_V08);
+        address entrypoint = address(ERC4337Utils.ENTRYPOINT_V09);
         vm.deal(entrypoint, MAX_ETH);
         vm.etch(
             entrypoint,
@@ -96,7 +96,7 @@ contract ERC7579WebAuthnValidatorTest is Test {
         _validator.onInstall(abi.encodePacked(qx, qy));
 
         PackedUserOperation memory userOp = _prepareUserOperation(nonce);
-        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V08)).getUserOpHash(userOp);
+        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
 
         // Create WebAuthn assertion signature
         (bytes32 hashToSign, bytes memory authenticatorData, string memory clientDataJSON) = _prepareWebAuthnMessage(

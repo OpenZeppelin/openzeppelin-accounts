@@ -29,7 +29,7 @@
     "@openzeppelin/contracts": "file:../../lib/@openzeppelin-contracts",
     "hardhat": "^2.26.3",
     "hardhat-exposed": "^0.3.19",
-    "hardhat-predeploy": "^0.3.0",
+    "hardhat-predeploy": "^0.4.1",
     "rimraf": "^6.0.1",
     "solidity-coverage": "^0.8.16"
   }
