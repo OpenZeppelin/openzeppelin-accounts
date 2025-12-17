@@ -1,3 +1,7 @@
+## 05-12-2025
+
+- The `onInstall` function of `ERC7579Multisig`, `ERC7579MultisigWeighted`, `ERC7579DelayedExecutor`, `ERC7579ECDSAValidator`, `ERC7579P256Validator` now explicitly revert if the module is already installed or if their configuration is invalid.
+
 ## 14-11-2025
 
 - Rearrange modules folder into `validators` and `executors` folders.

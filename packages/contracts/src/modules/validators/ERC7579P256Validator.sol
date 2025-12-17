@@ -33,6 +33,9 @@ abstract contract ERC7579P256Validator is ERC7579Validator {
     /// @dev The provided P256 public key is invalid.
     error ERC7579P256ValidatorInvalidPublicKey(bytes32 qx, bytes32 qy);
 
+    /// @dev The `account` has already installed the module.
+    error ERC7579P256ValidatorAlreadyInstalled();
+
     /// @dev Emitted when the signer is set.
     event ERC7579P256ValidatorSignerSet(address indexed account, bytes32 qx, bytes32 qy);
 
@@ -59,8 +62,10 @@ abstract contract ERC7579P256Validator is ERC7579Validator {
      *
      * Requirements:
      *
-     * * The `data` must be at least 64 bytes.
-     * * The `data` must contain valid P256 public key coordinates.
+     * * The `data` must be at least 64 bytes. Reverts with {ERC7579P256ValidatorInvalidSignerLength} if not.
+     * * The `account` must have no signer installed. Reverts with {ERC7579P256ValidatorAlreadyInstalled} if not.
+     * * Decode `data` into `abi.encode(bytes32 qx, bytes32 qy)`.
+     * * The `data` must contain valid P256 public key coordinates. Reverts with {ERC7579P256ValidatorInvalidPublicKey} if not.
      *
      * NOTE: An account can only set a signer once. If called directly by an account
      * that already has a signer configured, this function will behave as a no-op.
@@ -70,10 +75,9 @@ abstract contract ERC7579P256Validator is ERC7579Validator {
     function onInstall(bytes calldata data) public virtual override {
         require(data.length >= 64, ERC7579P256ValidatorInvalidSignerLength());
         (bytes32 qx, bytes32 qy) = signer(msg.sender);
-        if (qx == bytes32(0) && qy == bytes32(0)) {
-            (bytes32 newQx, bytes32 newQy) = _extractSigner(data);
-            _setSigner(msg.sender, newQx, newQy);
-        }
+        require(qx == bytes32(0) && qy == bytes32(0), ERC7579P256ValidatorAlreadyInstalled());
+        (bytes32 newQx, bytes32 newQy) = _extractSigner(data);
+        _setSigner(msg.sender, newQx, newQy);
     }
 
     /**

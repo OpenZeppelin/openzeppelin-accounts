@@ -7,3 +7,4 @@ LICENSE
 eslint.config.mjs
 lib
 contracts-exposed
+**/.source

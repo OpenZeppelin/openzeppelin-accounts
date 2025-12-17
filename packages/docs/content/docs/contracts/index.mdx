@@ -1,0 +1,135 @@
+---
+title: Overview
+description: Architecture and key concepts of the Open Accounts Framework
+---
+
+import { File, Folder, Files } from 'fumadocs-ui/components/files';
+
+The Open Accounts Framework is designed to provide compatibility with ERC-7579 accounts. Previous developments in major smart account contracts have provided with a layer of compatibility with ERC-7579, or even native support, which suits the standard to distribute standardized functionality that developers can use safely with popular account implementations like [OpenZeppelin's ERC-7579 account](https://docs.openzeppelin.com/contracts/5.x/api/account#AccountERC7579) or [Kernel](https://github.com/zerodevapp/kernel).
+
+The contracts are organized with a clear structure that separates account implementations, and modules. This overview explains the architecture and key components.
+
+## Directory Structure
+
+The framework's source code is organized as follows:
+
+```files
+src/
+├── OpenAccount.sol              # Base ERC-7579 account implementation
+├── modules/
+│   ├── ERC7579Multisig.sol      # Multisig module (ERC-7913)
+│   ├── ERC7579MultisigWeighted.sol  # Weighted multisig module
+│   ├── executors/               # Execution modules
+│   └── validators/              # Validation modules
+└── extensions/                  # Account extensions
+```
+
+## Setting up an account
+
+Given the framework's is designed to provide compatibility with major ERC-7579 account implementations, it's assumed the developer has picked one already. Otherwise, the framework provides with the `OpenAccount`.
+
+### OpenAccount
+
+`OpenAccount` is a production-ready, ERC-7579 compliant smart account implementation built on top of [OpenZeppelin Contracts](https://docs.openzeppelin.com/contracts). It provides:
+
+- Full ERC-7579 compliance (module installation, execution modes, validation)
+- ERC-4337 support for account abstraction
+- EIP-712 signature support
+- NFT holder capabilities (ERC721 and ERC1155)
+
+#### Using OpenAccount
+
+If you don't already have an ERC-7579 compatible account, you can deploy `OpenAccount` as your base account. Simply extend it and provide EIP-712 domain parameters:
+
+```solidity
+import { OpenAccount } from '@open-accounts-framework/contracts/OpenAccount.sol';
+import { EIP712 } from '@openzeppelin/contracts/utils/cryptography/EIP712.sol';
+
+contract MyAccount is OpenAccount {
+  constructor() EIP712('MyAccount', '1') {}
+}
+```
+
+#### Deploying with a Factory
+
+The recommended approach for deploying accounts is using a factory pattern. When you send your first user operation, the account will be created deterministically (its address can be predicted) using the `initCode` field in the UserOperation. This field contains both the address of a factory contract and the data required to call it and create your smart account.
+
+You can create your own account factory using OpenZeppelin's [Clones library](https://docs.openzeppelin.com/contracts/5.x/api/proxy#Clones), which takes advantage of decreased deployment costs and account address predictability:
+
+```solidity
+// contracts/MyFactoryAccount.sol
+// SPDX-License-Identifier: MIT
+
+pragma solidity ^0.8.20;
+
+import { Clones } from '../../../proxy/Clones.sol';
+import { Address } from '../../../utils/Address.sol';
+
+/**
+ * @dev A factory contract to create accounts on demand.
+ */
+contract MyFactoryAccount {
+  using Clones for address;
+  using Address for address;
+
+  address private immutable _impl;
+
+  constructor(address impl_) {
+    require(impl_.code.length > 0);
+    _impl = impl_;
+  }
+
+  /// @dev Predict the address of the account
+  function predictAddress(bytes calldata callData) public view returns (address) {
+    return _impl.predictDeterministicAddress(keccak256(callData), address(this));
+  }
+
+  /// @dev Create clone accounts on demand
+  function cloneAndInitialize(bytes calldata callData) public returns (address) {
+    address predicted = predictAddress(callData);
+    if (predicted.code.length == 0) {
+      _impl.cloneDeterministic(keccak256(callData));
+      predicted.functionCall(callData);
+    }
+    return predicted;
+  }
+}
+```
+
+<Callout type="warning">
+  Account factories should be carefully implemented to ensure the account address is deterministically tied to the
+  initial owners or signers. This prevents frontrunning attacks where a malicious actor could deploy the account with
+  their own owners before the intended owner does. The factory should include the owner's address (or other identifying
+  information) in the salt used for address calculation.
+</Callout>
+
+#### Handling Initialization
+
+Since `OpenAccount` implements `Initializable`, it's designed to work with factories. The account can be initialized with a validator or executor module right after deployment:
+
+```solidity
+// Initialize with a validator during deployment
+bytes memory initData = abi.encodePacked(signerAddress);
+account.initialize(MODULE_TYPE_VALIDATOR, validatorAddress, initData);
+```
+
+<Callout type="warning">
+  Leaving an account uninitialized will leave it unusable since no validator module will be installed to authorize
+  operations.
+</Callout>
+
+## Installing Modules
+
+To install a module on an account:
+
+```solidity
+// Install an ECDSA validator
+address validator = address(new ERC7579ECDSAValidator());
+bytes memory initData = abi.encodePacked(signerAddress);
+account.installModule(MODULE_TYPE_VALIDATOR, validator, initData);
+```
+
+The `initData` format depends on the module. For example:
+
+- **ECDSA Validator**: `abi.encodePacked(signerAddress)` (20 bytes)
+- **Multisig**: `abi.encode(signers, threshold)` where `signers` is `bytes[]` and `threshold` is `uint64`
