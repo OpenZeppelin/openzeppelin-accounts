@@ -63,8 +63,8 @@ importers:
         specifier: ^0.3.19
         version: 0.3.19(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.10.1)(typescript@5.9.3))(typescript@5.9.3))
       hardhat-predeploy:
-        specifier: ^0.3.0
-        version: 0.3.0(@nomicfoundation/hardhat-ethers@3.1.0(ethers@6.15.0)(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.10.1)(typescript@5.9.3))(typescript@5.9.3)))(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.10.1)(typescript@5.9.3))(typescript@5.9.3))
+        specifier: ^0.4.1
+        version: 0.4.1(@nomicfoundation/hardhat-ethers@3.1.0(ethers@6.15.0)(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.10.1)(typescript@5.9.3))(typescript@5.9.3)))(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.10.1)(typescript@5.9.3))(typescript@5.9.3))
       rimraf:
         specifier: ^6.0.1
         version: 6.0.1
@@ -3345,8 +3345,8 @@ packages:
     peerDependencies:
       hardhat: ^2.3.0
 
-  hardhat-predeploy@0.3.0:
-    resolution: {integrity: sha512-JOBRzpPdW0DsRDQF5dVEpgyBOoOV/jprpsVN7D32nAi8LsVoQIqof/U63+RXML/9kgwTr6YYRsy2XQrwIJu9LQ==}
+  hardhat-predeploy@0.4.1:
+    resolution: {integrity: sha512-53Eoj5YECKNTkEezGByjKP5rVbYU0s1is8CtEbm0DPbqMgstNrPMQ0dfcDxA5Fu+hlZhc5w0T+RmJ/d/GAbB6g==}
     peerDependencies:
       '@nomicfoundation/hardhat-ethers': ^3.0.8
       hardhat: ^2.26.0
@@ -9108,7 +9108,7 @@ snapshots:
       micromatch: 4.0.8
       solidity-ast: 0.4.61
 
-  hardhat-predeploy@0.3.0(@nomicfoundation/hardhat-ethers@3.1.0(ethers@6.15.0)(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.10.1)(typescript@5.9.3))(typescript@5.9.3)))(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.10.1)(typescript@5.9.3))(typescript@5.9.3)):
+  hardhat-predeploy@0.4.1(@nomicfoundation/hardhat-ethers@3.1.0(ethers@6.15.0)(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.10.1)(typescript@5.9.3))(typescript@5.9.3)))(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.10.1)(typescript@5.9.3))(typescript@5.9.3)):
     dependencies:
       '@nomicfoundation/hardhat-ethers': 3.1.0(ethers@6.15.0)(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.10.1)(typescript@5.9.3))(typescript@5.9.3))
       hardhat: 2.26.3(ts-node@10.9.2(@types/node@24.10.1)(typescript@5.9.3))(typescript@5.9.3)
