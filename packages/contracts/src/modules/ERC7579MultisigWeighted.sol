@@ -55,8 +55,6 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
      * The initData should be encoded as:
      * `abi.encode(bytes[] signers, uint64 threshold, uint64[] weights)`
      *
-     * If weights are not provided but signers are, all signers default to weight 1.
-     *
      * NOTE: An account can only call onInstall once. If called directly by the account,
      * the signer will be set to the provided data. Future installations will revert with
      * {ERC7579MultisigAlreadyInstalled}.

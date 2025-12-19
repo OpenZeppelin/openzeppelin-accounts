@@ -93,8 +93,6 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
     /**
      * @dev The current state of an operation is not the expected. The `allowedStates` is a bitmap with the
      * bits enabled for each OperationState enum position counting from right to left. See {_encodeStateBitmap}.
-     *
-     * NOTE: If `allowedStates` is `bytes32(0)`, the operation is expected to not be in any state (i.e. not exist).
      */
     error ERC7579ExecutorUnexpectedOperationState(
         bytes32 operationId,
@@ -421,6 +419,8 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      * This bitmap should be built using {_encodeStateBitmap}.
      *
      * If requirements are not met, reverts with a {ERC7579ExecutorUnexpectedOperationState} error.
+     *
+     * NOTE: Passing a `bytes32(0)` for `allowedStates` will always revert.
      */
     function _validateStateBitmap(bytes32 operationId, bytes32 allowedStates) internal view returns (OperationState) {
         OperationState currentState = state(operationId);
