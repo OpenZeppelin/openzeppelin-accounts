@@ -44,7 +44,7 @@ abstract contract ERC7579Executor is IERC7579Module {
         bytes32 salt,
         bytes32 mode,
         bytes calldata data
-    ) public virtual returns (bytes[] memory returnData) {
+    ) public payable virtual returns (bytes[] memory returnData) {
         bytes calldata executionCalldata = _validateExecution(account, salt, mode, data);
         returnData = _execute(account, salt, mode, executionCalldata); // Prioritize errors thrown in _execute
         return returnData;
@@ -92,6 +92,6 @@ abstract contract ERC7579Executor is IERC7579Module {
         bytes calldata executionCalldata
     ) internal virtual returns (bytes[] memory returnData) {
         emit ERC7579ExecutorOperationExecuted(account, salt, mode, executionCalldata);
-        return IERC7579Execution(account).executeFromExecutor(mode, executionCalldata);
+        return IERC7579Execution(account).executeFromExecutor{value: msg.value}(mode, executionCalldata);
     }
 }
