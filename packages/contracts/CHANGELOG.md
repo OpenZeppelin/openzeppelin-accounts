@@ -1,3 +1,7 @@
+## 19-12-2025
+
+- `OpenAccountEnableMode`: Correctly validates UserOp signatures after successful module installation in enable mode. Previously, the contract would return success without validating the UserOp signature, allowing an attacker with a valid installation signature to execute arbitrary operations.
+
 ## 05-12-2025
 
 - The `onInstall` function of `ERC7579Multisig`, `ERC7579MultisigWeighted`, `ERC7579DelayedExecutor`, `ERC7579ECDSAValidator`, `ERC7579P256Validator` now explicitly revert if the module is already installed or if their configuration is invalid.
