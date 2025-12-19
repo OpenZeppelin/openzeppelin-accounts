@@ -42,7 +42,8 @@ abstract contract OpenAccountEnableMode is OpenAccount {
      * Otherwise, falls back to OpenAccount's `_validateUserOp` function.
      * See `_validateEnableMode` for the validation of enable mode installation.
      *
-     * NOTE: When enable mode is used, if successful, this function doesn't call `super._validateUserOp`.
+     * NOTE: When enable mode is used, if successful and the module obtained with {_extractUserOpValidator}
+     * is installed, this function doesn't call `super._validateUserOp`.
      */
     function _validateUserOp(
         PackedUserOperation calldata userOp,
@@ -53,16 +54,16 @@ abstract contract OpenAccountEnableMode is OpenAccount {
             return super._validateUserOp(userOp, userOpHash, signature);
 
         (uint256 validationData, bytes calldata innerSignature) = _validateEnableMode(signature, userOp.nonce);
-        if (validationData != ERC4337Utils.SIG_VALIDATION_SUCCESS) {
-            address module = _extractUserOpValidator(userOp);
-            if (isModuleInstalled(MODULE_TYPE_VALIDATOR, module, Calldata.emptyBytes())) {
-                PackedUserOperation memory userOpMemory = userOp;
-                userOpMemory.signature = innerSignature;
-                return IERC7579Validator(module).validateUserOp(userOpMemory, _signableUserOpHash(userOp, userOpHash));
-            }
-            return super._validateUserOp(userOp, userOpHash, innerSignature);
+        if (validationData == ERC4337Utils.SIG_VALIDATION_FAILED) {
+            return super._validateUserOp(userOp, userOpHash, signature);
         }
-        return validationData; // Prefixed but invalid signature or failed installation
+        address module = _extractUserOpValidator(userOp);
+        if (!isModuleInstalled(MODULE_TYPE_VALIDATOR, module, Calldata.emptyBytes())) {
+            return super._validateUserOp(userOp, userOpHash, signature);
+        }
+        PackedUserOperation memory userOpMemory = userOp;
+        userOpMemory.signature = innerSignature;
+        return IERC7579Validator(module).validateUserOp(userOpMemory, _signableUserOpHash(userOp, userOpHash));
     }
 
     /**
