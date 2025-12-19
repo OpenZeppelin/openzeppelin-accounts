@@ -1,3 +1,7 @@
+## 19-12-2025
+
+- The `validateUserOp` function of `ERC7579Validator` is not `view` anymore.
+
 ## 05-12-2025
 
 - The `onInstall` function of `ERC7579Multisig`, `ERC7579MultisigWeighted`, `ERC7579DelayedExecutor`, `ERC7579ECDSAValidator`, `ERC7579P256Validator` now explicitly revert if the module is already installed or if their configuration is invalid.
