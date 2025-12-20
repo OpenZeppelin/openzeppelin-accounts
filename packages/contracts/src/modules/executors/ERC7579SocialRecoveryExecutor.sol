@@ -24,7 +24,7 @@ import {ERC7579MultisigWeighted} from "../ERC7579MultisigWeighted.sol";
  * NOTE: This module does not restrict execution by default once the social recovery operation
  * is ready. See {_validateSchedule} and {_validateExecution} for more details.
  */
-abstract contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579MultisigWeighted {
+contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579MultisigWeighted {
     using MessageHashUtils for *;
 
     bytes32 public constant SCHEDULE_RECOVER_TYPEHASH =
@@ -257,7 +257,7 @@ abstract contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC75
         bytes32 salt,
         bytes32 mode,
         bytes calldata recoveryCalldata
-    ) private view virtual returns (bytes32) {
+    ) private view returns (bytes32) {
         bytes1 fields;
         string memory name;
         string memory version;
