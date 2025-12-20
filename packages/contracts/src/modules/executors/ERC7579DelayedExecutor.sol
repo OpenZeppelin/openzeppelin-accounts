@@ -39,6 +39,9 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  *
  * TIP: Use {_scheduleAt} to schedule operations at a specific points in time. This is
  * useful to pre-schedule operations for non-deployed accounts (e.g. subscriptions).
+ *
+ * NOTE: Execution is not restricted by default once the operation is ready.
+ * See {_execute} for more details.
  */
 abstract contract ERC7579DelayedExecutor is ERC7579Executor {
     using Time for *;
