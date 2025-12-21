@@ -125,11 +125,23 @@ contract ERC7579ExecutorMock is ERC7579Executor {
 }
 
 abstract contract ERC7579DelayedExecutorMock is ERC7579DelayedExecutor {
-    function _validateSchedule(address account, bytes32, bytes32, bytes calldata) internal view override {
+    function _validateSchedule(
+        address account,
+        bytes32,
+        bytes32,
+        bytes calldata data
+    ) internal view override returns (bytes calldata) {
         require(msg.sender == account);
+        return data;
     }
 
-    function _validateCancel(address account, bytes32, bytes32, bytes calldata) internal view override {
+    function _validateCancel(
+        address account,
+        bytes32,
+        bytes32,
+        bytes calldata data
+    ) internal view override returns (bytes calldata) {
         require(msg.sender == account);
+        return data;
     }
 }

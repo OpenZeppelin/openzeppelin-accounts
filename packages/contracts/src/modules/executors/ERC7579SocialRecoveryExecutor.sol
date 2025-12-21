@@ -33,7 +33,7 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
         keccak256("CancelRecover(bytes32 salt,bytes32 mode,bytes recoveryCalldata)");
 
     /// @dev The multisignature validation failed.
-    error ERC7579SocialRecoveryExecutorInvalidMultisig();
+    error ERC7579SocialRecoveryExecutorInvalidSchedule();
 
     /// @dev The caller is not authorized to cancel the operation.
     error ERC7579SocialRecoveryExecutorInvalidCancel();
@@ -178,16 +178,18 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
         bytes32 salt,
         bytes32 mode,
         bytes calldata data
-    ) internal virtual override {
+    ) internal virtual override returns (bytes calldata recoveryCalldata) {
         uint16 recoveryCalldataLength = uint16(bytes2(data[0:2])); // First 2 bytes are the length
-        bytes calldata recoveryCalldata = data[2:2 + recoveryCalldataLength]; // Next bytes are the calldata
-        bytes calldata multisignature = data[2 + recoveryCalldataLength:]; // Remaining bytes are the multisignature
-        (bytes[] calldata signers, bytes[] calldata signatures) = Multisig.decodeMultisignatureCalldata(multisignature);
+        recoveryCalldata = data[2:2 + recoveryCalldataLength]; // Next bytes are the recovery calldata
+        (bytes[] calldata signers, bytes[] calldata signatures) = Multisig.decodeMultisignatureCalldata(
+            data[2 + recoveryCalldataLength:]
+        );
         bytes32 recoverHash = _getTypedHash(SCHEDULE_RECOVER_TYPEHASH, account, salt, mode, recoveryCalldata);
         require(
             _validateMultisig(account, recoverHash, signers, signatures),
-            ERC7579SocialRecoveryExecutorInvalidMultisig()
+            ERC7579SocialRecoveryExecutorInvalidSchedule()
         );
+        return recoveryCalldata;
     }
 
     /**
@@ -209,11 +211,11 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
         bytes32 salt,
         bytes32 mode,
         bytes calldata data
-    ) internal view virtual override {
-        require(
-            msg.sender == account || _isValidMultisigCancel(account, salt, mode, data),
-            ERC7579SocialRecoveryExecutorInvalidCancel()
-        );
+    ) internal view virtual override returns (bytes calldata) {
+        if (msg.sender == account) return data;
+        (bool valid, bytes calldata recoveryCalldata) = _isValidMultisigCancel(account, salt, mode, data);
+        require(valid, ERC7579SocialRecoveryExecutorInvalidCancel());
+        return recoveryCalldata;
     }
 
     /**
@@ -232,13 +234,14 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
         bytes32 salt,
         bytes32 mode,
         bytes calldata data
-    ) internal view virtual returns (bool) {
+    ) internal view virtual returns (bool valid, bytes calldata recoveryCalldata) {
         uint16 recoveryCalldataLength = uint16(bytes2(data[0:2])); // First 2 bytes are the length
-        bytes calldata recoveryCalldata = data[2:2 + recoveryCalldataLength]; // Next bytes are the calldata
-        bytes calldata multisignature = data[2 + recoveryCalldataLength:]; // Remaining bytes are the multisignature
-        (bytes[] calldata signers, bytes[] calldata signatures) = Multisig.decodeMultisignatureCalldata(multisignature);
+        recoveryCalldata = data[2:2 + recoveryCalldataLength]; // Next bytes are the recovery calldata
+        (bytes[] calldata signers, bytes[] calldata signatures) = Multisig.decodeMultisignatureCalldata(
+            data[2 + recoveryCalldataLength:]
+        );
         bytes32 cancelHash = _getTypedHash(CANCEL_RECOVER_TYPEHASH, account, salt, mode, recoveryCalldata);
-        return _validateMultisig(account, cancelHash, signers, signatures);
+        return (_validateMultisig(account, cancelHash, signers, signatures), recoveryCalldata);
     }
 
     /**
@@ -267,7 +270,7 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
         (fields, name, version, chainId, verifyingContract, domainSalt, ) = IERC5267(account).eip712Domain();
         return
             fields.toDomainSeparator(name, version, chainId, verifyingContract, domainSalt).toTypedDataHash(
-                keccak256(abi.encode(typehash, salt, mode, recoveryCalldata))
+                keccak256(abi.encode(typehash, salt, mode, keccak256(recoveryCalldata)))
             );
     }
 }

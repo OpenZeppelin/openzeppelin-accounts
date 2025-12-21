@@ -234,17 +234,17 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      */
     function schedule(address account, bytes32 salt, bytes32 mode, bytes calldata data) public virtual {
         require(_configs[account].installed, ERC7579ExecutorModuleNotInstalled());
-        _validateSchedule(account, salt, mode, data);
+        bytes calldata validatedData = _validateSchedule(account, salt, mode, data);
         (uint32 executableAfter, , ) = getDelay(account);
-        _scheduleAt(account, salt, mode, data, Time.timestamp(), executableAfter);
+        _scheduleAt(account, salt, mode, validatedData, Time.timestamp(), executableAfter);
     }
 
     /**
      * @dev Cancels a previously scheduled operation. See {_validateCancel} and {_cancel}.
      */
     function cancel(address account, bytes32 salt, bytes32 mode, bytes calldata data) public virtual {
-        _validateCancel(account, salt, mode, data);
-        _cancel(account, salt, mode, data); // Prioritize errors thrown in _cancel
+        bytes calldata validatedData = _validateCancel(account, salt, mode, data);
+        _cancel(account, salt, mode, validatedData); // Prioritize errors thrown in _cancel
     }
 
     /**
@@ -290,6 +290,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      * ```solidity
      *  function _validateCancel(address account, bytes32 salt, bytes32 mode, bytes calldata data) internal override {
      *    // e.g. require(msg.sender == account);
+     *    return data;
      *  }
      *```
      */
@@ -298,7 +299,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
         bytes32 /* salt */,
         bytes32 /* mode */,
         bytes calldata /* data */
-    ) internal virtual;
+    ) internal virtual returns (bytes calldata);
 
     /**
      * @dev Validates whether an operation can be scheduled.
@@ -308,6 +309,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      * ```solidity
      *  function _validateSchedule(address account, bytes32 salt, bytes32 mode, bytes calldata data) internal override {
      *    // e.g. require(msg.sender == account);
+     *    return data;
      *  }
      *```
      */
@@ -316,7 +318,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
         bytes32 /* salt */,
         bytes32 /* mode */,
         bytes calldata /* data */
-    ) internal virtual;
+    ) internal virtual returns (bytes calldata);
 
     /**
      * @dev Internal implementation for setting an account's delay. See {getDelay}.

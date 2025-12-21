@@ -23,9 +23,8 @@ abstract contract ERC7579MultisigValidator is ERC7579Multisig, ERC7579Validator 
         bytes32 hash,
         bytes calldata signature
     ) internal view virtual override returns (bool) {
-        (bytes[] calldata signingSigners, bytes[] calldata signatures) = Multisig.decodeMultisignatureCalldata(
-            signature
-        );
-        return _validateMultisig(account, hash, signingSigners, signatures);
+        (bool success, bytes[] calldata signingSigners, bytes[] calldata signatures) = Multisig
+            .tryDecodeMultisignatureCalldata(signature);
+        return success && _validateMultisig(account, hash, signingSigners, signatures);
     }
 }
