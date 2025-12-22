@@ -183,7 +183,7 @@ const decodeMode = (mode: Hex): Required<EncodeMode> => ({
  * @param {Hex} [data] The call data to execute (default: '0x')
  * @returns {Hex} The encoded execution call as a packed hex string
  */
-const encodeSingle = (target: Address, value = 0n, data: Hex = '0x') =>
+const encodeSingle = (target: Address, value = 0n, data: Hex = '0x'): Hex =>
   encodePacked(['address', 'uint256', 'bytes'], [target, value, data]);
 
 /**
@@ -204,7 +204,7 @@ const decodeSingle = (data: Hex): Execution => ({
  * @param {...Execution[]} entries The execution calls to encode
  * @returns {Hex} The ABI-encoded array of execution calls
  */
-const encodeBatch = (...entries: Execution[]) =>
+const encodeBatch = (...entries: Execution[]): Hex =>
   encodeAbiParameters(parseAbiParameters('(address,uint256,bytes)[]'), [
     entries.map<[Address, bigint, Hex]>(e => [e.target, e.value, e.callData]),
   ]);
@@ -215,7 +215,7 @@ const encodeBatch = (...entries: Execution[]) =>
  * @param {Hex} data The ABI-encoded array to decode
  * @returns {Execution[]} The decoded array of execution calls
  */
-const decodeBatch = (data: Hex) =>
+const decodeBatch = (data: Hex): Execution[] =>
   decodeAbiParameters(parseAbiParameters('(address,uint256,bytes)[]'), data)[0].map<Execution>(
     ([target, value, callData]) => ({
       target,
@@ -231,7 +231,7 @@ const decodeBatch = (data: Hex) =>
  * @param {Hex} [data] The call data to execute (default: '0x')
  * @returns {Hex} The encoded delegatecall as a packed hex string
  */
-const encodeDelegate = (target: Address, data: Hex = '0x') => encodePacked(['address', 'bytes'], [target, data]);
+const encodeDelegate = (target: Address, data: Hex = '0x'): Hex => encodePacked(['address', 'bytes'], [target, data]);
 
 /**
  * Decodes a packed hex string into a delegatecall execution.
@@ -293,7 +293,7 @@ const encodeCalls = (
  * @returns {Promise<Call[]>} The decoded array of calls
  * @throws {Error} If the call type is unrecognized
  */
-const decodeCalls = async (data: Hex) => {
+const decodeCalls = async (data: Hex): Promise<Call[]> => {
   const { args } = decodeFunctionData({
     abi: IERC7579ExecutionABI,
     data,
