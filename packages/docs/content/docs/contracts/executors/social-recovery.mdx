@@ -5,7 +5,7 @@ description: Secure account recovery through trusted guardians with time-delayed
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-Social recovery enables users to regain control of their smart accounts through trusted guardians when access to primary credentials is lost. The Open Accounts Framework provides a production-ready social recovery module that combines weighted multisignature validation with time-delayed execution, offering both flexibility and security.
+Social recovery enables users to regain control of their smart accounts through trusted guardians when access to primary credentials is lost. The Open Accounts Framework provides a production-ready social recovery module that combines weighted multisignature validation with time-delayed execution, offering both flexibility and security. See also [Social Recovery use cases in Executors](/docs/contracts/executors#social-recovery).
 
 ## Overview
 
@@ -14,22 +14,65 @@ Social recovery fundamentally combines two features:
 1. **Multisignature validation**: Require multiple guardians to approve a recovery operation
 2. **Execution scheme**: Define how and when approved operations execute
 
-While you can compose these features in various ways (combining `ERC7579Multisig` or `ERC7579MultisigWeighted` with `ERC7579Executor`, `ERC7579DelayedExecutor`, or even `ERC7579Validator` for ERC-4337-based execution), the framework provides **`ERC7579SocialRecoveryExecutor`** as the recommended implementation with the following features:
+While you can compose these features in various ways (combining [`ERC7579Multisig`](/docs/contracts/multisig#base-modules) or [`ERC7579MultisigWeighted`](/docs/contracts/multisig#base-modules) with [`ERC7579Executor`](/docs/contracts/executors#erc7579executor), [`ERC7579DelayedExecutor`](/docs/contracts/executors#erc7579delayedexecutor), or even `ERC7579Validator` for ERC-4337-based execution), the framework provides **`ERC7579SocialRecoveryExecutor`** as the recommended implementation with the following features:
 
-- Uses `ERC7579MultisigWeighted` to implement a weighted list of guardians
-- Uses `ERC7579DelayedExecutor` to enforce a security window in which the recovery operations can be cancelled
+- Uses [`ERC7579MultisigWeighted`](/docs/contracts/multisig#base-modules) to implement a weighted list of guardians
+- Uses [`ERC7579DelayedExecutor`](/docs/contracts/executors#erc7579delayedexecutor) to enforce a security window in which the recovery operations can be cancelled
 - Defines an EIP-712 type that needs to be signed using the account's domain by the account guardians
 - Allows executing arbitrary calldata from the account
 
-The module is implemented as an **executor**, rather than as a validator as specified in [ERC-7579](https://eips.ethereum.org/EIPS/eip-7579). Executors allow delayed and flexible execution, whereas a validator would execute through the ERC-4337 entrypoint requiring either 2 user operations or an external `queue` call (or similar) validator to support a cancellation window and wouldn't allow to customize the EIP-712 message that guardians authorize.
+The module is implemented as an **executor**, rather than as a validator as specified in [ERC-7579](https://eips.ethereum.org/EIPS/eip-7579). [Executors](/docs/contracts/executors) allow delayed and flexible execution, whereas a validator would execute through the ERC-4337 entrypoint requiring either 2 user operations or an external `queue` call (or similar) validator to support a cancellation window and wouldn't allow to customize the EIP-712 message that guardians authorize.
+
+```mermaid
+sequenceDiagram
+    participant Owner as Account Owner
+    participant Account as Smart Account
+    participant Module as Social Recovery Module
+    participant G1 as Guardian 1
+    participant G2 as Guardian 2
+    participant G3 as Guardian 3
+    participant Anyone as Anyone
+
+    Note over Owner,Anyone: Phase 1: Scheduling (Guardians coordinate)
+
+    G1->>G1: Sign EIP-712 typed data<br/>(ScheduleRecover)
+    G2->>G2: Sign EIP-712 typed data<br/>(ScheduleRecover)
+    G3->>G3: Sign EIP-712 typed data<br/>(ScheduleRecover)
+
+    Anyone->>Module: startRecovery(account, salt, mode,<br/>recoveryCalldata, multisignature)
+    Module->>Module: Validate guardians signatures<br/>Check threshold met
+    Module->>Module: Schedule operation
+    Module-->>Anyone: ✓ Operation Scheduled
+
+    Note over Owner,Anyone: Phase 2: Security Window (e.g., 5 days)
+
+    rect rgba(255, 240, 240, 0.11)
+        Note over Owner,Module: Owner can cancel if malicious
+        Owner->>Module: cancelRecovery(account, salt,<br/>mode, recoveryCalldata)
+        Module->>Module: Verify caller is account
+        Module-->>Owner: ✓ Operation Canceled
+    end
+
+    Note over Owner,Anyone: Phase 3: Execution (after delay)
+
+    rect rgba(240, 255, 240, 0.19)
+        Note over Module: Delay period elapsed<br/>Operation is Ready
+        Anyone->>Module: executeRecovery(account, salt,<br/>mode, recoveryCalldata)
+        Module->>Module: Verify operation is Ready
+        Module->>Account: executeFromExecutor(mode,<br/>recoveryCalldata)
+        Account->>Account: Execute recovery<br/>(e.g., install new validator)
+        Account-->>Module: ✓ Executed
+        Module-->>Anyone: ✓ Recovery Complete
+    end
+```
 
 ### Weighted Guardians
 
-Unlike simple threshold-based multisigs (N-of-M), weighted multisigs may support more sophisticated recovery setups. For example, social recovery could involve not only your friends and family but also other multisig. A recovery setup in which an external multisig has the same weight as 3 of your friends or 2 members of your family would be a valid configuration.
+Unlike simple threshold-based multisigs (N-of-M), [weighted multisigs](/docs/contracts/multisig#weighted-multisig-details) may support more sophisticated recovery setups. For example, [social recovery](/docs/contracts/multisig#social-recovery) could involve not only your friends and family but also other multisig. A recovery setup in which an external multisig has the same weight as 3 of your friends or 2 members of your family would be a valid configuration.
 
 ### Delayed Execution
 
-A valid concern when setting up a social recovery mechanism is that guardians may collude maliciously or get compromised, in which case the legitimate owner of the account must be able to intervene. Using a 2-step configuration to execute a recovery action on the account provides a security window in which the owner can react.
+A valid concern when setting up a social recovery mechanism is that guardians may collude maliciously or get compromised, in which case the legitimate owner of the account must be able to intervene. Using a 2-step configuration to execute a recovery action on the account provides a security window in which the owner can react. See the [operation lifecycle](/docs/contracts/executors#erc7579delayedexecutor) for details on operation states.
 
 <Callout>
   The owner of the account must monitor the social recovery module periodically to detect unauthorized schedule
@@ -173,7 +216,7 @@ uint32 currentExpiration = socialRecovery.getExpiration(account);
 
 ## Recovery Process
 
-The recovery process consists of three phases: scheduling, execution, and optional cancellation.
+The recovery process consists of three phases: [scheduling, execution, and optional cancellation](/docs/contracts/executors#erc7579delayedexecutor).
 
 <Steps>
 <Step>
@@ -195,6 +238,7 @@ bytes memory recoveryCalldata = abi.encodeCall(
 // - Values: random salt, execution mode, recovery calldata
 
 // The multisignature is automatically sorted and encoded by guardian wallets
+// See: /docs/contracts/multisig#signature-format
 bytes memory multisignature = /* ... guardian signatures ... */;
 
 // Submit the recovery operation
@@ -206,6 +250,8 @@ socialRecovery.startRecovery(
     multisignature
 );
 ```
+
+<Callout>See [multisignature format](/docs/contracts/multisig#signature-format)</Callout>
 
 The operation enters the **Scheduled** state and cannot execute until the delay period elapses.
 
@@ -272,4 +318,3 @@ Canceled operations cannot be executed and enter the **Canceled** state permanen
 
 </Step>
 </Steps>
-
