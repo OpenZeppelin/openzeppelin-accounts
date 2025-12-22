@@ -19,7 +19,7 @@ async function fixture() {
   // ERC-4337 env
   const helper = new ERC4337Helper();
   await helper.wait();
-  const entrypointDomain = await getDomain(predeploy.entrypoint.v08);
+  const entrypointDomain = await getDomain(predeploy.entrypoint.v09);
 
   // Prepare P256 signer
   const p256SigningKey = P256SigningKey.random();
@@ -344,7 +344,7 @@ describe('ERC7579P256Validator', function () {
         // Create userOp but sign with wrong signer
         const userOp = await this.mockAccount.createUserOp(this.userOp);
         const wrongSignature = await this.newSigner.signTypedData(
-          await getDomain(predeploy.entrypoint.v08),
+          await getDomain(predeploy.entrypoint.v09),
           { PackedUserOperation },
           userOp.packed,
         );
