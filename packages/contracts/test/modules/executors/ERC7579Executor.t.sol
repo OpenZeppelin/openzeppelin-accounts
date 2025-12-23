@@ -47,7 +47,8 @@ contract ERC7579ExecutorTest is Test {
         vm.deal(address(_account), MAX_ETH);
     }
 
-    function testExecute(uint256 arg1, uint256 arg2) public {
+    function testExecute(uint256 arg1, uint256 arg2, uint256 value) public {
+        value = bound(value, 0, MAX_ETH);
         _account.initialize(MODULE_TYPE_EXECUTOR, address(_executor), "");
 
         bytes32 salt = bytes32(0);
@@ -61,7 +62,7 @@ contract ERC7579ExecutorTest is Test {
 
         bytes memory data = abi.encodePacked(
             address(_target),
-            uint256(0),
+            value,
             abi.encodeCall(CallReceiverMock.mockFunctionWithArgs, (arg1, arg2))
         );
 
@@ -71,11 +72,15 @@ contract ERC7579ExecutorTest is Test {
         vm.expectEmit(true, true, true, true);
         emit CallReceiverMock.MockFunctionCalledWithArgs(arg1, arg2);
 
-        bytes[] memory returnData = _executor.execute(address(_account), salt, mode, data);
+        vm.deal(address(this), value);
+        bytes[] memory returnData = _executor.execute{value: value}(address(_account), salt, mode, data);
         assertEq(returnData.length, 1);
+
+        assertEq(address(_account).balance, MAX_ETH);
     }
 
-    function testExecuteBatch(uint256 arg1, uint256 arg2) public {
+    function testExecuteBatch(uint256 arg1, uint256 arg2, uint256 value) public {
+        value = bound(value, 0, MAX_ETH);
         _account.initialize(MODULE_TYPE_EXECUTOR, address(_executor), "");
 
         bytes32 salt = bytes32(0);
@@ -91,7 +96,7 @@ contract ERC7579ExecutorTest is Test {
         Execution[] memory execution = new Execution[](2);
         execution[0] = Execution({
             target: address(_target),
-            value: 1 ether,
+            value: value,
             callData: abi.encodeCall(CallReceiverMock.mockFunctionExtra, ())
         });
         execution[1] = Execution({
@@ -111,7 +116,10 @@ contract ERC7579ExecutorTest is Test {
         vm.expectCall(address(_target), execution[0].callData);
         vm.expectCall(address(_target), execution[1].callData);
 
-        bytes[] memory returnData = _executor.execute(address(_account), salt, mode, data);
+        vm.deal(address(this), value);
+        bytes[] memory returnData = _executor.execute{value: value}(address(_account), salt, mode, data);
         assertEq(returnData.length, 2);
+
+        assertEq(address(_account).balance, MAX_ETH);
     }
 }
