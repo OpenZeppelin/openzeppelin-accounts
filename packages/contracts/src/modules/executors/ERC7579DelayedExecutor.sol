@@ -189,8 +189,6 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      * The delay will be set to the maximum of this value and the minimum delay if provided.
      * Otherwise, the delay will be set to {minSetback} and {defaultExpiration} respectively.
      *
-     * Behaves as a no-op if the module is already installed.
-     *
      * Requirements:
      *
      * * The module must not be already installed on the account. Reverts with {ERC7579DelayedExecutorAlreadyInstalled} if not.
