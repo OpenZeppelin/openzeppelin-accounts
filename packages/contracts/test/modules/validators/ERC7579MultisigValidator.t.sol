@@ -98,8 +98,7 @@ contract ERC7579MultisigValidatorTest is Test {
             uint256[] memory moduleTypeIds,
             address[] memory modules,
             bytes[] memory initDatas
-        ) = // forge-lint: disable-next-line(unsafe-typecast)
-            _buildInstallationModules(signers, uint64(numSigners));
+        ) = _buildInstallationModules(signers, uint64(numSigners)); // forge-lint: disable-next-line(unsafe-typecast)
         _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         PackedUserOperation memory userOp = _prepareUserOperation();
