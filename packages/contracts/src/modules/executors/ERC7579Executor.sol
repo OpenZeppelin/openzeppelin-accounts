@@ -81,6 +81,10 @@ abstract contract ERC7579Executor is IERC7579Module {
     /**
      * @dev Internal version of {execute}. Emits {ERC7579ExecutorOperationExecuted} event.
      *
+     * NOTE: Target addresses included in the `executionCalldata` may return a large amount of data,
+     * which may cause the operation to fail due to insufficient gas given `executeFromExecutor` copies
+     * all return datas to memory.
+     *
      * Requirements:
      *
      * * The `account` must implement the {IERC7579Execution-executeFromExecutor} function.
