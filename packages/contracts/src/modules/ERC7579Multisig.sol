@@ -173,6 +173,11 @@ abstract contract ERC7579Multisig is IERC7579Module {
      *
      * * Each of `newSigners` must be at least 20 bytes long. Reverts with {ERC7579MultisigInvalidSigner} if not.
      * * Each of `newSigners` must not be authorized. Reverts with {ERC7579MultisigAlreadyExists} if it already exists.
+     *
+     * NOTE: This function does not validate that signers are controlled or represent valid entities. Integrators
+     * must ensure signers are properly validated before adding them. Invalid or uncontrolled addresses can compromise
+     * the multisig's security or functionality. Examples include dead addresses (e.g., `address(0)`), uncontrolled
+     * contracts, or the account's own address (which may cause recursive validation loops).
      */
     function _addSigners(address account, bytes[] memory newSigners) internal virtual {
         for (uint256 i = 0; i < newSigners.length; ++i) {
