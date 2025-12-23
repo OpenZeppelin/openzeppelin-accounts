@@ -1,3 +1,7 @@
+## 23-12-2025
+
+- `ERC7579DelayedExecutor`: The `onInstall` function now enforces `minSetback()` when reinstalling the module with a prior delay configuration still present. This ensures consistent delay transition behavior whether updating via `setDelay` or through module reinstallation.
+
 ## 22-12-2025
 
 - `OpenAccount` initialization now supports installing multiple modules in a single transaction and executing arbitrary configuration calls during initialization via the `configMode` and `configCalldata` parameters.
