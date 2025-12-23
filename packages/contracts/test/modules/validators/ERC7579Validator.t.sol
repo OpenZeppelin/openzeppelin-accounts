@@ -66,13 +66,23 @@ contract ERC7579ValidatorTest is Test {
     }
 
     function testValidatorInstallation() public {
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_validator), abi.encodePacked(_signer));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules();
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
         assertTrue(_validator.isModuleType(MODULE_TYPE_VALIDATOR));
         assertFalse(_validator.isModuleType(999)); // Random invalid type
     }
 
     function testValidateUserOp() public {
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_validator), abi.encodePacked(_signer));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules();
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         PackedUserOperation memory userOp = _prepareUserOperation();
 
@@ -89,7 +99,12 @@ contract ERC7579ValidatorTest is Test {
     }
 
     function testValidateUserOpInvalidSignature() public {
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_validator), abi.encodePacked(_signer));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules();
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         PackedUserOperation memory userOp = _prepareUserOperation();
 
@@ -106,7 +121,12 @@ contract ERC7579ValidatorTest is Test {
     }
 
     function testIsValidSignatureWithSender(bytes32 messageHash, address sender) public {
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_validator), abi.encodePacked(_signer));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules();
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(_signerPrivateKey, messageHash);
         bytes memory signature = abi.encodePacked(r, s, v);
@@ -118,7 +138,12 @@ contract ERC7579ValidatorTest is Test {
     }
 
     function testIsValidSignatureWithSenderInvalid(bytes32 messageHash, address sender) public {
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_validator), abi.encodePacked(_signer));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules();
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(_otherPrivateKey, messageHash);
         bytes memory signature = abi.encodePacked(r, s, v);
@@ -130,7 +155,12 @@ contract ERC7579ValidatorTest is Test {
     }
 
     function testModuleInstallUninstall() public {
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_validator), abi.encodePacked(_signer));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules();
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         vm.prank(address(_account));
         _validator.onUninstall(""); // Must not revert
@@ -168,5 +198,19 @@ contract ERC7579ValidatorTest is Test {
                 paymasterAndData: bytes(""),
                 signature: bytes("")
             });
+    }
+
+    function _buildInstallationModules()
+        private
+        view
+        returns (uint256[] memory moduleTypeIds, address[] memory modules, bytes[] memory initDatas)
+    {
+        moduleTypeIds = new uint256[](1);
+        modules = new address[](1);
+        initDatas = new bytes[](1);
+        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
+        modules[0] = address(_validator);
+        initDatas[0] = abi.encodePacked(_signer);
+        return (moduleTypeIds, modules, initDatas);
     }
 }

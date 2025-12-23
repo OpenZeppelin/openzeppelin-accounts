@@ -65,8 +65,12 @@ contract ERC7579MultisigWeightedValidatorTest is Test {
         (uint256[] memory keys, bytes[] memory signers) = _buildSigners(numSigners);
         (uint64[] memory weights, uint64 totalWeight) = _buildWeights(numSigners);
 
-        bytes memory initData = abi.encode(signers, totalWeight, weights);
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), initData);
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(signers, totalWeight, weights);
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         PackedUserOperation memory userOp = _prepareUserOperation();
         bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
@@ -92,8 +96,12 @@ contract ERC7579MultisigWeightedValidatorTest is Test {
         (, bytes[] memory signers) = _buildSigners(numSigners);
         (uint64[] memory weights, uint64 totalWeight) = _buildWeights(numSigners);
 
-        bytes memory initData = abi.encode(signers, totalWeight, weights);
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), initData);
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(signers, totalWeight, weights);
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         PackedUserOperation memory userOp = _prepareUserOperation();
         bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
@@ -170,5 +178,19 @@ contract ERC7579MultisigWeightedValidatorTest is Test {
                 paymasterAndData: bytes(""),
                 signature: bytes("")
             });
+    }
+
+    function _buildInstallationModules(
+        bytes[] memory signers,
+        uint64 threshold,
+        uint64[] memory weights
+    ) private view returns (uint256[] memory moduleTypeIds, address[] memory modules, bytes[] memory initDatas) {
+        moduleTypeIds = new uint256[](1);
+        modules = new address[](1);
+        initDatas = new bytes[](1);
+        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
+        modules[0] = address(_multisig);
+        initDatas[0] = abi.encode(signers, threshold, weights);
+        return (moduleTypeIds, modules, initDatas);
     }
 }
