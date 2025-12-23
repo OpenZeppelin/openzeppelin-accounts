@@ -48,7 +48,12 @@ contract ERC7579ExecutorTest is Test {
     }
 
     function testExecute(uint256 arg1, uint256 arg2) public {
-        _account.initialize(MODULE_TYPE_EXECUTOR, address(_executor), "");
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules();
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         bytes32 salt = bytes32(0);
         bytes32 mode = Mode.unwrap(
@@ -76,7 +81,12 @@ contract ERC7579ExecutorTest is Test {
     }
 
     function testExecuteBatch(uint256 arg1, uint256 arg2) public {
-        _account.initialize(MODULE_TYPE_EXECUTOR, address(_executor), "");
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules();
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         bytes32 salt = bytes32(0);
         bytes32 mode = Mode.unwrap(
@@ -113,5 +123,18 @@ contract ERC7579ExecutorTest is Test {
 
         bytes[] memory returnData = _executor.execute(address(_account), salt, mode, data);
         assertEq(returnData.length, 2);
+    }
+
+    function _buildInstallationModules()
+        private
+        view
+        returns (uint256[] memory moduleTypeIds, address[] memory modules, bytes[] memory initDatas)
+    {
+        moduleTypeIds = new uint256[](1);
+        modules = new address[](1);
+        initDatas = new bytes[](1);
+        moduleTypeIds[0] = MODULE_TYPE_EXECUTOR;
+        modules[0] = address(_executor);
+        initDatas[0] = "";
     }
 }

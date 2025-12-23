@@ -30,7 +30,7 @@ async function fixture() {
   const installData = ethers.solidityPacked(['address'], [signer.address]);
 
   // ERC-7579 account
-  const mockAccount = await helper.newAccount('$AccountERC7579');
+  const mockAccount = await helper.newAccount('$OpenAccount', ['OpenAccount', '1']);
   const mockFromAccount = await impersonate(mockAccount.address).then(asAccount => mock.connect(asAccount));
 
   return {

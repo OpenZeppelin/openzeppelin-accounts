@@ -9,20 +9,50 @@ import {ERC1155Holder} from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155
 import {ERC721Holder} from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {MODULE_TYPE_VALIDATOR, MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
+import {Mode} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 
 /**
  * @dev A modular smart account implementation.
  */
 abstract contract OpenAccount is Initializable, Account, EIP712, AccountERC7579, ERC721Holder, ERC1155Holder {
+    /// @dev Thrown when the length of the module type ids, modules, and init datas do not match during initialization.
+    error OpenAccountModuleTypeIdsLengthMismatch();
+
+    /// @dev Thrown when the account is initialized without a validator or executor module.
+    error OpenAccountNoValidatorOrExecutor();
+
     /**
      * @dev Initializes the account with a validator or executor module.
      *
-     * The `moduleTypeId` must be either MODULE_TYPE_VALIDATOR (1) or MODULE_TYPE_EXECUTOR (2).
-     * The `module` address and `initData` are passed to the `_installModule` function.
+     * It receives an array of `moduleTypeIds`, `modules`, and `initDatas` that are used
+     * to install modules during initialization. It also receives a `mode` and `executionCalldata`
+     * that are used to execute the account, these can be used to configure the account.
+     *
+     * Set the `configCalldata` to `bytes("")` to skip the configuration call.
      */
-    function initialize(uint256 moduleTypeId, address module, bytes memory initData) public virtual initializer {
-        require(moduleTypeId == MODULE_TYPE_VALIDATOR || moduleTypeId == MODULE_TYPE_EXECUTOR);
-        _installModule(moduleTypeId, module, initData);
+    function initialize(
+        uint256[] calldata moduleTypeIds,
+        address[] calldata modules,
+        bytes[] calldata initDatas,
+        Mode configMode,
+        bytes calldata configCalldata
+    ) public virtual initializer {
+        require(
+            moduleTypeIds.length == modules.length && modules.length == initDatas.length,
+            OpenAccountModuleTypeIdsLengthMismatch()
+        );
+        bool hasValidatorOrExecutor;
+        for (uint256 i = 0; i < moduleTypeIds.length; i++) {
+            _installModule(moduleTypeIds[i], modules[i], initDatas[i]);
+            hasValidatorOrExecutor =
+                hasValidatorOrExecutor ||
+                moduleTypeIds[i] == MODULE_TYPE_VALIDATOR ||
+                moduleTypeIds[i] == MODULE_TYPE_EXECUTOR;
+        }
+        require(hasValidatorOrExecutor, OpenAccountNoValidatorOrExecutor());
+        if (configCalldata.length > 0) {
+            _execute(configMode, configCalldata);
+        }
     }
 
     /// @inheritdoc AccountERC7579

@@ -11,7 +11,6 @@ import {
     ModeSelector,
     ModePayload
 } from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
-import {IEntryPoint} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {ERC4337Utils, IEntryPointExtra} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
@@ -19,10 +18,7 @@ import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-A
 import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {ERC7579ValidatorMock} from "../../src/mocks/modules/ERC7579Mock.sol";
 import {CallReceiverMock} from "../../src/mocks/CallReceiverMock.sol";
-import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import {ERC7579ModuleMock} from "../../src/mocks/modules/ERC7579Mock.sol";
-import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 contract OpenAccountEnableModeMock is OpenAccountEnableMode {
     constructor() EIP712("MyAccount", "1") {}
@@ -60,11 +56,12 @@ contract OpenAccountEnableModeTest is Test {
         // Setup account and install initial validator module
         _account = new OpenAccountEnableModeMock();
         _initialValidator = new ERC7579ValidatorMock();
-        _account.initialize(
-            MODULE_TYPE_VALIDATOR,
-            address(_initialValidator),
-            abi.encodePacked(_initialValidatorSigner)
-        );
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(address(_initialValidator), _initialValidatorSigner);
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
         vm.deal(address(_account), MAX_ETH);
 
         // Deploy a new validator to install via enable mode
@@ -477,5 +474,17 @@ contract OpenAccountEnableModeTest is Test {
                 paymasterAndData: bytes(""),
                 signature: bytes("")
             });
+    }
+
+    function _buildInstallationModules(
+        address validator,
+        address validatorSigner
+    ) private pure returns (uint256[] memory moduleTypeIds, address[] memory modules, bytes[] memory initDatas) {
+        moduleTypeIds = new uint256[](1);
+        modules = new address[](1);
+        initDatas = new bytes[](1);
+        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
+        modules[0] = address(validator);
+        initDatas[0] = abi.encodePacked(validatorSigner);
     }
 }
