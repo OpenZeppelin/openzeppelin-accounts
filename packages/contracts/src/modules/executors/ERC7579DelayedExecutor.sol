@@ -354,7 +354,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
         bytes calldata executionCalldata,
         uint48 timepoint,
         uint32 delay
-    ) internal virtual returns (bytes32 operationId, Schedule memory schedule_) {
+    ) internal virtual returns (bytes32) {
         bytes32 id = hashOperation(account, salt, mode, executionCalldata);
         _validateStateBitmap(id, _encodeStateBitmap(OperationState.Unknown));
 
@@ -363,7 +363,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
         _schedules[id].expiresAfter = getExpiration(account);
 
         emit ERC7579ExecutorOperationScheduled(account, id, salt, mode, executionCalldata, timepoint + delay);
-        return (id, schedule_);
+        return id;
     }
 
     /**
