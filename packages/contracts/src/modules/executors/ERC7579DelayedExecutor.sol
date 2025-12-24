@@ -44,7 +44,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
     using Time for *;
 
     struct Schedule {
-        // 1 slot = 48 + 32 + 32 + 1 + 1 = 114 bits ~ 14 bytes
+        // 1 slot = 48 + 32 + 32 + 8 + 8 = 114 bits = 16 bytes
         uint48 scheduledAt; // The time when the operation was scheduled
         uint32 executableAfter; // Time after the operation becomes executable
         uint32 expiresAfter; // Time after the operation expires
@@ -53,7 +53,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
     }
 
     struct ExecutionConfig {
-        // 1 slot = 112 + 32 + 1 = 145 bits ~ 18 bytes
+        // 1 slot = 112 + 32 + 8 = 152 bits = 19 bytes
         Time.Delay delay;
         uint32 expiration; // Time after operation is OperationState.Ready to expire
         bool installed;
@@ -335,7 +335,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
 
     /**
      * @dev Internal version of {schedule} that takes an `account` address to schedule
-     * an operation that starts its security window at `at` and expires after `delay`.
+     * an operation that starts its security window at `timepoint` and expires after `delay`.
      *
      * Requirements:
      *
