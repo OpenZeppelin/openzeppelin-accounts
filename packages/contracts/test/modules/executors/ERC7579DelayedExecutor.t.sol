@@ -2,7 +2,6 @@
 pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC7579DelayedExecutorMock} from "../../../src/mocks/modules/ERC7579Mock.sol";
 import {CallReceiverMock} from "../../../src/mocks/CallReceiverMock.sol";
 import {
     ERC7579Utils,
@@ -23,7 +22,24 @@ contract OpenAccountMock is OpenAccount {
     constructor() EIP712("TestAccount", "1") {}
 }
 
-contract ERC7579DelayedExecutorTestMock is ERC7579DelayedExecutorMock {}
+contract ERC7579DelayedExecutorTestMock is ERC7579DelayedExecutor {
+    function schedule(address account, bytes32 salt, bytes32 mode, bytes calldata data) public virtual {
+        _schedule(account, salt, mode, data);
+    }
+
+    function cancel(address account, bytes32 salt, bytes32 mode, bytes calldata data) public virtual {
+        _cancel(account, salt, mode, data);
+    }
+
+    function execute(
+        address account,
+        bytes32 salt,
+        bytes32 mode,
+        bytes calldata data
+    ) public virtual returns (bytes[] memory) {
+        return _execute(account, salt, mode, data);
+    }
+}
 
 contract ERC7579DelayedExecutorTest is Test {
     using ERC7579Utils for *;
