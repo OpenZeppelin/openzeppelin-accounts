@@ -105,17 +105,42 @@ contract MyFactoryAccount {
 
 #### Handling Initialization
 
-Since `OpenAccount` implements `Initializable`, it's designed to work with factories. The account can be initialized with a validator or executor module right after deployment:
+Since `OpenAccount` implements `Initializable`, it's designed to work with factories. The account must be initialized with at least one validator or executor module right after deployment:
 
 ```solidity
-// Initialize with a validator during deployment
-bytes memory initData = abi.encodePacked(signerAddress);
-account.initialize(MODULE_TYPE_VALIDATOR, validatorAddress, initData);
+function initialize(
+    uint256[] calldata moduleTypeIds,
+    address[] calldata modules,
+    bytes[] calldata initDatas,
+    Mode configMode,
+    bytes calldata configCalldata
+) public
 ```
 
+In case an extra configuration call is needed from the account, the `configMode` and `configCalldata` arguments following ERC-7579 `Mode` and `executionCalldata` definitions, which allow to execute arbitrary calls during initialization and after module installation:
+
+```solidity
+// Single configuration call during initialization
+Mode configMode = CALLTYPE_SINGLE.encodeMode(EXECTYPE_DEFAULT, ...);
+bytes memory configCalldata = abi.encodePacked(
+    targetAddress,
+    uint256(0), // value
+    abi.encodeCall(target.someFunction, (arg1, arg2))
+);
+
+account.initialize(moduleTypeIds, modules, initDatas, configMode, configCalldata);
+```
+
+<Callout>
+  Factories will normally include the initialization call as part of the address derivation to ensure that each address
+  is specific to the owners and configuration set. For this reason, accounts who want to support `value` during a
+  configuration call must receive it first to an address that includes the transfer and native value in the calldata;
+  any change to the `configCalldata` will change the address of the account.
+</Callout>
+
 <Callout type="warning">
-  Leaving an account uninitialized will leave it unusable since no validator module will be installed to authorize
-  operations.
+  Accounts must be initialized with at least one validator or executor module. Leaving an account uninitialized or
+  without these modules will make it unusable since no module will be installed to authorize operations.
 </Callout>
 
 ## Installing Modules

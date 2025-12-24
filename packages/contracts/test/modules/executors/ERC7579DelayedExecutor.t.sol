@@ -2,7 +2,6 @@
 pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC7579DelayedExecutorMock} from "../../../src/mocks/modules/ERC7579Mock.sol";
 import {CallReceiverMock} from "../../../src/mocks/CallReceiverMock.sol";
 import {
     ERC7579Utils,
@@ -23,7 +22,24 @@ contract OpenAccountMock is OpenAccount {
     constructor() EIP712("TestAccount", "1") {}
 }
 
-contract ERC7579DelayedExecutorTestMock is ERC7579DelayedExecutorMock {}
+contract ERC7579DelayedExecutorTestMock is ERC7579DelayedExecutor {
+    function schedule(address account, bytes32 salt, bytes32 mode, bytes calldata data) public virtual {
+        _schedule(account, salt, mode, data);
+    }
+
+    function cancel(address account, bytes32 salt, bytes32 mode, bytes calldata data) public virtual {
+        _cancel(account, salt, mode, data);
+    }
+
+    function execute(
+        address account,
+        bytes32 salt,
+        bytes32 mode,
+        bytes calldata data
+    ) public virtual returns (bytes[] memory) {
+        return _execute(account, salt, mode, data);
+    }
+}
 
 contract ERC7579DelayedExecutorTest is Test {
     using ERC7579Utils for *;
@@ -50,8 +66,6 @@ contract ERC7579DelayedExecutorTest is Test {
     }
 
     function testDelayedExecutorInstallation(uint32 initialDelay, uint32 initialExpiration) public {
-        bytes memory initData = abi.encodePacked(initialDelay, initialExpiration);
-
         vm.expectEmit(true, true, true, true);
         emit ERC7579DelayedExecutor.ERC7579ExecutorDelayUpdated(
             address(_account),
@@ -62,7 +76,12 @@ contract ERC7579DelayedExecutorTest is Test {
         vm.expectEmit(true, true, true, true);
         emit ERC7579DelayedExecutor.ERC7579ExecutorExpirationUpdated(address(_account), initialExpiration);
 
-        _account.initialize(MODULE_TYPE_EXECUTOR, address(_delayedExecutor), initData);
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(initialDelay, initialExpiration);
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         assertTrue(_delayedExecutor.isModuleType(MODULE_TYPE_EXECUTOR));
         assertFalse(_delayedExecutor.isModuleType(999)); // Random invalid type
@@ -89,7 +108,12 @@ contract ERC7579DelayedExecutorTest is Test {
             _delayedExecutor.defaultExpiration()
         );
 
-        _account.initialize(MODULE_TYPE_EXECUTOR, address(_delayedExecutor), "");
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         (uint32 delay, , ) = _delayedExecutor.getDelay(address(_account));
         assertEq(delay, _delayedExecutor.minSetback());
@@ -97,8 +121,12 @@ contract ERC7579DelayedExecutorTest is Test {
     }
 
     function testDelayedExecutorUninstallation(uint32 initialDelay, uint32 initialExpiration) public {
-        bytes memory initData = abi.encodePacked(initialDelay, initialExpiration);
-        _account.initialize(MODULE_TYPE_EXECUTOR, address(_delayedExecutor), initData);
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(initialDelay, initialExpiration);
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         vm.expectEmit(true, true, true, true);
         emit ERC7579DelayedExecutor.ERC7579ExecutorDelayUpdated(
@@ -117,10 +145,14 @@ contract ERC7579DelayedExecutorTest is Test {
     }
 
     function testOperationStates(uint32 initialDelay, uint32 initialExpiration, bytes32 salt) public {
-        bytes memory initData = abi.encodePacked(initialDelay, initialExpiration);
         vm.assume(initialDelay > 0);
         vm.assume(initialExpiration > 0);
-        _account.initialize(MODULE_TYPE_EXECUTOR, address(_delayedExecutor), initData);
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(initialDelay, initialExpiration);
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
         (bytes memory data, bytes32 mode) = _prepareDataAndMode();
 
         // Initially Unknown
@@ -158,10 +190,14 @@ contract ERC7579DelayedExecutorTest is Test {
 
     function testOperationExpiration(uint32 initialDelay, uint32 initialExpiration, bytes32 salt) public {
         (bytes memory data, bytes32 mode) = _prepareDataAndMode();
-        bytes memory initData = abi.encodePacked(initialDelay, initialExpiration);
         vm.assume(initialDelay > 0);
         vm.assume(initialExpiration > 0);
-        _account.initialize(MODULE_TYPE_EXECUTOR, address(_delayedExecutor), initData);
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(initialDelay, initialExpiration);
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         // Schedule operation
         vm.prank(address(_account));
@@ -184,8 +220,12 @@ contract ERC7579DelayedExecutorTest is Test {
 
     function testOperationCancellation(bytes32 salt) public {
         (bytes memory data, bytes32 mode) = _prepareDataAndMode();
-        bytes memory initData = abi.encodePacked(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
-        _account.initialize(MODULE_TYPE_EXECUTOR, address(_delayedExecutor), initData);
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         // Schedule operation
         vm.prank(address(_account));
@@ -215,8 +255,12 @@ contract ERC7579DelayedExecutorTest is Test {
         vm.prank(address(_account));
         _delayedExecutor.schedule(_other, salt, mode, data);
 
-        bytes memory initData = abi.encodePacked(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
-        _account.initialize(MODULE_TYPE_EXECUTOR, address(_delayedExecutor), initData);
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         bytes32 operationId = _delayedExecutor.hashOperation(address(_account), salt, mode, data);
 
@@ -251,8 +295,12 @@ contract ERC7579DelayedExecutorTest is Test {
 
     function testExecuteOperation(bytes32 salt, uint256 arg1, uint256 arg2) public {
         (bytes memory data, bytes32 mode) = _prepareDataAndMode(arg1, arg2);
-        bytes memory initData = abi.encodePacked(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
-        _account.initialize(MODULE_TYPE_EXECUTOR, address(_delayedExecutor), initData);
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         // Schedule operation
         vm.prank(address(_account));
@@ -279,8 +327,12 @@ contract ERC7579DelayedExecutorTest is Test {
 
     function testExecuteExpiredOperation(bytes32 salt) public {
         (bytes memory data, bytes32 mode) = _prepareDataAndMode();
-        bytes memory initData = abi.encodePacked(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
-        _account.initialize(MODULE_TYPE_EXECUTOR, address(_delayedExecutor), initData);
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         // Schedule operation
         vm.prank(address(_account));
@@ -295,8 +347,12 @@ contract ERC7579DelayedExecutorTest is Test {
     }
 
     function testSetDelay() public {
-        bytes memory initData = abi.encodePacked(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
-        _account.initialize(MODULE_TYPE_EXECUTOR, address(_delayedExecutor), initData);
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         uint32 newDelay = 5 days;
         uint48 expectedEffectTime = uint48(block.timestamp + _delayedExecutor.minSetback());
@@ -321,8 +377,12 @@ contract ERC7579DelayedExecutorTest is Test {
     }
 
     function testSetExpiration() public {
-        bytes memory initData = abi.encodePacked(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
-        _account.initialize(MODULE_TYPE_EXECUTOR, address(_delayedExecutor), initData);
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         uint32 newExpiration = 30 days;
 
@@ -338,8 +398,12 @@ contract ERC7579DelayedExecutorTest is Test {
     function testCancelScheduledOperation(bytes32 salt) public {
         (bytes memory data, bytes32 mode) = _prepareDataAndMode();
 
-        bytes memory initData = abi.encodePacked(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
-        _account.initialize(MODULE_TYPE_EXECUTOR, address(_delayedExecutor), initData);
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         // Schedule operation
         vm.prank(address(_account));
@@ -363,8 +427,12 @@ contract ERC7579DelayedExecutorTest is Test {
     function testCancelReadyOperation(bytes32 salt) public {
         (bytes memory data, bytes32 mode) = _prepareDataAndMode();
 
-        bytes memory initData = abi.encodePacked(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
-        _account.initialize(MODULE_TYPE_EXECUTOR, address(_delayedExecutor), initData);
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         // Schedule operation
         vm.prank(address(_account));
@@ -407,5 +475,17 @@ contract ERC7579DelayedExecutorTest is Test {
                 )
             )
         );
+    }
+
+    function _buildInstallationModules(
+        uint32 initialDelay,
+        uint32 initialExpiration
+    ) private view returns (uint256[] memory moduleTypeIds, address[] memory modules, bytes[] memory initDatas) {
+        moduleTypeIds = new uint256[](1);
+        modules = new address[](1);
+        initDatas = new bytes[](1);
+        moduleTypeIds[0] = MODULE_TYPE_EXECUTOR;
+        modules[0] = address(_delayedExecutor);
+        initDatas[0] = abi.encodePacked(initialDelay, initialExpiration);
     }
 }

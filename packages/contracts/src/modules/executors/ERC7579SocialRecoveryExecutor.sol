@@ -16,13 +16,17 @@ import {ERC7579MultisigWeighted} from "../ERC7579MultisigWeighted.sol";
  * recovery operations, which execute after a security delay, giving the legitimate account owner
  * time to detect and cancel malicious recovery attempts.
  *
- * To schedule operations, signers must sign an EIP-712 typed data hash of the operation using
- * the account's domain separator.
+ * To schedule operations, guardians must sign an EIP-712 typed data hash of the operation using
+ * the account's domain separator and provide it to the {startRecovery} function. Once scheduled,
+ * operations must wait for the configured delay period before becoming executable via {executeRecovery}.
+ *
+ * Operations can be canceled by either the account itself or by guardians via {cancelRecovery}
+ * with a valid multisignature.
  *
  * See {ERC7579DelayedExecutor} and {ERC7579MultisigWeighted} for more details.
  *
  * NOTE: This module does not restrict execution by default once the social recovery operation
- * is ready. See {_validateSchedule} and {_validateExecution} for more details.
+ * is ready. Anyone can call {executeRecovery} once the delay period has elapsed.
  */
 contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579MultisigWeighted {
     using MessageHashUtils for *;
@@ -105,13 +109,21 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
     }
 
     /**
-     * @dev Schedules a social recovery operation for the specified account. See {schedule}.
+     * @dev Schedules a social recovery operation for the specified account.
      *
      * The `recoveryData` is the encoded execution that will be sent to the account, and it
      * follows the ERC-7579 standard encoding. The `multisignature` is a valid authorization
      * from the guardians to schedule the operation and must be signed over the
      * {SCHEDULE_RECOVER_TYPEHASH} typed data hash of the operation using the account's domain
      * separator.
+     *
+     * Requirements:
+     *
+     * * The multisignature must be valid and meet the threshold requirements.
+     *   Reverts with {ERC7579SocialRecoveryExecutorInvalidSchedule} if not.
+     * * The signature must be encoded properly. See {ERC7579MultisigWeighted-_validateMultisig}.
+     * * See {ERC7579DelayedExecutor-_schedule} for scheduling requirements.
+     * * The `account` must implement {IERC5267}.
      */
     function startRecovery(
         address account,
@@ -119,129 +131,78 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
         bytes32 mode,
         bytes calldata recoveryData,
         bytes calldata multisignature
-    ) public {
-        // Can't reconstruct calldata to call internally
-        this.schedule(account, salt, mode, abi.encodePacked(uint16(recoveryData.length), recoveryData, multisignature));
+    ) public virtual {
+        (bool success, bytes[] calldata signers, bytes[] calldata signatures) = Multisig
+            .tryDecodeMultisignatureCalldata(multisignature);
+
+        require(
+            success &&
+                _validateMultisig(
+                    account,
+                    _getTypedHash(SCHEDULE_RECOVER_TYPEHASH, account, salt, mode, recoveryData),
+                    signers,
+                    signatures
+                ),
+            ERC7579SocialRecoveryExecutorInvalidSchedule()
+        );
+        _schedule(account, salt, mode, recoveryData);
     }
 
     /**
-     * @dev Executes a social recovery operation for the specified account. See {execute}.
+     * @dev Executes a social recovery operation for the specified account.
      *
-     * NOTE: This function can be called by any account once the operation is ready.
-     * See {state} for more details.
+     * This function can be called by any account once the operation is ready (i.e., the delay
+     * period has elapsed). The operation must be in the `Ready` state to be executed.
+     *
+     * Requirements:
+     *
+     * * See {ERC7579DelayedExecutor-_execute} for execution requirements.
      */
-    function executeRecovery(address account, bytes32 salt, bytes32 mode, bytes calldata recoveryData) public {
-        execute(account, salt, mode, recoveryData);
+    function executeRecovery(address account, bytes32 salt, bytes32 mode, bytes calldata recoveryData) public virtual {
+        _execute(account, salt, mode, recoveryData);
     }
 
     /**
-     * @dev Cancels a social recovery operation for the specified account. See {cancel}.
+     * @dev Cancels a social recovery operation.
      *
-     * In case the caller is not the account, any caller can cancel the operation if they
-     * provide a valid multisignature over the {CANCEL_RECOVER_TYPEHASH} typed data hash of
-     * the operation using the account's domain separator. See {_validateCancel} for more details.
+     * This function allows either the account itself or guardians with valid multisignature
+     * authorization to cancel a scheduled recovery operation. If the caller is not the account,
+     * the `multisignature` must contain valid guardian signatures over the {CANCEL_RECOVER_TYPEHASH}
+     * typed data hash using the account's domain separator.
+     *
+     * Requirements:
+     *
+     * * The caller must be the account or a valid `multisignature` must be provided.
+     * * See {ERC7579DelayedExecutor-_cancel} for cancellation requirements.
+     * * The `account` must implement {IERC5267}.
      */
-    function cancelRecovery(address account, bytes32 salt, bytes32 mode, bytes calldata recoveryData) public {
-        cancel(account, salt, mode, recoveryData);
-    }
-
-    /// @dev Similar to {cancelRecovery}, but for guardians to cancel the operation.
     function cancelRecovery(
         address account,
         bytes32 salt,
         bytes32 mode,
         bytes calldata recoveryData,
         bytes calldata multisignature
-    ) public {
-        // Can't reconstruct calldata to call internally
-        this.cancelRecovery(
-            account,
-            salt,
-            mode,
-            abi.encodePacked(uint16(recoveryData.length), recoveryData, multisignature)
-        );
-    }
-
-    /**
-     * @dev Validates a schedule request for a social recovery operation.
-     *
-     * Data encoding format: `[uint16(recoveryCalldataLength), recoveryCalldata, multisignature]`
-     *
-     * Where:
-     *
-     * * `recoveryCalldataLength`: Length of the execution calldata (2 bytes)
-     * * `recoveryCalldata`: The actual calldata to execute during recovery
-     * * `multisignature`: Guardian signatures in multisig format (see {Multisig-decodeMultisignatureCalldata})
-     */
-    function _validateSchedule(
-        address account,
-        bytes32 salt,
-        bytes32 mode,
-        bytes calldata data
-    ) internal virtual override returns (bytes calldata recoveryCalldata) {
-        uint16 recoveryCalldataLength = uint16(bytes2(data[0:2])); // First 2 bytes are the length
-        recoveryCalldata = data[2:2 + recoveryCalldataLength]; // Next bytes are the recovery calldata
-        (bytes[] calldata signers, bytes[] calldata signatures) = Multisig.decodeMultisignatureCalldata(
-            data[2 + recoveryCalldataLength:]
-        );
-        bytes32 recoverHash = _getTypedHash(SCHEDULE_RECOVER_TYPEHASH, account, salt, mode, recoveryCalldata);
-        require(
-            _validateMultisig(account, recoverHash, signers, signatures),
-            ERC7579SocialRecoveryExecutorInvalidSchedule()
-        );
-        return recoveryCalldata;
-    }
-
-    /**
-     * @dev Validates a cancel request for a scheduled social recovery operation.
-     *
-     * This function ensures that only the account itself or authorized guardians can
-     * cancel scheduled recovery operations. This provides a security mechanism where
-     * the legitimate account owner can cancel malicious or unwanted recovery attempts
-     * during the delay period, while guardians can cancel recovery operations that they
-     * have signed.
-     *
-     * Requirements:
-     *
-     * * The caller must be the account itself
-     * * If the caller is not the account, the `data` must be encoded properly. See {_isValidMultisigCancel} for more details.
-     */
-    function _validateCancel(
-        address account,
-        bytes32 salt,
-        bytes32 mode,
-        bytes calldata data
-    ) internal view virtual override returns (bytes calldata) {
-        if (msg.sender == account) return data;
-        (bool valid, bytes calldata recoveryCalldata) = _isValidMultisigCancel(account, salt, mode, data);
+    ) public virtual {
+        bool valid = msg.sender == account;
+        if (!valid) {
+            (bool success, bytes[] calldata signers, bytes[] calldata signatures) = Multisig
+                .tryDecodeMultisignatureCalldata(multisignature);
+            valid =
+                success &&
+                _validateMultisig(
+                    account,
+                    _getTypedHash(CANCEL_RECOVER_TYPEHASH, account, salt, mode, recoveryData),
+                    signers,
+                    signatures
+                );
+        }
         require(valid, ERC7579SocialRecoveryExecutorInvalidCancel());
-        return recoveryCalldata;
+        _cancel(account, salt, mode, recoveryData);
     }
 
-    /**
-     * @dev Validates if the `data` is a valid multisignature for canceling a scheduled social recovery operation.
-     *
-     * Data encoding format: `[uint16(recoveryCalldataLength), recoveryCalldata, multisignature]`
-     *
-     * Where:
-     *
-     * * `recoveryCalldataLength`: Length of the execution calldata (2 bytes)
-     * * `recoveryCalldata`: The actual calldata to execute during recovery
-     * * `multisignature`: Guardian signatures in multisig format (see {Multisig-decodeMultisignatureCalldata})
-     */
-    function _isValidMultisigCancel(
-        address account,
-        bytes32 salt,
-        bytes32 mode,
-        bytes calldata data
-    ) internal view virtual returns (bool valid, bytes calldata recoveryCalldata) {
-        uint16 recoveryCalldataLength = uint16(bytes2(data[0:2])); // First 2 bytes are the length
-        recoveryCalldata = data[2:2 + recoveryCalldataLength]; // Next bytes are the recovery calldata
-        (bytes[] calldata signers, bytes[] calldata signatures) = Multisig.decodeMultisignatureCalldata(
-            data[2 + recoveryCalldataLength:]
-        );
-        bytes32 cancelHash = _getTypedHash(CANCEL_RECOVER_TYPEHASH, account, salt, mode, recoveryCalldata);
-        return (_validateMultisig(account, cancelHash, signers, signatures), recoveryCalldata);
+    /// @dev Same as {cancelRecovery}, but without a `multisignature`.
+    function cancelRecovery(address account, bytes32 salt, bytes32 mode, bytes calldata recoveryData) public virtual {
+        cancelRecovery(account, salt, mode, recoveryData, Calldata.emptyBytes());
     }
 
     /**
@@ -253,6 +214,10 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
      * * `salt`: Unique salt for this operation
      * * `mode`: Execution mode as defined in ERC-7579
      * * `recoveryCalldata`: The exact calldata to be executed during recovery
+     *
+     * Requirements:
+     *
+     * * The `account` must implement {IERC5267}.
      */
     function _getTypedHash(
         bytes32 typehash,
