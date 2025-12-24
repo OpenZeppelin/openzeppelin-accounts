@@ -114,22 +114,12 @@ contract ERC7579ExecutorMock is ERC7579Executor {
 
     function onUninstall(bytes calldata data) external {}
 
-    function _validateExecution(
-        address,
-        bytes32,
-        bytes32,
+    function execute(
+        address account,
+        bytes32 salt,
+        bytes32 mode,
         bytes calldata data
-    ) internal pure override returns (bytes calldata) {
-        return data;
-    }
-}
-
-abstract contract ERC7579DelayedExecutorMock is ERC7579DelayedExecutor {
-    function _validateSchedule(address account, bytes32, bytes32, bytes calldata) internal view override {
-        require(msg.sender == account);
-    }
-
-    function _validateCancel(address account, bytes32, bytes32, bytes calldata) internal view override {
-        require(msg.sender == account);
+    ) public virtual returns (bytes[] memory returnData) {
+        return _execute(account, salt, mode, data);
     }
 }
