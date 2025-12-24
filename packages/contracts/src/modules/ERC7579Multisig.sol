@@ -269,7 +269,7 @@ abstract contract ERC7579Multisig is IERC7579Module {
         bytes32 hash,
         bytes[] calldata signingSigners,
         bytes[] calldata signatures
-    ) internal view virtual returns (bool valid) {
+    ) internal view virtual returns (bool) {
         for (uint256 i = 0; i < signingSigners.length; ++i) {
             if (!isSigner(account, signingSigners[i])) {
                 return false;

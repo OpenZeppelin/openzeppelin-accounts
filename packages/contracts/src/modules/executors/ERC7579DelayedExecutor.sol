@@ -145,7 +145,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
     }
 
     /// @dev Expiration delay for account operations.
-    function getExpiration(address account) public view virtual returns (uint32 expiration) {
+    function getExpiration(address account) public view virtual returns (uint32) {
         return _configs[account].expiration;
     }
 
@@ -378,7 +378,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
         bytes32 salt,
         bytes32 mode,
         bytes calldata executionCalldata
-    ) internal virtual override returns (bytes[] memory returnData) {
+    ) internal virtual override returns (bytes[] memory) {
         bytes32 id = hashOperation(account, salt, mode, executionCalldata);
         _validateStateBitmap(id, _encodeStateBitmap(OperationState.Ready));
 
