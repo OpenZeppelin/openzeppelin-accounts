@@ -19,13 +19,6 @@ library Multisig {
      * `abi.decode(multisignature, (bytes[], bytes[]))` but operates directly on calldata to avoid
      * memory allocation, improving gas efficiency during multisignature validation.
      *
-     * Requirements:
-     *
-     * * The `multisignature` must be at least 128 bytes long to contain the minimum ABI-encoded structure.
-     * * Both array offsets must be properly aligned and within bounds.
-     * * Both array length fields must be accessible within the provided data.
-     * * The arrays should have the same length for proper signature validation.
-     *
      * NOTE: This function does not validate the returned signers and signatures have the same length.
      */
     function tryDecodeMultisignatureCalldata(
@@ -42,30 +35,25 @@ library Multisig {
         // Get offset to the second array (signatures)
         uint256 signaturesOffset = uint256(bytes32(multisignature[0x20:0x40]));
 
+        // The array data starts after the length field
+        uint256 signersDataOffset = signersOffset + 0x20;
+        uint256 signaturesDataOffset = signaturesOffset + 0x20;
+
         // Validate offsets are within bounds and properly aligned
         if (
             signersOffset < 0x40 ||
-            signersOffset + 0x20 > multisignature.length ||
+            signersDataOffset > multisignature.length ||
             signaturesOffset < 0x40 ||
-            signaturesOffset + 0x20 > multisignature.length
+            signaturesDataOffset > multisignature.length
         ) {
             return (false, _emptyBytesArray(), _emptyBytesArray());
         }
 
         // Get the signers array length
-        uint256 signersLength = uint256(bytes32(multisignature[signersOffset:signersOffset + 0x20]));
+        uint256 signersLength = uint256(bytes32(multisignature[signersOffset:signersDataOffset]));
 
         // Get the signatures array length
-        uint256 signaturesLength = uint256(bytes32(multisignature[signaturesOffset:signaturesOffset + 0x20]));
-
-        // The array data starts after the length field
-        uint256 signersDataOffset = signersOffset + 0x20;
-        uint256 signaturesDataOffset = signaturesOffset + 0x20;
-
-        // Validate data offsets are within bounds
-        if (signersDataOffset > multisignature.length || signaturesDataOffset > multisignature.length) {
-            return (false, _emptyBytesArray(), _emptyBytesArray());
-        }
+        uint256 signaturesLength = uint256(bytes32(multisignature[signaturesOffset:signaturesDataOffset]));
 
         // Set up the calldata slices for both arrays
         assembly ("memory-safe") {
@@ -78,7 +66,16 @@ library Multisig {
         return (true, signingSigners, signatures);
     }
 
-    /// @dev Same as {tryDecodeMultisignatureCalldata}, but reverts if the multisignature is invalid.
+    /**
+     * @dev Same as {tryDecodeMultisignatureCalldata}, but reverts if the multisignature is invalid.
+     *
+     * Requirements:
+     *
+     * * The `multisignature` must be at least 128 bytes long to contain the minimum ABI-encoded structure.
+     * * Both array offsets must be properly aligned and within bounds.
+     * * Both array length fields must be accessible within the provided data.
+     * * The arrays should have the same length for proper signature validation.
+     */
     function decodeMultisignatureCalldata(
         bytes calldata multisignature
     ) internal pure returns (bytes[] calldata signingSigners, bytes[] calldata signatures) {
