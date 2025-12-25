@@ -10,18 +10,21 @@ import {
     ERC7579Utils,
     ModeSelector,
     ModePayload,
-    Mode
+    Mode,
+    Execution
 } from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {ERC7579Executor} from "./ERC7579Executor.sol";
 
 contract ERC7579NativeSpender is ERC7579Executor, Nonces {
     using EnumerableMap for EnumerableMap.UintToUintMap;
 
-    error ERC7579InsufficientAvailable(address account, address spender, uint256 amount);
+    error ERC7579NativeInsufficientAvailable(address account, address spender, uint256 amount);
 
     error ERC7579NativeSpenderInvalidInitData();
 
     error ERC7579NativeSpenderMismatchedInitDataLengths(uint256 spenders, uint256 limits, uint256 renewPeriods);
+
+    error ERC7579NativeSpenderMismatchedBatchLengths(uint256 tos, uint256 amounts);
 
     error ERC7579NativeSpenderInvalidLimit(uint256 limit);
 
@@ -29,7 +32,7 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
 
     error ERC7579NativeSpenderInvalidStart(uint256 start);
 
-    event SpendingConfigCleared(address indexed account);
+    event ERC7579NativeSpendingConfigCleared(address indexed account);
 
     event SpendingConfigSet(
         address indexed account,
@@ -128,7 +131,7 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
         // the module will not clean up the state of spenders, which will be preserved after reinstallation.
         // To avoid this, we use a nonce to discard the previous configuration safely.
         _useNonce(msg.sender);
-        emit SpendingConfigCleared(msg.sender);
+        emit ERC7579NativeSpendingConfigCleared(msg.sender);
     }
 
     function transferFrom(address account, address to, uint256 amount) public virtual {
@@ -136,7 +139,7 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
         uint256 nonce = nonces(account);
         (uint256 start_, uint256 period) = _periodAt(account, nonce, spender, Time.timestamp());
         (uint256 spending, uint256 available) = _spendingAt(account, nonce, spender, period, start_);
-        require(amount <= available, ERC7579InsufficientAvailable(account, spender, amount));
+        require(amount <= available, ERC7579NativeInsufficientAvailable(account, spender, amount));
         _config[account][nonce][spender].spent[start_].set(period, spending + amount);
         Mode mode = ERC7579Utils.encodeMode(
             ERC7579Utils.CALLTYPE_SINGLE,
@@ -145,6 +148,31 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
             ModePayload.wrap(0)
         );
         _execute(account, bytes32(0), Mode.unwrap(mode), ERC7579Utils.encodeSingle(to, amount, Calldata.emptyBytes()));
+    }
+
+    function batchTransferFrom(address account, address[] calldata tos, uint256[] calldata amounts) public virtual {
+        require(tos.length == amounts.length, ERC7579NativeSpenderMismatchedBatchLengths(tos.length, amounts.length));
+        address spender = msg.sender;
+        uint256 nonce = nonces(account);
+        (uint256 start_, uint256 period) = _periodAt(account, nonce, spender, Time.timestamp());
+        (uint256 spending, uint256 available) = _spendingAt(account, nonce, spender, period, start_);
+        uint256 totalAmount = 0;
+        for (uint256 i = 0; i < amounts.length; ++i) {
+            totalAmount += amounts[i];
+        }
+        require(totalAmount <= available, ERC7579NativeInsufficientAvailable(account, spender, totalAmount));
+        _config[account][nonce][spender].spent[start_].set(period, spending + totalAmount);
+        Mode mode = ERC7579Utils.encodeMode(
+            ERC7579Utils.CALLTYPE_BATCH,
+            ERC7579Utils.EXECTYPE_DEFAULT,
+            ModeSelector.wrap(0),
+            ModePayload.wrap(0)
+        );
+        Execution[] memory executions = new Execution[](tos.length);
+        for (uint256 i = 0; i < tos.length; ++i) {
+            executions[i] = Execution(tos[i], amounts[i], Calldata.emptyBytes());
+        }
+        _execute(account, bytes32(0), Mode.unwrap(mode), ERC7579Utils.encodeBatch(executions));
     }
 
     function setSpendingConfig(
@@ -187,7 +215,11 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
         uint256 start_
     ) internal view virtual returns (uint256 spending, uint256 available) {
         spending = _spent(account, nonce, spender, period, start_);
-        return (spending, _limit(account, nonce, spender) - spending);
+        unchecked {
+            // spending <= _limit since the spent amount cannot exceed the limit
+            available = _limit(account, nonce, spender) - spending;
+        }
+        return (spending, available);
     }
 
     function _periodAt(
