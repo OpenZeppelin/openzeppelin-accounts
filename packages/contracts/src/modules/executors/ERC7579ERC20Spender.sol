@@ -4,8 +4,7 @@ pragma solidity ^0.8.27;
 import {Time} from "@openzeppelin/contracts/utils/types/Time.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Nonces} from "@openzeppelin/contracts/utils/Nonces.sol";
-import {Calldata} from "@openzeppelin/contracts/utils/Calldata.sol";
-import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {
     ERC7579Utils,
@@ -16,13 +15,38 @@ import {
 } from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {ERC7579Executor} from "./ERC7579Executor.sol";
 
+/**
+ * @dev Extension of {ERC7579Executor} that provides ERC20 token spending limits
+ * with automatic renewal periods for ERC-7579 smart accounts.
+ *
+ * This module allows accounts to configure spending allowances for external spenders,
+ * enabling use cases like subscription services, recurring payments, or delegated spending
+ * with predefined limits. Each spender gets a renewable spending limit that automatically
+ * resets at the end of each period, allowing the same spending capacity to be used again
+ * without requiring manual intervention.
+ *
+ * See {SpendingConfig} for the configuration details.
+ *
+ * TIP: Set {start} to a future timepoint to schedule a spending limit that activates later.
+ * TIP: Set {renewPeriod} to {type(uint48).max} to disable the renewal period.
+ * TIP: Set {limit} to 0 to disable spending for the spender.
+ */
 contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
-    using EnumerableMap for EnumerableMap.UintToUintMap;
+    using EnumerableSet for EnumerableSet.AddressSet;
 
+    /// @dev The account already has tokens with spending configurations installed.
+    error ERC7579ERC20SpenderAlreadyInstalled();
+
+    /// @dev The requested `amount` exceeds the `available` spending limit for the `spender`.
     error ERC7579ERC20InsufficientAvailable(address account, address token, address spender, uint256 amount);
 
+    /// @dev The provided `initData` is invalid or malformed.
     error ERC7579ERC20SpenderInvalidInitData();
 
+    /// @dev The spending config is not set for the `spender` on the `token`.
+    error ERC7579ERC20SpendingConfigUnset(address account, address token, address spender);
+
+    /// @dev The arrays in `initData` have mismatched lengths.
     error ERC7579ERC20SpenderMismatchedInitDataLengths(
         uint256 tokens,
         uint256 spenders,
@@ -30,20 +54,37 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         uint256 renewPeriods
     );
 
-    error ERC7579ERC20SpenderMismatchedBatchLengths(address token, uint256 tos, uint256 amounts);
+    /// @dev The `spenders` array is empty.
+    error ERC7579ERC20SpenderEmptySpenders();
 
-    error ERC7579ERC20SpenderInvalidLimit(address token, uint256 limit);
+    /// @dev The `tos` and `amounts` arrays have mismatched lengths in batch transfer.
+    error ERC7579ERC20SpenderMismatchedBatchLengths(uint256 tos, uint256 amounts);
 
-    error ERC7579ERC20SpenderInvalidRenewPeriod(address token, uint256 renewPeriod);
+    /// @dev The `renewPeriod` is invalid (must be greater than zero).
+    error ERC7579ERC20SpenderInvalidRenewPeriod(uint256 renewPeriod);
 
+    /// @dev The `token` address is invalid (not a contract).
     error ERC7579ERC20SpenderInvalidToken(address token);
 
-    error ERC7579ERC20SpenderInvalidStart(address token, uint256 start);
+    /// @dev The `start` time is invalid (cannot reuse a past start time).
+    error ERC7579ERC20SpenderInvalidStart(uint256 start);
 
+    /// @dev The spending config has not started yet for the given `timepoint`.
+    error ERC7579ERC20SpendingConfigNotStarted(
+        address account,
+        address token,
+        address spender,
+        uint256 timepoint,
+        uint256 start
+    );
+
+    /// @dev ERC20 transfer failed.
     error ERC7579ERC20TransferFailed(address account, address token, address spender, address to, uint256 amount);
 
+    /// @dev Emitted when all spending configurations are cleared for an account.
     event ERC7579ERC20SpendingConfigCleared(address indexed account);
 
+    /// @dev Emitted when a spending configuration is set for a token-spender pair.
     event ERC7579ERC20SpendingConfigSet(
         address indexed account,
         address indexed token,
@@ -53,121 +94,213 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         uint256 renewPeriod
     );
 
+    /**
+     * @dev Spending configuration for a specific token-spender pair on an `account`.
+     *
+     * The configuration includes:
+     *
+     * * `start`: When the spending limit becomes active (Unix timestamp)
+     * * `renewPeriod`: Duration of each spending period in seconds
+     * * `limit`: Maximum spendable amount per period
+     */
     struct SpendingConfig {
         // Slot 1
         uint48 start; // Up to 8,925,512.96 years (2**48 / 60 / 60 / 24 / 365) from January 1, 1970, 00:00:00 UTC
         uint48 renewPeriod; // Up to 8,925,512.96 years (2**48 / 60 / 60 / 24 / 365) from January 1, 1970, 00:00:00 UTC
         uint160 limit; // Up to 1.4615016373e30 with 18 decimals (2**160 / 1e18)
-        // Slot 2
-        mapping(uint256 start => EnumerableMap.UintToUintMap) spent;
     }
 
-    mapping(address account => mapping(uint256 nonce => mapping(address token => mapping(address spender => SpendingConfig))))
+    mapping(address account => mapping(uint256 installation => mapping(address token => mapping(address spender => SpendingConfig))))
         private _config;
+    mapping(address account => mapping(uint256 installation => mapping(address token => mapping(address spender => mapping(uint256 start => mapping(uint256 period => uint256))))))
+        private _spentFor;
+    mapping(address account => mapping(uint256 installation => mapping(address token => EnumerableSet.AddressSet)))
+        private _spenders;
+    mapping(address account => mapping(uint256 installation => EnumerableSet.AddressSet)) private _tokens;
 
+    /// @dev Returns the installation nonce for an `account`. See {onUninstall}.
+    function installation(address account) public view virtual returns (uint256) {
+        return nonces(account);
+    }
+
+    /// @dev Returns the start timepoint for the spending configuration of a `spender` on an `account` for a `token`.
     function start(address account, address token, address spender) public view virtual returns (uint256) {
-        return _start(account, nonces(account), token, spender);
+        return _start(account, installation(account), token, spender);
     }
 
+    /// @dev Returns the renewal period (in seconds) for the spending configuration of a `spender` on an `account` for a `token`.
     function renewPeriod(address account, address token, address spender) public view virtual returns (uint256) {
-        return _renewPeriod(account, nonces(account), token, spender);
+        return _renewPeriod(account, installation(account), token, spender);
     }
 
+    /// @dev Returns the spending limit per period for a `spender` on an `account` for a `token`.
     function limit(address account, address token, address spender) public view virtual returns (uint256) {
-        return _limit(account, nonces(account), token, spender);
+        return _limit(account, installation(account), token, spender);
     }
 
+    /// @dev Returns the amount spent by a `spender` during a specific `period` for an `account` for a `token`.
     function spent(
         address account,
         address token,
         address spender,
         uint256 period
     ) public view virtual returns (uint256) {
-        uint256 nonce = nonces(account);
-        return _spent(account, nonce, token, spender, period, _start(account, nonce, token, spender));
+        uint256 installation_ = installation(account);
+        return _spent(account, installation_, token, spender, period, _start(account, installation_, token, spender));
     }
 
+    /// @dev Returns the number of spenders installed for an `account` for a `token`.
+    function spendersCount(address account, address token) public view virtual returns (uint256) {
+        return _spenders[account][installation(account)][token].length();
+    }
+
+    /**
+     * @dev Returns a slice of the set of spenders installed for an `account` for a `token`.
+     *
+     * Using `startIdx = 0` and `endIdx = type(uint256).max` will return the entire set of spenders.
+     *
+     * WARNING: Depending on the `startIdx` and `endIdx`, this operation can copy a large amount of data to memory, which
+     * can be expensive. This is designed for view accessors queried without gas fees. Using it in state-changing
+     * functions may become uncallable if the slice grows too large.
+     */
+    function spenders(
+        address account,
+        address token,
+        uint256 startIdx,
+        uint256 endIdx
+    ) public view virtual returns (address[] memory spenders_) {
+        return _spenders[account][installation(account)][token].values(startIdx, endIdx);
+    }
+
+    /// @dev Returns the number of tokens with spending configurations installed for an `account`.
+    function tokensCount(address account) public view virtual returns (uint256) {
+        return _tokens[account][installation(account)].length();
+    }
+
+    /**
+     * @dev Returns a slice of the set of tokens with spending configurations installed for an `account`.
+     *
+     * Using `startIdx = 0` and `endIdx = type(uint256).max` will return the entire set of tokens.
+     *
+     * WARNING: Depending on the `startIdx` and `endIdx`, this operation can copy a large amount of data to memory, which
+     * can be expensive. This is designed for view accessors queried without gas fees. Using it in state-changing
+     * functions may become uncallable if the slice grows too large.
+     */
+    function tokens(
+        address account,
+        uint256 startIdx,
+        uint256 endIdx
+    ) public view virtual returns (address[] memory tokens_) {
+        return _tokens[account][installation(account)].values(startIdx, endIdx);
+    }
+
+    /// @dev Returns the spending information for a `spender` at a specific `period` for an `account` for a `token`.
     function spendingAt(
         address account,
         address token,
         address spender,
         uint256 period
     ) public view virtual returns (uint256 spending, uint256 available) {
-        uint256 nonce = nonces(account);
-        return _spendingAt(account, nonce, token, spender, period, _start(account, nonce, token, spender));
+        uint256 installation_ = installation(account);
+        return
+            _spendingAt(account, installation_, token, spender, period, _start(account, installation_, token, spender));
     }
 
+    /**
+     * @dev Returns the period information for a `spender` at a specific `timepoint` for an `account` for a `token`.
+     *
+     * Requirements:
+     *
+     * * The `timepoint` must be greater or equal than {start} for the current spending configuration.
+     *   Reverts with {ERC7579ERC20SpendingConfigNotStarted} if not.
+     */
     function periodAt(
         address account,
         address token,
         address spender,
         uint48 timepoint
     ) public view virtual returns (uint256 start_, uint256 period) {
-        return _periodAt(account, nonces(account), token, spender, timepoint);
+        return _periodAt(account, installation(account), token, spender, timepoint);
     }
 
-    function periodsSpent(
-        address account,
-        address token,
-        address spender,
-        uint64 startIdx,
-        uint64 endIdx
-    ) public view virtual returns (uint256[] memory periods, uint256[] memory spendings) {
-        uint256 nonce = nonces(account);
-        uint256 start_ = _start(account, nonce, token, spender);
-        periods = _config[account][nonce][token][spender].spent[start_].keys(startIdx, endIdx);
-        spendings = new uint256[](periods.length);
-        for (uint256 i = 0; i < periods.length; ++i) {
-            spendings[i] = _spent(account, nonce, token, spender, periods[i], start_);
-        }
-        return (periods, spendings);
-    }
-
+    /**
+     * @dev Sets up the module's initial configuration when installed by an account.
+     * See {IERC7579Module-onInstall}. The `initData` encodes arrays of tokens, spenders and their
+     * corresponding spending configurations.
+     *
+     * See {_decodeERC20SpenderInitData} for the encoding details.
+     *
+     * Requirements:
+     *
+     * * Those from {_decodeERC20SpenderInitData} for the decoding requirements.
+     * * All arrays must have equal length. Reverts with {ERC7579ERC20SpenderMismatchedInitDataLengths} if not.
+     * * Those from {_setSpendingConfig} for the configuration requirements.
+     */
     function onInstall(bytes calldata initData) public virtual {
+        address account = msg.sender;
+        require(tokensCount(account) == 0, ERC7579ERC20SpenderAlreadyInstalled());
         (
-            address[] calldata tokens,
-            address[] calldata spenders,
+            address[] calldata tokens_,
+            address[] calldata spenders_,
             uint48[] calldata starts,
             uint160[] calldata limits,
             uint48[] calldata renewPeriods
         ) = _decodeERC20SpenderInitData(initData);
         require(
-            tokens.length == spenders.length &&
-                spenders.length == starts.length &&
-                spenders.length == limits.length &&
-                spenders.length == renewPeriods.length,
+            tokens_.length == spenders_.length &&
+                spenders_.length == starts.length &&
+                spenders_.length == limits.length &&
+                spenders_.length == renewPeriods.length,
             ERC7579ERC20SpenderMismatchedInitDataLengths(
-                tokens.length,
-                spenders.length,
+                tokens_.length,
+                spenders_.length,
                 limits.length,
                 renewPeriods.length
             )
         );
-        address account = msg.sender;
-        uint256 nonce = nonces(account);
-        for (uint256 i = 0; i < spenders.length; ++i) {
-            _setSpendingConfig(account, nonce, tokens[i], spenders[i], starts[i], limits[i], renewPeriods[i]);
+        require(spenders_.length > 0, ERC7579ERC20SpenderEmptySpenders());
+        uint256 installation_ = installation(account);
+        for (uint256 i = 0; i < spenders_.length; ++i) {
+            _setSpendingConfig(account, installation_, tokens_[i], spenders_[i], starts[i], limits[i], renewPeriods[i]);
         }
     }
 
+    /**
+     * @dev Cleans up the module's configuration when uninstalled from an account.
+     * Increments the account's nonce to invalidate all previous spending configurations.
+     *
+     * See {IERC7579Module-onUninstall}.
+     *
+     * NOTE: This approach avoids unbounded gas costs by not iterating over spenders.
+     * Previous spending data remains in storage but becomes inaccessible due to the nonce increment.
+     * Upon reinstallation, the module will use a new nonce and ignore old configurations.
+     */
     function onUninstall(bytes calldata) public virtual {
-        // To properly clear the state we need to iterate over all spenders and clear the state of each one.
-        // Although we can track the list of spenders, the list may grow too large to ensure cleanup is effective.
-        // Notoriously, ERC-7579 accounts do not check the result of the `onUninstall` function to avoid being
-        // unable to uninstall modules that always revert, so, in the case that the list of spenders is too large,
-        // the module will not clean up the state of spenders, which will be preserved after reinstallation.
-        // To avoid this, we use a nonce to discard the previous configuration safely.
         _useNonce(msg.sender);
         emit ERC7579ERC20SpendingConfigCleared(msg.sender);
     }
 
+    /**
+     * @dev Transfers ERC20 tokens from an `account` to a recipient on behalf of a `msg.sender`.
+     *
+     * This function tracks the spending limit for the `msg.sender` on the `account` for the given `token`
+     * and updates the spent amount for the current period before executing the transfer through the account's
+     * {IERC7579Execution-executeFromExecutor} function.
+     *
+     * Requirements:
+     *
+     * * The `amount` must not exceed the available spending limit for the current period.
+     *   Reverts with {ERC7579ERC20InsufficientAvailable} if it does.
+     * * The `account` must have sufficient token balance. Reverts with {ERC7579ERC20TransferFailed} if transfer fails.
+     * * Those of {_periodAt} for the current timepoint.
+     */
     function transferFrom(address account, address token, address to, uint256 amount) public virtual {
         address spender = msg.sender;
-        uint256 nonce = nonces(account);
-        (uint256 start_, uint256 period) = _periodAt(account, nonce, token, spender, Time.timestamp());
-        (uint256 spending, uint256 available) = _spendingAt(account, nonce, token, spender, period, start_);
+        uint256 installation_ = installation(account);
+        (uint256 start_, uint256 period) = _periodAt(account, installation_, token, spender, Time.timestamp());
+        (, uint256 available) = _spendingAt(account, installation_, token, spender, period, start_);
         require(amount <= available, ERC7579ERC20InsufficientAvailable(account, token, spender, amount));
-        _config[account][nonce][token][spender].spent[start_].set(period, spending + amount);
+        _spentFor[account][installation_][token][spender][start_][period] += amount;
         Mode mode = ERC7579Utils.encodeMode(
             ERC7579Utils.CALLTYPE_SINGLE,
             ERC7579Utils.EXECTYPE_DEFAULT,
@@ -186,26 +319,38 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         );
     }
 
+    /**
+     * @dev Transfers ERC20 tokens from an `account` to multiple recipients in a single transaction.
+     *
+     * It calculates the total amount, checks against the limit once, and executes all transfers in batch.
+     *
+     * Requirements:
+     *
+     * * The `tos` and `amounts` arrays must have equal length. Reverts with
+     *   {ERC7579ERC20SpenderMismatchedBatchLengths} if not.
+     * * The sum of all `amounts` must not exceed the available spending limit for the current period.
+     *   Reverts with {ERC7579ERC20InsufficientAvailable} if it does.
+     * * The `account` must have sufficient token balance for all transfers. Reverts with
+     *   {ERC7579ERC20TransferFailed} if any transfer fails.
+     * * Those of {_periodAt} for the current timepoint.
+     */
     function batchTransferFrom(
         address account,
         address token,
         address[] calldata tos,
         uint256[] calldata amounts
     ) public virtual {
-        require(
-            tos.length == amounts.length,
-            ERC7579ERC20SpenderMismatchedBatchLengths(token, tos.length, amounts.length)
-        );
+        require(tos.length == amounts.length, ERC7579ERC20SpenderMismatchedBatchLengths(tos.length, amounts.length));
         address spender = msg.sender;
-        uint256 nonce = nonces(account);
-        (uint256 start_, uint256 period) = _periodAt(account, nonce, token, spender, Time.timestamp());
-        (uint256 spending, uint256 available) = _spendingAt(account, nonce, token, spender, period, start_);
+        uint256 installation_ = installation(account);
+        (uint256 start_, uint256 period) = _periodAt(account, installation_, token, spender, Time.timestamp());
+        (, uint256 available) = _spendingAt(account, installation_, token, spender, period, start_);
         uint256 totalAmount = 0;
         for (uint256 i = 0; i < amounts.length; ++i) {
             totalAmount += amounts[i];
         }
         require(totalAmount <= available, ERC7579ERC20InsufficientAvailable(account, token, spender, totalAmount));
-        _config[account][nonce][token][spender].spent[start_].set(period, spending + totalAmount);
+        _spentFor[account][installation_][token][spender][start_][period] += totalAmount;
         Mode mode = ERC7579Utils.encodeMode(
             ERC7579Utils.CALLTYPE_BATCH,
             ERC7579Utils.EXECTYPE_DEFAULT,
@@ -214,7 +359,11 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         );
         Execution[] memory executions = new Execution[](tos.length);
         for (uint256 i = 0; i < tos.length; ++i) {
-            executions[i] = Execution(token, 0, abi.encodeCall(IERC20.transfer, (tos[i], amounts[i])));
+            executions[i] = Execution({
+                target: token,
+                value: 0,
+                callData: abi.encodeCall(IERC20.transfer, (tos[i], amounts[i]))
+            });
         }
         bytes[] memory returndatas = _execute(
             account,
@@ -224,12 +373,26 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         );
         for (uint256 i = 0; i < returndatas.length; ++i) {
             require(
+                // This check relaxes the requirement on the return value from a transfer with
+                // non-standard ERC20 implementations.
                 returndatas[i].length == 0 || (returndatas[i].length == 32 && _toBool(bytes32(returndatas[i]))),
                 ERC7579ERC20TransferFailed(account, token, spender, tos[i], amounts[i])
             );
         }
     }
 
+    /**
+     * @dev Updates the spending configuration for a `token`-`spender` pair.
+     *
+     * This function allows an account to modify spending {limit}, {renewPeriod}, or {start} time
+     * for a specific token-spender pair. Can be called directly by the account.
+     *
+     * Requirements:
+     *
+     * * Those from {_setSpendingConfig}.
+     *
+     * TIP: Use {start} as `newStart` to update the spending configuration without changing the start time.
+     */
     function setSpendingConfig(
         address token,
         address spender,
@@ -237,105 +400,175 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         uint160 newLimit,
         uint48 newRenewPeriod
     ) public virtual {
-        _setSpendingConfig(msg.sender, nonces(msg.sender), token, spender, newStart, newLimit, newRenewPeriod);
+        _setSpendingConfig(msg.sender, installation(msg.sender), token, spender, newStart, newLimit, newRenewPeriod);
     }
 
+    /// @dev Same as {setSpendingConfig} but updates the current configuration with `newLimit` and `newRenewPeriod`.
+    function setCurrentSpendingConfig(
+        address token,
+        address spender,
+        uint160 newLimit,
+        uint48 newRenewPeriod
+    ) public virtual {
+        _setSpendingConfig(
+            msg.sender,
+            installation(msg.sender),
+            token,
+            spender,
+            // Safe cast: internal variable is uint48
+            uint48(start(msg.sender, token, spender)),
+            newLimit,
+            newRenewPeriod
+        );
+    }
+
+    /// @dev Internal version of {start} that receives an `installation_` nonce.
     function _start(
         address account,
-        uint256 nonce,
+        uint256 installation_,
         address token,
         address spender
     ) internal view virtual returns (uint256) {
-        return _config[account][nonce][token][spender].start;
+        return _config[account][installation_][token][spender].start;
     }
 
+    /// @dev Internal version of {renewPeriod} that receives an `installation_` nonce.
     function _renewPeriod(
         address account,
-        uint256 nonce,
+        uint256 installation_,
         address token,
         address spender
     ) internal view virtual returns (uint256) {
-        return _config[account][nonce][token][spender].renewPeriod;
+        return _config[account][installation_][token][spender].renewPeriod;
     }
 
+    /// @dev Internal version of {limit} that receives an `installation_` nonce.
     function _limit(
         address account,
-        uint256 nonce,
+        uint256 installation_,
         address token,
         address spender
     ) internal view virtual returns (uint256) {
-        return _config[account][nonce][token][spender].limit;
+        return _config[account][installation_][token][spender].limit;
     }
 
+    /// @dev Internal version of {spent} that receives an `installation_` nonce and a `start_` timepoint.
     function _spent(
         address account,
-        uint256 nonce,
+        uint256 installation_,
         address token,
         address spender,
         uint256 period,
         uint256 start_
     ) internal view virtual returns (uint256) {
-        (bool exists, uint256 amountSpent) = _config[account][nonce][token][spender].spent[start_].tryGet(period);
-        return Math.ternary(exists, amountSpent, 0);
+        return _spentFor[account][installation_][token][spender][start_][period];
     }
 
+    /// @dev Internal version of {spendingAt} that receives an `installation_` nonce and a `start_` timepoint.
     function _spendingAt(
         address account,
-        uint256 nonce,
+        uint256 installation_,
         address token,
         address spender,
         uint256 period,
         uint256 start_
     ) internal view virtual returns (uint256 spending, uint256 available) {
-        spending = _spent(account, nonce, token, spender, period, start_);
-        unchecked {
-            // spending <= _limit since the spent amount cannot exceed the limit
-            available = _limit(account, nonce, token, spender) - spending;
-        }
-        return (spending, available);
+        spending = _spent(account, installation_, token, spender, period, start_);
+        (bool success, uint256 available_) = Math.trySub(_limit(account, installation_, token, spender), spending);
+        return (spending, Math.ternary(success, available_, 0));
     }
 
+    /**
+     * @dev Internal version of {periodAt} that receives an `installation_` nonce.
+     *
+     * Requirements:
+     *
+     * * The `timepoint` must be greater or equal than {start} for the current spending configuration.
+     *   Reverts with {ERC7579ERC20SpendingConfigNotStarted} if not.
+     * * The {renewPeriod} must be greater than zero. Reverts with {ERC7579ERC20SpendingConfigUnset} if not.
+     */
     function _periodAt(
         address account,
-        uint256 nonce,
+        uint256 installation_,
         address token,
         address spender,
         uint48 timepoint
     ) internal view virtual returns (uint256 start_, uint256 period) {
-        start_ = _start(account, nonce, token, spender);
-        return (start_, (timepoint - start_) / _renewPeriod(account, nonce, token, spender));
+        start_ = _start(account, installation_, token, spender);
+        (bool success, uint256 ellapsed) = Math.trySub(timepoint, start_);
+        require(success, ERC7579ERC20SpendingConfigNotStarted(account, token, spender, timepoint, start_));
+        uint256 renewPeriod_ = _renewPeriod(account, installation_, token, spender);
+        require(renewPeriod_ > 0, ERC7579ERC20SpendingConfigUnset(account, token, spender));
+        return (start_, ellapsed / renewPeriod_); // Division error is ok here
     }
 
+    /**
+     * @dev Internal function to set or update spending configuration for a token-spender pair.
+     *
+     * This function validates all parameters and stores the configuration. It implements
+     * the logic to prevent reuse of past start times while allowing updates to active
+     * configurations.
+     *
+     * Requirements:
+     *
+     * * Each renewal period must be greater than zero. Reverts with {ERC7579ERC20SpenderInvalidRenewPeriod} if not.
+     * * The token must be a contract address. Reverts with {ERC7579ERC20SpenderInvalidToken} if not.
+     * * If keeping the same start time (to update limit/renewPeriod), no timestamp validation is performed.
+     * * If changing the start time, the new start must be >= current timestamp. Reverts with
+     *   {ERC7579ERC20SpenderInvalidStart} if attempting to set a different past start time
+     *   (this prevents reusing old start times that might have existing spending data).
+     *
+     * Emits a {ERC7579ERC20SpendingConfigSet} event.
+     *
+     * NOTE: Reducing the limit to an amount that exceeds the spending during the current
+     * period will result in the available amount becoming 0 but won't change the spent amount.
+     */
     function _setSpendingConfig(
         address account,
-        uint256 nonce,
+        uint256 installation_,
         address token,
         address spender,
         uint48 newStart,
         uint160 newLimit,
         uint48 newRenewPeriod
     ) internal virtual {
-        require(newLimit > 0, ERC7579ERC20SpenderInvalidLimit(token, newLimit));
-        require(newRenewPeriod > 0, ERC7579ERC20SpenderInvalidRenewPeriod(token, newRenewPeriod));
+        require(newRenewPeriod > 0, ERC7579ERC20SpenderInvalidRenewPeriod(newRenewPeriod));
         require(address(token).code.length > 0, ERC7579ERC20SpenderInvalidToken(token));
         require(
-            _start(account, nonce, token, spender) != newStart || newStart >= Time.timestamp(),
-            ERC7579ERC20SpenderInvalidStart(token, newStart)
+            // Allow keeping same start (for updates) OR
+            // setting a new future start (prevents reusing old starts with spent data)
+            _start(account, installation_, token, spender) == newStart || newStart >= Time.timestamp(),
+            ERC7579ERC20SpenderInvalidStart(newStart)
         );
-        _config[account][nonce][token][spender].start = newStart;
-        _config[account][nonce][token][spender].renewPeriod = newRenewPeriod;
-        _config[account][nonce][token][spender].limit = newLimit;
+        _spenders[account][installation_][token].add(spender);
+        _tokens[account][installation_].add(token);
+        _config[account][installation_][token][spender].start = newStart;
+        _config[account][installation_][token][spender].renewPeriod = newRenewPeriod;
+        _config[account][installation_][token][spender].limit = newLimit;
         emit ERC7579ERC20SpendingConfigSet(account, token, spender, newStart, newLimit, newRenewPeriod);
     }
 
+    /**
+     * @dev Internal function to decode the initialization data for the ERC20 spender module.
+     *
+     * The `initData` should be encoded as: `abi.encode(tokens, spenders, starts, limits, renewPeriods)`
+     * where each parameter is an array of equal length.
+     *
+     * Requirements:
+     *
+     * * `initData` must be at least 320 bytes (10 x 32 bytes for offsets and lengths)
+     * * All offsets must point within the `initData` bounds
+     *
+     * Reverts with {ERC7579ERC20SpenderInvalidInitData} if the `initData` is invalid.
+     */
     function _decodeERC20SpenderInitData(
         bytes calldata initData
     )
         internal
         virtual
         returns (
-            address[] calldata tokens,
-            address[] calldata spenders,
+            address[] calldata tokens_,
+            address[] calldata spenders_,
             uint48[] calldata starts,
             uint160[] calldata limits,
             uint48[] calldata renewPeriods
@@ -376,10 +609,10 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         uint256 renewPeriodsLength = uint256(bytes32(initData[renewPeriodsOffset:renewPeriodsDataOffset]));
 
         assembly ("memory-safe") {
-            tokens.offset := add(initData.offset, tokensDataOffset)
-            tokens.length := tokensLength
-            spenders.offset := add(initData.offset, spendersDataOffset)
-            spenders.length := spendersLength
+            tokens_.offset := add(initData.offset, tokensDataOffset)
+            tokens_.length := tokensLength
+            spenders_.offset := add(initData.offset, spendersDataOffset)
+            spenders_.length := spendersLength
             starts.offset := add(initData.offset, startsDataOffset)
             starts.length := startsLength
             limits.offset := add(initData.offset, limitsDataOffset)
@@ -388,10 +621,10 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
             renewPeriods.length := renewPeriodsLength
         }
 
-        return (tokens, spenders, starts, limits, renewPeriods);
+        return (tokens_, spenders_, starts, limits, renewPeriods);
     }
 
-    function _toBool(bytes32 result) internal pure returns (bool success) {
+    function _toBool(bytes32 result) private pure returns (bool success) {
         assembly ("memory-safe") {
             success := result
         }
