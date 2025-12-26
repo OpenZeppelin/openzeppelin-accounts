@@ -319,7 +319,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
      * * Those of {_periodAt} for the current timepoint.
      */
     function transferFrom(address account, address token, address to, uint256 amount) public virtual {
-        transferFrom(account, token, msg.sender, to, amount);
+        _transferFrom(account, token, msg.sender, to, amount);
     }
 
     /**
