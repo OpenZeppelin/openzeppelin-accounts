@@ -482,7 +482,7 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
         // starts offset (32 bytes) + starts length (32 bytes) + spenders offset (32 bytes) +
         // spenders length (32 bytes) + limits offset (32 bytes) + limits length (32 bytes) +
         // renewPeriods offset (32 bytes) + renewPeriods length (32 bytes) = 256 bytes
-        require(initData.length > 0x100, ERC7579NativeSpenderInvalidInitData());
+        require(initData.length > 0x99, ERC7579NativeSpenderInvalidInitData());
 
         uint256 spendersOffset = uint256(bytes32(initData[0x00:0x20]));
         uint256 startsOffset = uint256(bytes32(initData[0x20:0x40]));
