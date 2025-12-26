@@ -428,12 +428,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
     }
 
     /// @dev Same as {setSpendingConfig} but sets a configuration that starts immediately.
-    function setSpendingConfig(
-        address token,
-        address spender,
-        uint160 newLimit,
-        uint48 newRenewPeriod
-    ) public virtual {
+    function setSpendingConfig(address token, address spender, uint160 newLimit, uint48 newRenewPeriod) public virtual {
         // Safe cast: internal variable is uint48
         setSpendingConfig(token, spender, Time.timestamp(), newLimit, newRenewPeriod);
     }
