@@ -329,14 +329,14 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
         uint160 newLimit,
         uint48 newRenewPeriod
     ) public virtual {
-        _setSpendingConfig(msg.sender, installations(msg.sender), spender, newStart, newLimit, newRenewPeriod);
+        _setSpendingConfig(msg.sender, installation(msg.sender), spender, newStart, newLimit, newRenewPeriod);
     }
 
     /// @dev Same as {setSpendingConfig} but updates the current configuration with `newLimit` and `newRenewPeriod`.
     function setCurrentSpendingConfig(address spender, uint160 newLimit, uint48 newRenewPeriod) public virtual {
         _setSpendingConfig(
             msg.sender,
-            installations(msg.sender),
+            installation(msg.sender),
             spender,
             // Safe cast: internal variable is uint48
             uint48(start(msg.sender, spender)),
