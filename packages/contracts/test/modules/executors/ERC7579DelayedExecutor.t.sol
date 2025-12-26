@@ -35,7 +35,7 @@ contract ERC7579DelayedExecutorTestMock is ERC7579DelayedExecutor {
         address account,
         bytes32 salt,
         bytes32 mode,
-        bytes calldata data
+        bytes memory data
     ) public virtual returns (bytes[] memory) {
         return _execute(account, salt, mode, data);
     }
