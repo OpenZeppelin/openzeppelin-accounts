@@ -265,27 +265,6 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
         _transferFrom(account, installation(account), msg.sender, to, amount);
     }
 
-    /// @dev Internal version of {transferFrom} without access control.
-    function _transferFrom(
-        address account,
-        uint256 installation_,
-        address spender,
-        address to,
-        uint256 amount
-    ) internal virtual {
-        (uint256 start_, uint256 period) = _periodAt(account, installation_, spender, Time.timestamp());
-        (, uint256 available) = _spendingAt(account, installation_, spender, period, start_);
-        require(amount <= available, ERC7579NativeInsufficientAvailable(account, spender, amount));
-        _spentFor[account][installation_][spender][start_][period] += amount;
-        Mode mode = ERC7579Utils.encodeMode(
-            ERC7579Utils.CALLTYPE_SINGLE,
-            ERC7579Utils.EXECTYPE_DEFAULT,
-            ModeSelector.wrap(0),
-            ModePayload.wrap(0)
-        );
-        _execute(account, bytes32(0), Mode.unwrap(mode), ERC7579Utils.encodeSingle(to, amount, Calldata.emptyBytes()));
-    }
-
     /**
      * @dev Transfers native tokens from an `account` to multiple recipients in a single transaction.
      *
@@ -302,36 +281,6 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
      */
     function batchTransferFrom(address account, address[] calldata tos, uint256[] calldata amounts) public virtual {
         _batchTransferFrom(account, installation(account), msg.sender, tos, amounts);
-    }
-
-    /// @dev Internal version of {batchTransferFrom} without access control.
-    function _batchTransferFrom(
-        address account,
-        uint256 installation_,
-        address spender,
-        address[] calldata tos,
-        uint256[] calldata amounts
-    ) internal virtual {
-        require(tos.length == amounts.length, ERC7579NativeSpenderMismatchedBatchLengths(tos.length, amounts.length));
-        (uint256 start_, uint256 period) = _periodAt(account, installation_, spender, Time.timestamp());
-        (, uint256 available) = _spendingAt(account, installation_, spender, period, start_);
-        uint256 totalAmount = 0;
-        for (uint256 i = 0; i < amounts.length; ++i) {
-            totalAmount += amounts[i];
-        }
-        require(totalAmount <= available, ERC7579NativeInsufficientAvailable(account, spender, totalAmount));
-        _spentFor[account][installation_][spender][start_][period] += totalAmount;
-        Mode mode = ERC7579Utils.encodeMode(
-            ERC7579Utils.CALLTYPE_BATCH,
-            ERC7579Utils.EXECTYPE_DEFAULT,
-            ModeSelector.wrap(0),
-            ModePayload.wrap(0)
-        );
-        Execution[] memory executions = new Execution[](tos.length);
-        for (uint256 i = 0; i < tos.length; ++i) {
-            executions[i] = Execution({target: tos[i], value: amounts[i], callData: Calldata.emptyBytes()});
-        }
-        _execute(account, bytes32(0), Mode.unwrap(mode), ERC7579Utils.encodeBatch(executions));
     }
 
     /**
@@ -438,6 +387,57 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
         uint256 renewPeriod_ = _renewPeriod(account, installation_, spender);
         require(renewPeriod_ > 0, ERC7579NativeSpendingConfigNotSet(account, spender));
         return (start_, ellapsed / renewPeriod_); // Division error is ok here
+    }
+
+    /// @dev Internal version of {transferFrom} without access control.
+    function _transferFrom(
+        address account,
+        uint256 installation_,
+        address spender,
+        address to,
+        uint256 amount
+    ) internal virtual {
+        (uint256 start_, uint256 period) = _periodAt(account, installation_, spender, Time.timestamp());
+        (, uint256 available) = _spendingAt(account, installation_, spender, period, start_);
+        require(amount <= available, ERC7579NativeInsufficientAvailable(account, spender, amount));
+        _spentFor[account][installation_][spender][start_][period] += amount;
+        Mode mode = ERC7579Utils.encodeMode(
+            ERC7579Utils.CALLTYPE_SINGLE,
+            ERC7579Utils.EXECTYPE_DEFAULT,
+            ModeSelector.wrap(0),
+            ModePayload.wrap(0)
+        );
+        _execute(account, bytes32(0), Mode.unwrap(mode), ERC7579Utils.encodeSingle(to, amount, Calldata.emptyBytes()));
+    }
+
+    /// @dev Internal version of {batchTransferFrom} without access control.
+    function _batchTransferFrom(
+        address account,
+        uint256 installation_,
+        address spender,
+        address[] calldata tos,
+        uint256[] calldata amounts
+    ) internal virtual {
+        require(tos.length == amounts.length, ERC7579NativeSpenderMismatchedBatchLengths(tos.length, amounts.length));
+        (uint256 start_, uint256 period) = _periodAt(account, installation_, spender, Time.timestamp());
+        (, uint256 available) = _spendingAt(account, installation_, spender, period, start_);
+        uint256 totalAmount = 0;
+        for (uint256 i = 0; i < amounts.length; ++i) {
+            totalAmount += amounts[i];
+        }
+        require(totalAmount <= available, ERC7579NativeInsufficientAvailable(account, spender, totalAmount));
+        _spentFor[account][installation_][spender][start_][period] += totalAmount;
+        Mode mode = ERC7579Utils.encodeMode(
+            ERC7579Utils.CALLTYPE_BATCH,
+            ERC7579Utils.EXECTYPE_DEFAULT,
+            ModeSelector.wrap(0),
+            ModePayload.wrap(0)
+        );
+        Execution[] memory executions = new Execution[](tos.length);
+        for (uint256 i = 0; i < tos.length; ++i) {
+            executions[i] = Execution({target: tos[i], value: amounts[i], callData: Calldata.emptyBytes()});
+        }
+        _execute(account, bytes32(0), Mode.unwrap(mode), ERC7579Utils.encodeBatch(executions));
     }
 
     /**

@@ -319,28 +319,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
      * * Those of {_periodAt} for the current timepoint.
      */
     function transferFrom(address account, address token, address to, uint256 amount) public virtual {
-        address spender = msg.sender;
-        uint256 installation_ = installation(account);
-        (uint256 start_, uint256 period) = _periodAt(account, installation_, token, spender, Time.timestamp());
-        (, uint256 available) = _spendingAt(account, installation_, token, spender, period, start_);
-        require(amount <= available, ERC7579ERC20InsufficientAvailable(account, token, spender, amount));
-        _spentFor[account][installation_][token][spender][start_][period] += amount;
-        Mode mode = ERC7579Utils.encodeMode(
-            ERC7579Utils.CALLTYPE_SINGLE,
-            ERC7579Utils.EXECTYPE_DEFAULT,
-            ModeSelector.wrap(0),
-            ModePayload.wrap(0)
-        );
-        bytes[] memory returndatas = _execute(
-            account,
-            bytes32(0),
-            Mode.unwrap(mode),
-            abi.encodePacked(token, uint256(0), abi.encodeCall(IERC20.transfer, (to, amount)))
-        );
-        require(
-            returndatas[0].length == 0 || (returndatas[0].length == 32 && _toBool(bytes32(returndatas[0]))),
-            ERC7579ERC20TransferFailed(account, token, spender, to, amount)
-        );
+        transferFrom(account, token, msg.sender, to, amount);
     }
 
     /**
@@ -364,45 +343,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         address[] calldata tos,
         uint256[] calldata amounts
     ) public virtual {
-        require(tos.length == amounts.length, ERC7579ERC20SpenderMismatchedBatchLengths(tos.length, amounts.length));
-        address spender = msg.sender;
-        uint256 installation_ = installation(account);
-        (uint256 start_, uint256 period) = _periodAt(account, installation_, token, spender, Time.timestamp());
-        (, uint256 available) = _spendingAt(account, installation_, token, spender, period, start_);
-        uint256 totalAmount = 0;
-        for (uint256 i = 0; i < amounts.length; ++i) {
-            totalAmount += amounts[i];
-        }
-        require(totalAmount <= available, ERC7579ERC20InsufficientAvailable(account, token, spender, totalAmount));
-        _spentFor[account][installation_][token][spender][start_][period] += totalAmount;
-        Mode mode = ERC7579Utils.encodeMode(
-            ERC7579Utils.CALLTYPE_BATCH,
-            ERC7579Utils.EXECTYPE_DEFAULT,
-            ModeSelector.wrap(0),
-            ModePayload.wrap(0)
-        );
-        Execution[] memory executions = new Execution[](tos.length);
-        for (uint256 i = 0; i < tos.length; ++i) {
-            executions[i] = Execution({
-                target: token,
-                value: 0,
-                callData: abi.encodeCall(IERC20.transfer, (tos[i], amounts[i]))
-            });
-        }
-        bytes[] memory returndatas = _execute(
-            account,
-            bytes32(0),
-            Mode.unwrap(mode),
-            ERC7579Utils.encodeBatch(executions)
-        );
-        for (uint256 i = 0; i < returndatas.length; ++i) {
-            require(
-                // This check relaxes the requirement on the return value from a transfer with
-                // non-standard ERC20 implementations.
-                returndatas[i].length == 0 || (returndatas[i].length == 32 && _toBool(bytes32(returndatas[i]))),
-                ERC7579ERC20TransferFailed(account, token, spender, tos[i], amounts[i])
-            );
-        }
+        _batchTransferFrom(account, token, msg.sender, tos, amounts);
     }
 
     /**
@@ -524,6 +465,85 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         uint256 renewPeriod_ = _renewPeriod(account, installation_, token, spender);
         require(renewPeriod_ > 0, ERC7579ERC20SpendingConfigNotSet(account, token, spender));
         return (start_, ellapsed / renewPeriod_); // Division error is ok here
+    }
+
+    /// @dev Internal version of {transferFrom} without access control.
+    function _transferFrom(
+        address account,
+        address token,
+        address spender,
+        address to,
+        uint256 amount
+    ) internal virtual {
+        uint256 installation_ = installation(account);
+        (uint256 start_, uint256 period) = _periodAt(account, installation_, token, spender, Time.timestamp());
+        (, uint256 available) = _spendingAt(account, installation_, token, spender, period, start_);
+        require(amount <= available, ERC7579ERC20InsufficientAvailable(account, token, spender, amount));
+        _spentFor[account][installation_][token][spender][start_][period] += amount;
+        Mode mode = ERC7579Utils.encodeMode(
+            ERC7579Utils.CALLTYPE_SINGLE,
+            ERC7579Utils.EXECTYPE_DEFAULT,
+            ModeSelector.wrap(0),
+            ModePayload.wrap(0)
+        );
+        bytes[] memory returndatas = _execute(
+            account,
+            bytes32(0),
+            Mode.unwrap(mode),
+            abi.encodePacked(token, uint256(0), abi.encodeCall(IERC20.transfer, (to, amount)))
+        );
+        require(
+            returndatas[0].length == 0 || (returndatas[0].length == 32 && _toBool(bytes32(returndatas[0]))),
+            ERC7579ERC20TransferFailed(account, token, spender, to, amount)
+        );
+    }
+
+    /// @dev Internal version of {batchTransferFrom} without access control.
+    function _batchTransferFrom(
+        address account,
+        address token,
+        address spender,
+        address[] calldata tos,
+        uint256[] calldata amounts
+    ) internal virtual {
+        require(tos.length == amounts.length, ERC7579ERC20SpenderMismatchedBatchLengths(tos.length, amounts.length));
+        uint256 installation_ = installation(account);
+        (uint256 start_, uint256 period) = _periodAt(account, installation_, token, spender, Time.timestamp());
+        (, uint256 available) = _spendingAt(account, installation_, token, spender, period, start_);
+        uint256 totalAmount = 0;
+        for (uint256 i = 0; i < amounts.length; ++i) {
+            totalAmount += amounts[i];
+        }
+        require(totalAmount <= available, ERC7579ERC20InsufficientAvailable(account, token, spender, totalAmount));
+        _spentFor[account][installation_][token][spender][start_][period] += totalAmount;
+        Mode mode = ERC7579Utils.encodeMode(
+            ERC7579Utils.CALLTYPE_BATCH,
+            ERC7579Utils.EXECTYPE_DEFAULT,
+            ModeSelector.wrap(0),
+            ModePayload.wrap(0)
+        );
+        Execution[] memory executions = new Execution[](tos.length);
+        for (uint256 i = 0; i < tos.length; ++i) {
+            executions[i] = Execution({
+                target: token,
+                value: 0,
+                callData: abi.encodeCall(IERC20.transfer, (tos[i], amounts[i]))
+            });
+        }
+        bytes[] memory returndatas = _execute(
+            account,
+            bytes32(0),
+            Mode.unwrap(mode),
+            ERC7579Utils.encodeBatch(executions)
+        );
+        for (uint256 i = 0; i < returndatas.length; ++i) {
+            require(
+                // This check relaxes the requirement on the return value from a transfer with
+                // non-standard ERC20 implementations.
+                returndatas[i].length == 0 || (returndatas[i].length == 32 && _toBool(bytes32(returndatas[i]))),
+                ERC7579ERC20TransferFailed(account, token, spender, tos[i], amounts[i])
+            );
+        }
     }
 
     /**
