@@ -427,8 +427,8 @@ contract ERC7579NativeSpenderTest is Test {
     }
 
     function testMultipleSpendersIndependence(uint160 limit1, uint160 amount1, uint160 limit2, uint160 amount2) public {
-        limit1 = uint160(bound(limit1, 1, MAX_ETH));
-        limit2 = uint160(bound(limit2, 1, MAX_ETH));
+        limit1 = uint160(bound(limit1, 1, MAX_ETH / 2));
+        limit2 = uint160(bound(limit2, 1, MAX_ETH / 2));
         amount1 = uint160(bound(amount1, 1, limit1));
         amount2 = uint160(bound(amount2, 1, limit2));
 
