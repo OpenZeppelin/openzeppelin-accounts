@@ -579,7 +579,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         // spenders length (32 bytes) + starts offset (32 bytes) + starts length (32 bytes) +
         // limits offset (32 bytes) + limits length (32 bytes) + renewPeriods offset (32 bytes) +
         // renewPeriods length (32 bytes) = 320 bytes
-        require(initData.length > 0x140, ERC7579ERC20SpenderInvalidInitData());
+        require(initData.length > 0x13f, ERC7579ERC20SpenderInvalidInitData());
 
         uint256 tokensOffset = uint256(bytes32(initData[0x00:0x20]));
         uint256 spendersOffset = uint256(bytes32(initData[0x20:0x40]));
