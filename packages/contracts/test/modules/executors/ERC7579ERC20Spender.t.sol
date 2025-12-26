@@ -2,14 +2,10 @@
 pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ERC7579ERC20Spender} from "../../../src/modules/executors/ERC7579ERC20Spender.sol";
 import {ERC20Mock} from "../../../src/mocks/ERC20Mock.sol";
-import {
-    ERC7579Utils,
-    Mode,
-    ModeSelector,
-    ModePayload
-} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
+import {ERC7579Utils, Mode} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {OpenAccount} from "../../../src/OpenAccount.sol";
@@ -52,6 +48,7 @@ contract ERC7579ERC20SpenderTest is Test {
 
     function testInstallation(uint48 start, uint160 limit, uint48 renewPeriod) public {
         vm.assume(renewPeriod > 0);
+        vm.assume(limit > 0);
         vm.assume(start >= block.timestamp);
 
         _installSpender(address(_token1), start, limit, renewPeriod);
@@ -72,6 +69,7 @@ contract ERC7579ERC20SpenderTest is Test {
     ) public {
         numTokens = uint8(bound(numTokens, 1, 5));
         vm.assume(renewPeriod > 0);
+        vm.assume(limit > 0);
         vm.assume(start >= block.timestamp);
 
         address[] memory tokens = new address[](numTokens);
@@ -118,6 +116,7 @@ contract ERC7579ERC20SpenderTest is Test {
     ) public {
         numSpenders = uint8(bound(numSpenders, 1, 10));
         vm.assume(renewPeriod > 0);
+        vm.assume(limit > 0);
         vm.assume(start >= block.timestamp);
 
         address[] memory tokens = new address[](numSpenders);
@@ -302,6 +301,7 @@ contract ERC7579ERC20SpenderTest is Test {
 
     function testSetSpendingConfig(uint48 newStart, uint160 newLimit, uint48 newRenewPeriod) public {
         vm.assume(newRenewPeriod > 0);
+        vm.assume(newLimit > 0);
         vm.assume(newStart >= block.timestamp);
 
         uint48 start = uint48(block.timestamp);
@@ -316,9 +316,9 @@ contract ERC7579ERC20SpenderTest is Test {
     }
 
     function testLimitReduction(uint160 initialLimit, uint160 spentAmount, uint160 newLimit) public {
-        vm.assume(spentAmount <= initialLimit);
-        vm.assume(spentAmount <= MAX_TOKENS);
-        newLimit = uint160(bound(newLimit, 0, spentAmount));
+        vm.assume(initialLimit > 0);
+        spentAmount = uint160(bound(spentAmount, 1, Math.min(initialLimit, MAX_TOKENS)));
+        newLimit = uint160(bound(newLimit, 1, Math.max(spentAmount, 1)));
 
         uint48 start = uint48(block.timestamp);
         uint48 renewPeriod = 1 days;
@@ -329,19 +329,23 @@ contract ERC7579ERC20SpenderTest is Test {
         vm.prank(_spenderAddress);
         _spender.transferFrom(address(_account), address(_token1), _recipient, spentAmount);
 
-        // Reduce limit below spent amount
+        // Set new configuration with future start time
+        uint48 futureStart = uint48(block.timestamp + 1 days);
         vm.prank(address(_account));
-        _spender.setCurrentSpendingConfig(address(_token1), _spenderAddress, newLimit, renewPeriod);
+        _spender.setSpendingConfig(address(_token1), _spenderAddress, futureStart, newLimit, renewPeriod);
 
-        // Check that available is 0
+        // Move to the new start time
+        vm.warp(futureStart);
+
+        // Check that available equals newLimit (spending reset with new start)
         (uint256 spending, uint256 available) = _spender.spendingAt(
             address(_account),
             address(_token1),
             _spenderAddress,
             0
         );
-        assertEq(spending, spentAmount);
-        assertEq(available, 0);
+        assertEq(spending, 0);
+        assertEq(available, newLimit);
     }
 
     function testUninstallClearsData(uint160 limit, uint160 spentAmount, uint48 renewPeriod) public {
@@ -443,6 +447,7 @@ contract ERC7579ERC20SpenderTest is Test {
 
     function testZeroAmountTransfer(uint160 limit, uint48 renewPeriod) public {
         vm.assume(renewPeriod > 0);
+        vm.assume(limit > 0);
 
         uint48 start = uint48(block.timestamp);
         _installSpender(address(_token1), start, limit, renewPeriod);
@@ -458,7 +463,7 @@ contract ERC7579ERC20SpenderTest is Test {
 
     function testExactLimitSpending(uint160 limit, uint48 renewPeriod) public {
         vm.assume(renewPeriod > 0);
-        limit = uint160(bound(limit, 0, MAX_TOKENS));
+        limit = uint160(bound(limit, 1, MAX_TOKENS));
 
         uint48 start = uint48(block.timestamp);
         _installSpender(address(_token1), start, limit, renewPeriod);
@@ -584,6 +589,63 @@ contract ERC7579ERC20SpenderTest is Test {
         assertEq(_spender.spent(address(_account), address(_token2), _spenderAddress, 0), amount2);
         assertEq(_token1.balanceOf(_recipient), amount1);
         assertEq(_token2.balanceOf(_recipient), amount2);
+    }
+
+    function testUnsetSpendingConfig(uint48 renewPeriod, uint160 limit1, uint160 limit2) public {
+        renewPeriod = uint48(bound(renewPeriod, 1, 365 days));
+        limit1 = uint160(bound(limit1, 1, MAX_TOKENS));
+        limit2 = uint160(bound(limit2, 1, MAX_TOKENS));
+
+        uint48 start = uint48(block.timestamp);
+
+        // Install with 2 tokens, 1 spender each
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(_token1);
+        tokens[1] = address(_token2);
+
+        address[] memory spenders = new address[](2);
+        spenders[0] = _spenderAddress;
+        spenders[1] = _spenderAddress;
+
+        uint48[] memory starts = new uint48[](2);
+        starts[0] = start;
+        starts[1] = start;
+
+        uint160[] memory limits = new uint160[](2);
+        limits[0] = limit1;
+        limits[1] = limit2;
+
+        uint48[] memory renewPeriods = new uint48[](2);
+        renewPeriods[0] = renewPeriod;
+        renewPeriods[1] = renewPeriod;
+
+        bytes memory initData = abi.encode(tokens, spenders, starts, limits, renewPeriods);
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(initData);
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+
+        // Verify setup
+        assertEq(_spender.tokensCount(address(_account)), 2);
+        assertEq(_spender.spendersCount(address(_account), address(_token1)), 1);
+
+        // Unset spender for token1 (last spender for that token)
+        vm.prank(address(_account));
+        _spender.unsetSpendingConfig(address(_token1), _spenderAddress);
+
+        // Token1 should be removed from tokens list
+        assertEq(_spender.tokensCount(address(_account)), 1);
+        assertEq(_spender.spendersCount(address(_account), address(_token1)), 0);
+
+        // Token2 should still be there
+        assertEq(_spender.spendersCount(address(_account), address(_token2)), 1);
+
+        // Config should be cleared
+        assertEq(_spender.limit(address(_account), address(_token1), _spenderAddress), 0);
+        assertEq(_spender.start(address(_account), address(_token1), _spenderAddress), 0);
+        assertEq(_spender.renewPeriod(address(_account), address(_token1), _spenderAddress), 0);
     }
 
     function _installSpender(address token, uint48 start, uint160 limit, uint48 renewPeriod) private {

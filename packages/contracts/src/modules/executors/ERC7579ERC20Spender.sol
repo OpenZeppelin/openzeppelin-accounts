@@ -29,7 +29,6 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  *
  * TIP: Set {start} to a future timepoint to schedule a spending limit that activates later.
  * TIP: Set {renewPeriod} to {type(uint48).max} to disable the renewal period.
- * TIP: Set {limit} to 0 to disable spending for the spender.
  */
 contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -44,7 +43,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
     error ERC7579ERC20SpenderInvalidInitData();
 
     /// @dev The spending config is not set for the `spender` on the `token`.
-    error ERC7579ERC20SpendingConfigUnset(address account, address token, address spender);
+    error ERC7579ERC20SpendingConfigNotSet(address account, address token, address spender);
 
     /// @dev The arrays in `initData` have mismatched lengths.
     error ERC7579ERC20SpenderMismatchedInitDataLengths(
@@ -54,7 +53,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         uint256 renewPeriods
     );
 
-    /// @dev The `spenders` array is empty.
+    /// @dev The `account` module is left with no spenders.
     error ERC7579ERC20SpenderEmptySpenders();
 
     /// @dev The `tos` and `amounts` arrays have mismatched lengths in batch transfer.
@@ -62,6 +61,9 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
 
     /// @dev The `renewPeriod` is invalid (must be greater than zero).
     error ERC7579ERC20SpenderInvalidRenewPeriod(uint256 renewPeriod);
+
+    /// @dev The `renewPeriod` is invalid (must be greater than zero).
+    error ERC7579ERC20SpenderInvalidLimit(uint256 limit);
 
     /// @dev The `token` address is invalid (not a contract).
     error ERC7579ERC20SpenderInvalidToken(address token);
@@ -78,6 +80,9 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         uint256 start
     );
 
+    /// @dev The account has not installed the module.
+    error ERC7579ERC20SpenderUninstalled();
+
     /// @dev ERC20 transfer failed.
     error ERC7579ERC20TransferFailed(address account, address token, address spender, address to, uint256 amount);
 
@@ -93,6 +98,9 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         uint256 limit,
         uint256 renewPeriod
     );
+
+    /// @dev Emitted when a spending configuration is unset for a token-spender pair.
+    event ERC7579ERC20SpendingConfigUnset(address indexed account, address indexed token, address indexed spender);
 
     /**
      * @dev Spending configuration for a specific token-spender pair on an `account`.
@@ -117,6 +125,11 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
     mapping(address account => mapping(uint256 installation => mapping(address token => EnumerableSet.AddressSet)))
         private _spenders;
     mapping(address account => mapping(uint256 installation => EnumerableSet.AddressSet)) private _tokens;
+
+    /// @dev Returns whether the module is installed for an `account`.
+    function installed(address account) public view virtual returns (bool) {
+        return tokensCount(account) > 0;
+    }
 
     /// @dev Returns the installation nonce for an `account`. See {onUninstall}.
     function installation(address account) public view virtual returns (uint256) {
@@ -147,6 +160,17 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
     ) public view virtual returns (uint256) {
         uint256 installation_ = installation(account);
         return _spent(account, installation_, token, spender, period, _start(account, installation_, token, spender));
+    }
+
+    /// @dev Same as {spent} but receives a `start_` timepoint.
+    function spent(
+        address account,
+        address token,
+        address spender,
+        uint256 period,
+        uint256 start_
+    ) public view virtual returns (uint256) {
+        return _spent(account, installation(account), token, spender, period, start_);
     }
 
     /// @dev Returns the number of spenders installed for an `account` for a `token`.
@@ -389,9 +413,8 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
      *
      * Requirements:
      *
+     * * The module must be installed. Reverts with {ERC7579ERC20SpenderUninstalled} if not.
      * * Those from {_setSpendingConfig}.
-     *
-     * TIP: Use {start} as `newStart` to update the spending configuration without changing the start time.
      */
     function setSpendingConfig(
         address token,
@@ -400,26 +423,33 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         uint160 newLimit,
         uint48 newRenewPeriod
     ) public virtual {
+        require(installed(msg.sender), ERC7579ERC20SpenderUninstalled());
         _setSpendingConfig(msg.sender, installation(msg.sender), token, spender, newStart, newLimit, newRenewPeriod);
     }
 
-    /// @dev Same as {setSpendingConfig} but updates the current configuration with `newLimit` and `newRenewPeriod`.
-    function setCurrentSpendingConfig(
+    /// @dev Same as {setSpendingConfig} but sets a configuration that starts immediately.
+    function setSpendingConfig(
         address token,
         address spender,
         uint160 newLimit,
         uint48 newRenewPeriod
     ) public virtual {
-        _setSpendingConfig(
-            msg.sender,
-            installation(msg.sender),
-            token,
-            spender,
-            // Safe cast: internal variable is uint48
-            uint48(start(msg.sender, token, spender)),
-            newLimit,
-            newRenewPeriod
-        );
+        // Safe cast: internal variable is uint48
+        setSpendingConfig(token, spender, Time.timestamp(), newLimit, newRenewPeriod);
+    }
+
+    /**
+     * @dev Removes the spending configuration for a `token`-`spender` pair.
+     *
+     * This function allows an account to completely remove a token-spender configuration, freeing up storage
+     * and removing the spender from the account's spender set for that token. Can be called directly by the account.
+     *
+     * Requirements:
+     *
+     * * Those from {_unsetSpendingConfig}.
+     */
+    function unsetSpendingConfig(address token, address spender) public virtual {
+        _unsetSpendingConfig(msg.sender, installation(msg.sender), token, spender);
     }
 
     /// @dev Internal version of {start} that receives an `installation_` nonce.
@@ -485,7 +515,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
      *
      * * The `timepoint` must be greater or equal than {start} for the current spending configuration.
      *   Reverts with {ERC7579ERC20SpendingConfigNotStarted} if not.
-     * * The {renewPeriod} must be greater than zero. Reverts with {ERC7579ERC20SpendingConfigUnset} if not.
+     * * The {renewPeriod} must be greater than zero. Reverts with {ERC7579ERC20SpendingConfigNotSet} if not.
      */
     function _periodAt(
         address account,
@@ -498,7 +528,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         (bool success, uint256 ellapsed) = Math.trySub(timepoint, start_);
         require(success, ERC7579ERC20SpendingConfigNotStarted(account, token, spender, timepoint, start_));
         uint256 renewPeriod_ = _renewPeriod(account, installation_, token, spender);
-        require(renewPeriod_ > 0, ERC7579ERC20SpendingConfigUnset(account, token, spender));
+        require(renewPeriod_ > 0, ERC7579ERC20SpendingConfigNotSet(account, token, spender));
         return (start_, ellapsed / renewPeriod_); // Division error is ok here
     }
 
@@ -512,6 +542,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
      * Requirements:
      *
      * * Each renewal period must be greater than zero. Reverts with {ERC7579ERC20SpenderInvalidRenewPeriod} if not.
+     * * Each limit must be greater than zero. Reverts with {ERC7579ERC20SpenderInvalidLimit} if not.
      * * The token must be a contract address. Reverts with {ERC7579ERC20SpenderInvalidToken} if not.
      * * If keeping the same start time (to update limit/renewPeriod), no timestamp validation is performed.
      * * If changing the start time, the new start must be >= current timestamp. Reverts with
@@ -533,19 +564,51 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         uint48 newRenewPeriod
     ) internal virtual {
         require(newRenewPeriod > 0, ERC7579ERC20SpenderInvalidRenewPeriod(newRenewPeriod));
+        require(newLimit > 0, ERC7579ERC20SpenderInvalidLimit(newLimit));
         require(address(token).code.length > 0, ERC7579ERC20SpenderInvalidToken(token));
-        require(
-            // Allow keeping same start (for updates) OR
-            // setting a new future start (prevents reusing old starts with spent data)
-            _start(account, installation_, token, spender) == newStart || newStart >= Time.timestamp(),
-            ERC7579ERC20SpenderInvalidStart(newStart)
-        );
+        require(newStart >= Time.timestamp(), ERC7579ERC20SpenderInvalidStart(newStart));
         _spenders[account][installation_][token].add(spender);
         _tokens[account][installation_].add(token);
         _config[account][installation_][token][spender].start = newStart;
         _config[account][installation_][token][spender].renewPeriod = newRenewPeriod;
         _config[account][installation_][token][spender].limit = newLimit;
         emit ERC7579ERC20SpendingConfigSet(account, token, spender, newStart, newLimit, newRenewPeriod);
+    }
+
+    /**
+     * @dev Internal function to remove a token-spender configuration.
+     *
+     * This function removes the spender from the account's spender set for the given token and deletes all
+     * configuration data, freeing up storage. Unlike setting the limit to 0, this completely removes the spender
+     * from the module's tracking for that token. If this was the last spender for the token, the token itself
+     * is also removed from the account's token set.
+     *
+     * Requirements:
+     *
+     * * At least one token must remain after removal. Reverts with {ERC7579ERC20SpenderEmptySpenders} if not.
+     *
+     * Emits a {ERC7579ERC20SpendingConfigUnset} event.
+     *
+     * NOTE: This function does not validate whether the token-spender pair was previously configured. Attempting to
+     * unset a non-existent configuration will succeed but have no effect (besides potentially triggering the
+     * empty spenders check if no other tokens exist).
+     */
+    function _unsetSpendingConfig(
+        address account,
+        uint256 installation_,
+        address token,
+        address spender
+    ) internal virtual {
+        _spenders[account][installation_][token].remove(spender);
+        // If no spenders left for this token, remove the token
+        if (spendersCount(account, token) == 0) {
+            _tokens[account][installation_].remove(token);
+        }
+        require(tokensCount(account) > 0, ERC7579ERC20SpenderEmptySpenders());
+        delete _config[account][installation_][token][spender].start;
+        delete _config[account][installation_][token][spender].renewPeriod;
+        delete _config[account][installation_][token][spender].limit;
+        emit ERC7579ERC20SpendingConfigUnset(account, token, spender);
     }
 
     /**

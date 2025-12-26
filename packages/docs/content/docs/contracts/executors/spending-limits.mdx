@@ -26,13 +26,12 @@ Spending limits automatically renew at the end of each period. For example, with
 2. After 30 days, the limit resets and the spender can spend another 1 ETH
 3. This continues indefinitely until the configuration is changed or the module is uninstalled
 
-You can cancel or disable a spending limit for a spender at any time by setting its `limit` parameter to `0` using the `setSpendingConfig` function, available in both `ERC7579ERC20Spender` and `ERC7579NativeSpender`. This immediately prevents the spender from making further transfers under that configuration.
+You can completely remove a spending limit configuration using the `unsetSpendingConfig` function, available in both `ERC7579ERC20Spender` and `ERC7579NativeSpender`. This removes the spender (or token-spender pair) from the account's configuration and frees up storage.
 
 <Callout>
-  Setting a spending limit to `0` disables further spending for that spender or token, but it does **not** remove the
-  spender (or token) from their respective lists or affect the values returned by `spendersCount`/`tokenCount`. The
-  entries remain in the internal data structures and will still be included in iteration and counting functions; only
-  the ability to spend is affected.
+  The spending limit must be greater than zero. To remove a spender's access entirely, use `unsetSpendingConfig` instead
+  of trying to set the limit to zero. Note that at least one spender (or token) must remain configured after removal to
+  prevent the module from becoming unusable.
 </Callout>
 
 ## Available Spenders
@@ -133,14 +132,17 @@ address[] memory allSpenders = nativeSpender.spenders(account, 0, type(uint256).
 address[] memory firstTenSpenders = nativeSpender.spenders(account, 0, 10);
 ```
 
-<Callout>Spenders are never removed from the set of spenders even after their limit is set to 0.</Callout>
+<Callout>
+  Use `unsetSpendingConfig` to completely remove a spender from the configuration. This frees up storage and removes
+  the spender from the set.
+</Callout>
 
 #### Spending Configuration
 
-The account owner can update spending configurations at any time. By providing a new start time, the module will stop allowing transfers until this time is reached:
+The account owner can update spending configurations at any time. Setting a new configuration creates new spending periods:
 
 ```solidity
-// Update a spender's configuration (changes start time)
+// Set a new configuration with a future start time
 nativeSpender.setSpendingConfig(
     spender,
     uint48(block.timestamp + 1 days), // New start time
@@ -148,17 +150,22 @@ nativeSpender.setSpendingConfig(
     60 days  // New renewal period
 );
 
-// Update without changing the start time
-nativeSpender.setCurrentSpendingConfig(
+// Or use the convenience overload to start immediately (uses current timestamp)
+nativeSpender.setSpendingConfig(
     spender,
     2 ether, // New limit
     60 days  // New renewal period
 );
 ```
 
-To disable transfers for a particular `spender` completely, the module allows setting the `limit` to `0`, which effectively disables spending limits for that address.
+To remove a spender's configuration completely, use `unsetSpendingConfig`:
 
-<Callout>Changing the start time resets the spending tracking (new periods begin from the new start)</Callout>
+```solidity
+// Remove a spender's configuration entirely
+nativeSpender.unsetSpendingConfig(spender);
+```
+
+<Callout>Setting a new start time creates new spending periods from that start, effectively resetting the spending tracking</Callout>
 
 <Callout type="idea">
   To create a one-time spending limit that doesn't renew, users can call `setSpendingConfig` with a `renewPeriod` of
@@ -278,15 +285,16 @@ address[] memory allSpenders = erc20Spender.spenders(account, token, 0, type(uin
 ```
 
 <Callout>
-  Tokens and spenders are never removed from their respective sets even after their limits are set to 0.
+  Tokens and spenders are removed from their respective sets when using `unsetSpendingConfig`. If the last spender for a
+  token is removed, the token itself is also removed from the token list.
 </Callout>
 
 #### Spending Configuration
 
-The account owner can update spending configurations at any time for any token-spender pair. By providing a new start time, the module will stop allowing transfers until this time is reached:
+The account owner can update spending configurations at any time for any token-spender pair. Setting a new configuration creates new spending periods:
 
 ```solidity
-// Update a token-spender configuration (changes start time)
+// Set a new configuration with a future start time
 erc20Spender.setSpendingConfig(
     token,
     spender,
@@ -295,18 +303,23 @@ erc20Spender.setSpendingConfig(
     60 days  // New renewal period
 );
 
-// Update without changing the start time
-erc20Spender.setCurrentSpendingConfig(
+// Or use the convenience overload to start immediately (uses current timestamp)
+erc20Spender.setSpendingConfig(
     token,
     spender,
-    200e6, // New limit
+    200e6, // New limit (200 USDC)
     60 days  // New renewal period
 );
 ```
 
-To disable transfers for a particular token-spender pair completely, the module allows setting the `limit` to `0`, which effectively disables spending limits for that pair.
+To remove a token-spender configuration completely, use `unsetSpendingConfig`:
 
-<Callout>Changing the start time resets the spending tracking (new periods begin from the new start)</Callout>
+```solidity
+// Remove a token-spender configuration entirely
+erc20Spender.unsetSpendingConfig(token, spender);
+```
+
+<Callout>Setting a new start time creates new spending periods from that start, effectively resetting the spending tracking</Callout>
 
 <Callout type="idea">
   To create a one-time spending limit that doesn't renew, users can call `setSpendingConfig` with a `renewPeriod` of

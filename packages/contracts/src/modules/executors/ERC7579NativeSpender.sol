@@ -29,7 +29,6 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  *
  * TIP: Set {start} to a future timepoint to schedule a spending limit that activates later.
  * TIP: Set {renewPeriod} to {type(uint48).max} to disable the renewal period.
- * TIP: Set {limit} to 0 to disable spending for the spender.
  */
 contract ERC7579NativeSpender is ERC7579Executor, Nonces {
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -44,12 +43,12 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
     error ERC7579NativeSpenderInvalidInitData();
 
     /// @dev The spending config is not set for the `spender`.
-    error ERC7579NativeSpendingConfigUnset(address account, address spender);
+    error ERC7579NativeSpendingConfigNotSet(address account, address spender);
 
     /// @dev The arrays in `initData` have mismatched lengths.
     error ERC7579NativeSpenderMismatchedInitDataLengths(uint256 spenders, uint256 limits, uint256 renewPeriods);
 
-    /// @dev The `spenders` array is empty.
+    /// @dev The `account` module is left with no spenders.
     error ERC7579NativeSpenderEmptySpenders();
 
     /// @dev The `tos` and `amounts` arrays have mismatched lengths in batch transfer.
@@ -58,11 +57,17 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
     /// @dev The `renewPeriod` is invalid (must be greater than zero).
     error ERC7579NativeSpenderInvalidRenewPeriod(uint256 renewPeriod);
 
+    /// @dev The `renewPeriod` is invalid (must be greater than zero).
+    error ERC7579NativeSpenderInvalidLimit(uint256 limit);
+
     /// @dev The `start` time is invalid (cannot reuse a past start time).
     error ERC7579NativeSpenderInvalidStart(uint256 start);
 
     /// @dev The spending config has not started yet for the given `timepoint`.
     error ERC7579NativeSpendingConfigNotStarted(address account, address spender, uint256 timepoint, uint256 start);
+
+    /// @dev The account has not installed the module.
+    error ERC7579NativeSpenderUninstalled();
 
     /// @dev Emitted when all spending configurations are cleared for an account.
     event ERC7579NativeSpendingConfigCleared(address indexed account);
@@ -75,6 +80,9 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
         uint256 limit,
         uint256 renewPeriod
     );
+
+    /// @dev Emitted when a spending configuration is unset for a spender.
+    event ERC7579NativeSpendingConfigUnset(address indexed account, address indexed spender);
 
     /**
      * @dev Spending configuration for a specific account-spender pair.
@@ -97,6 +105,11 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
     mapping(address account => mapping(uint256 installation => mapping(address spender => mapping(uint256 start => mapping(uint256 period => uint256)))))
         private _spentFor;
     mapping(address account => mapping(uint256 installation => EnumerableSet.AddressSet)) private _spenders;
+
+    /// @dev Returns whether the module is installed for an `account`.
+    function installed(address account) public view virtual returns (bool) {
+        return spendersCount(account) > 0;
+    }
 
     /// @dev Returns the installation nonce for an `account`. See {onUninstall}.
     function installation(address account) public view virtual returns (uint256) {
@@ -122,6 +135,16 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
     function spent(address account, address spender, uint256 period) public view virtual returns (uint256) {
         uint256 installation_ = installation(account);
         return _spent(account, installation_, spender, period, _start(account, installation_, spender));
+    }
+
+    /// @dev Same as {spent} but receives a `start_` timepoint.
+    function spent(
+        address account,
+        address spender,
+        uint256 period,
+        uint256 start_
+    ) public view virtual returns (uint256) {
+        return _spent(account, installation(account), spender, period, start_);
     }
 
     /// @dev Returns the number of spenders installed for an `account`.
@@ -319,9 +342,8 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
      *
      * Requirements:
      *
+     * * The module must be installed. Reverts with {ERC7579NativeSpenderUninstalled} if not.
      * * Those from {_setSpendingConfig}.
-     *
-     * TIP: Use {start} as `newStart` to update the spending configuration without changing the start time.
      */
     function setSpendingConfig(
         address spender,
@@ -329,20 +351,27 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
         uint160 newLimit,
         uint48 newRenewPeriod
     ) public virtual {
+        require(installed(msg.sender), ERC7579NativeSpenderUninstalled());
         _setSpendingConfig(msg.sender, installation(msg.sender), spender, newStart, newLimit, newRenewPeriod);
     }
 
-    /// @dev Same as {setSpendingConfig} but updates the current configuration with `newLimit` and `newRenewPeriod`.
-    function setCurrentSpendingConfig(address spender, uint160 newLimit, uint48 newRenewPeriod) public virtual {
-        _setSpendingConfig(
-            msg.sender,
-            installation(msg.sender),
-            spender,
-            // Safe cast: internal variable is uint48
-            uint48(start(msg.sender, spender)),
-            newLimit,
-            newRenewPeriod
-        );
+    /// @dev Same as {setSpendingConfig} but sets a configuration that starts immediately.
+    function setSpendingConfig(address spender, uint160 newLimit, uint48 newRenewPeriod) public virtual {
+        setSpendingConfig(spender, Time.timestamp(), newLimit, newRenewPeriod);
+    }
+
+    /**
+     * @dev Removes the spending configuration for a `spender`.
+     *
+     * This function allows an account to completely remove a spender's configuration, freeing up storage
+     * and removing the spender from the account's spender set. Can be called directly by the account.
+     *
+     * Requirements:
+     *
+     * * Those from {_unsetSpendingConfig}.
+     */
+    function unsetSpendingConfig(address spender) public virtual {
+        _unsetSpendingConfig(msg.sender, installation(msg.sender), spender);
     }
 
     /// @dev Internal version of {start} that receives an `installation_` nonce.
@@ -395,7 +424,7 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
      *
      * * The `timepoint` must be greater or equal than {start} for the current spending configuration.
      *   Reverts with {ERC7579NativeSpendingConfigNotStarted} if not.
-     * * The {renewPeriod} must be greater than zero. Reverts with {ERC7579NativeSpendingConfigUnset} if not.
+     * * The {renewPeriod} must be greater than zero. Reverts with {ERC7579NativeSpendingConfigNotSet} if not.
      */
     function _periodAt(
         address account,
@@ -407,7 +436,7 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
         (bool success, uint256 ellapsed) = Math.trySub(timepoint, start_);
         require(success, ERC7579NativeSpendingConfigNotStarted(account, spender, timepoint, start_));
         uint256 renewPeriod_ = _renewPeriod(account, installation_, spender);
-        require(renewPeriod_ > 0, ERC7579NativeSpendingConfigUnset(account, spender));
+        require(renewPeriod_ > 0, ERC7579NativeSpendingConfigNotSet(account, spender));
         return (start_, ellapsed / renewPeriod_); // Division error is ok here
     }
 
@@ -421,6 +450,7 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
      * Requirements:
      *
      * * Each renewal period must be greater than zero. Reverts with {ERC7579NativeSpenderInvalidRenewPeriod} if not.
+     * * Each limit must be greater than zero. Reverts with {ERC7579NativeSpenderInvalidLimit} if not.
      * * If keeping the same start time (to update limit/renewPeriod), no timestamp validation is performed.
      * * If changing the start time, the new start must be >= current timestamp. Reverts with
      *   {ERC7579NativeSpenderInvalidStart} if attempting to set a different past start time
@@ -440,17 +470,39 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
         uint48 newRenewPeriod
     ) internal virtual {
         require(newRenewPeriod > 0, ERC7579NativeSpenderInvalidRenewPeriod(newRenewPeriod));
-        require(
-            // Allow keeping same start (for updates) OR
-            // setting a new future start (prevents reusing old starts with spent data)
-            _start(account, installation_, spender) == newStart || newStart >= Time.timestamp(),
-            ERC7579NativeSpenderInvalidStart(newStart)
-        );
+        require(newLimit > 0, ERC7579NativeSpenderInvalidLimit(newLimit));
+        require(newStart >= Time.timestamp(), ERC7579NativeSpenderInvalidStart(newStart));
         _spenders[account][installation_].add(spender);
         _config[account][installation_][spender].start = newStart;
         _config[account][installation_][spender].renewPeriod = newRenewPeriod;
         _config[account][installation_][spender].limit = newLimit;
         emit ERC7579NativeSpendingConfigSet(account, spender, newStart, newLimit, newRenewPeriod);
+    }
+
+    /**
+     * @dev Internal function to remove a spender's configuration.
+     *
+     * This function removes the spender from the account's spender set and deletes all configuration
+     * data, freeing up storage. Unlike setting the limit to 0, this completely removes the spender
+     * from the module's tracking.
+     *
+     * Requirements:
+     *
+     * * At least one spender must remain after removal. Reverts with {ERC7579NativeSpenderEmptySpenders} if not.
+     *
+     * Emits a {ERC7579NativeSpendingConfigUnset} event.
+     *
+     * NOTE: This function does not validate whether the spender was previously configured. Attempting to
+     * unset a non-existent spender will succeed but have no effect (besides potentially triggering the
+     * empty spenders check if no other spenders exist).
+     */
+    function _unsetSpendingConfig(address account, uint256 installation_, address spender) internal virtual {
+        _spenders[account][installation_].remove(spender);
+        require(spendersCount(account) > 0, ERC7579NativeSpenderEmptySpenders());
+        delete _config[account][installation_][spender].start;
+        delete _config[account][installation_][spender].renewPeriod;
+        delete _config[account][installation_][spender].limit;
+        emit ERC7579NativeSpendingConfigUnset(account, spender);
     }
 
     /**

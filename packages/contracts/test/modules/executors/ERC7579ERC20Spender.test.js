@@ -77,6 +77,16 @@ describe('ERC7579ERC20Spender', function () {
 
   shouldBehaveLikeERC7579Module();
 
+  describe('installed', function () {
+    it('tracks installation status', async function () {
+      await expect(this.mock.installed(this.mockAccount.address)).to.eventually.be.false;
+      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
+      await expect(this.mock.installed(this.mockAccount.address)).to.eventually.be.true;
+      await this.mockAccountFromEntrypoint.uninstallModule(this.moduleType, this.mock.target, '0x');
+      await expect(this.mock.installed(this.mockAccount.address)).to.eventually.be.false;
+    });
+  });
+
   describe('installation', function () {
     it('installs with single token-spender configuration', async function () {
       await expect(this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData))
@@ -619,7 +629,17 @@ describe('ERC7579ERC20Spender', function () {
 
   describe('spending configuration', function () {
     beforeEach(async function () {
-      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
+      const multiSpenderInstallData = ethers.AbiCoder.defaultAbiCoder().encode(
+        ['address[]', 'address[]', 'uint48[]', 'uint160[]', 'uint48[]'],
+        [
+          [this.token1.target, this.token1.target],
+          [this.spender1.address, this.spender2.address],
+          [this.start, this.start],
+          [this.limit, ethers.parseEther('5')],
+          [this.renewPeriod, this.renewPeriod],
+        ],
+      );
+      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, multiSpenderInstallData);
     });
 
     it('allows account to update spending configuration', async function () {
@@ -631,7 +651,7 @@ describe('ERC7579ERC20Spender', function () {
         this.spender1.address,
         this.start + time.duration.days(3),
         newLimit,
-        newRenewPeriod,
+        ethers.Typed.uint48(newRenewPeriod),
       );
       await expect(tx)
         .to.emit(this.mock, 'ERC7579ERC20SpendingConfigSet')
@@ -655,62 +675,6 @@ describe('ERC7579ERC20Spender', function () {
       ).to.eventually.equal(newRenewPeriod);
     });
 
-    it('allows account to update current spending configuration without changing start', async function () {
-      const newLimit = ethers.parseEther('15');
-      const newRenewPeriod = time.duration.days(14);
-
-      const tx = await this.mockFromAccount.setCurrentSpendingConfig(
-        this.token1.target,
-        this.spender1.address,
-        newLimit,
-        newRenewPeriod,
-      );
-      await expect(tx)
-        .to.emit(this.mock, 'ERC7579ERC20SpendingConfigSet')
-        .withArgs(
-          this.mockAccount.address,
-          this.token1.target,
-          this.spender1.address,
-          this.start,
-          newLimit,
-          newRenewPeriod,
-        );
-
-      await expect(
-        this.mock.start(this.mockAccount.address, this.token1.target, this.spender1.address),
-      ).to.eventually.equal(this.start);
-      await expect(
-        this.mock.limit(this.mockAccount.address, this.token1.target, this.spender1.address),
-      ).to.eventually.equal(newLimit);
-    });
-
-    it('handles limit reduction mid-period', async function () {
-      await time.increaseTo.timestamp(this.start);
-      const amount = ethers.parseEther('8');
-      await this.mock
-        .connect(this.spender1)
-        .transferFrom(this.mockAccount.address, this.token1.target, this.recipient1.address, amount);
-
-      // Reduce limit below already-spent amount
-      const newLimit = ethers.parseEther('5');
-      await this.mockFromAccount.setCurrentSpendingConfig(
-        this.token1.target,
-        this.spender1.address,
-        newLimit,
-        this.renewPeriod,
-      );
-
-      // Available should be 0 (not negative)
-      const [spending, available] = await this.mock.spendingAt(
-        this.mockAccount.address,
-        this.token1.target,
-        this.spender1.address,
-        0,
-      );
-      expect(spending).to.equal(amount);
-      expect(available).to.equal(0n); // Capped at 0, not negative
-    });
-
     it('allows setting a future start time', async function () {
       const futureStart = (await time.clock.timestamp()) + time.duration.years(3);
       await this.mockFromAccount.setSpendingConfig(
@@ -718,7 +682,7 @@ describe('ERC7579ERC20Spender', function () {
         this.spender2.address,
         futureStart,
         this.limit,
-        this.renewPeriod,
+        ethers.Typed.uint48(this.renewPeriod),
       );
 
       await expect(
@@ -726,22 +690,90 @@ describe('ERC7579ERC20Spender', function () {
       ).to.eventually.equal(futureStart);
     });
 
-    it('disables spending by setting limit to 0', async function () {
+    it('reverts when trying to set limit to 0', async function () {
       await time.increaseTo.timestamp(this.start);
-      await this.mockFromAccount.setCurrentSpendingConfig(
-        this.token1.target,
-        this.spender1.address,
-        0,
-        this.renewPeriod,
+      await expect(
+        this.mockFromAccount.setSpendingConfig(
+          this.token1.target,
+          this.spender1.address,
+          0,
+          ethers.Typed.uint48(this.renewPeriod),
+        ),
+      ).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpenderInvalidLimit');
+    });
+
+    it('removes spender configuration', async function () {
+      await expect(this.mock.spendersCount(this.mockAccount.address, this.token1.target)).to.eventually.equal(2n);
+      await expect(this.mock.tokensCount(this.mockAccount.address)).to.eventually.equal(1n);
+
+      const tx = await this.mockFromAccount.unsetSpendingConfig(this.token1.target, this.spender1.address);
+      await expect(tx)
+        .to.emit(this.mock, 'ERC7579ERC20SpendingConfigUnset')
+        .withArgs(this.mockAccount.address, this.token1.target, this.spender1.address);
+
+      await expect(this.mock.spendersCount(this.mockAccount.address, this.token1.target)).to.eventually.equal(1n);
+      await expect(this.mock.tokensCount(this.mockAccount.address)).to.eventually.equal(1n);
+      await expect(
+        this.mock.limit(this.mockAccount.address, this.token1.target, this.spender1.address),
+      ).to.eventually.equal(0n);
+    });
+
+    it('removes token when removing last spender for that token', async function () {
+      // Add another token with one spender
+      await this.mockFromAccount.setSpendingConfig(
+        this.token2.target,
+        this.other.address,
+        this.start,
+        this.limit,
+        ethers.Typed.uint48(this.renewPeriod),
       );
+
+      await expect(this.mock.tokensCount(this.mockAccount.address)).to.eventually.equal(2n);
+      await expect(this.mock.spendersCount(this.mockAccount.address, this.token1.target)).to.eventually.equal(2n);
+
+      // Remove both spenders from token1
+      await this.mockFromAccount.unsetSpendingConfig(this.token1.target, this.spender1.address);
+      await expect(this.mock.spendersCount(this.mockAccount.address, this.token1.target)).to.eventually.equal(1n);
+      await expect(this.mock.tokensCount(this.mockAccount.address)).to.eventually.equal(2n);
+
+      await this.mockFromAccount.unsetSpendingConfig(this.token1.target, this.spender2.address);
+      await expect(this.mock.spendersCount(this.mockAccount.address, this.token1.target)).to.eventually.equal(0n);
+      await expect(this.mock.tokensCount(this.mockAccount.address)).to.eventually.equal(1n);
+    });
+
+    it('reverts when trying to remove last token', async function () {
+      // Remove first spender
+      await this.mockFromAccount.unsetSpendingConfig(this.token1.target, this.spender1.address);
+      await expect(this.mock.spendersCount(this.mockAccount.address, this.token1.target)).to.eventually.equal(1n);
+
+      // Try to remove last spender (which would remove the last token)
+      await expect(
+        this.mockFromAccount.unsetSpendingConfig(this.token1.target, this.spender2.address),
+      ).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpenderEmptySpenders');
+    });
+
+    it('clears spent data', async function () {
+      await time.increaseTo.timestamp(this.start);
+
+      const amount = ethers.parseEther('3');
+      await this.mock
+        .connect(this.spender1)
+        .transferFrom(this.mockAccount.address, this.token1.target, this.recipient1.address, amount);
+      await expect(
+        this.mock.spent(this.mockAccount.address, this.token1.target, this.spender1.address, 0),
+      ).to.eventually.equal(amount);
+
+      await this.mockFromAccount.unsetSpendingConfig(this.token1.target, this.spender1.address);
+
       await expect(
         this.mock.limit(this.mockAccount.address, this.token1.target, this.spender1.address),
       ).to.eventually.equal(0n);
       await expect(
-        this.mock
-          .connect(this.spender1)
-          .transferFrom(this.mockAccount.address, this.token1.target, this.recipient1.address, 1),
-      ).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20InsufficientAvailable');
+        this.mock.start(this.mockAccount.address, this.token1.target, this.spender1.address),
+      ).to.eventually.equal(0n);
+      await expect(
+        this.mock.renewPeriod(this.mockAccount.address, this.token1.target, this.spender1.address),
+      ).to.eventually.equal(0n);
     });
   });
 
@@ -800,7 +832,7 @@ describe('ERC7579ERC20Spender', function () {
           this.spender2.address,
           await time.clock.timestamp(),
         ),
-      ).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpendingConfigUnset');
+      ).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpendingConfigNotSet');
     });
   });
 
@@ -875,7 +907,7 @@ describe('ERC7579ERC20Spender', function () {
         this.spender2.address,
         this.start + time.duration.days(3),
         ethers.parseEther('5'),
-        this.renewPeriod,
+        ethers.Typed.uint48(this.renewPeriod),
       );
 
       await time.increaseTo.timestamp(this.start + time.duration.days(3));
@@ -904,7 +936,7 @@ describe('ERC7579ERC20Spender', function () {
         this.spender1.address,
         this.start + time.duration.days(3),
         ethers.parseEther('5'),
-        this.renewPeriod,
+        ethers.Typed.uint48(this.renewPeriod),
       );
 
       await time.increaseTo.timestamp(this.start + time.duration.days(3));
@@ -924,6 +956,69 @@ describe('ERC7579ERC20Spender', function () {
       ).to.eventually.equal(amount1);
       await expect(
         this.mock.spent(this.mockAccount.address, this.token2.target, this.spender1.address, 0),
+      ).to.eventually.equal(amount2);
+    });
+
+    it('tracks spending for different start times', async function () {
+      const amount1 = ethers.parseEther('3');
+      await this.mock
+        .connect(this.spender1)
+        .transferFrom(this.mockAccount.address, this.token1.target, this.recipient1.address, amount1);
+
+      // Verify with original start
+      await expect(
+        this.mock.spent(this.mockAccount.address, this.token1.target, this.spender1.address, 0),
+      ).to.eventually.equal(amount1);
+      await expect(
+        this.mock.spent(
+          this.mockAccount.address,
+          this.token1.target,
+          this.spender1.address,
+          0,
+          ethers.Typed.uint256(this.start),
+        ),
+      ).to.eventually.equal(amount1);
+
+      // Change start time
+      const newStart = (await time.clock.timestamp()) + time.duration.days(1);
+      await this.mockFromAccount.setSpendingConfig(
+        this.token1.target,
+        this.spender1.address,
+        newStart,
+        this.limit,
+        ethers.Typed.uint48(this.renewPeriod),
+      );
+      await time.increaseTo.timestamp(newStart);
+
+      // Spend with new start
+      const amount2 = ethers.parseEther('4');
+      await this.mock
+        .connect(this.spender1)
+        .transferFrom(this.mockAccount.address, this.token1.target, this.recipient1.address, amount2);
+
+      // Old start should still have old spending
+      await expect(
+        this.mock.spent(
+          this.mockAccount.address,
+          this.token1.target,
+          this.spender1.address,
+          0,
+          ethers.Typed.uint256(this.start),
+        ),
+      ).to.eventually.equal(amount1);
+
+      // New start should have new spending
+      await expect(
+        this.mock.spent(this.mockAccount.address, this.token1.target, this.spender1.address, 0),
+      ).to.eventually.equal(amount2);
+      await expect(
+        this.mock.spent(
+          this.mockAccount.address,
+          this.token1.target,
+          this.spender1.address,
+          0,
+          ethers.Typed.uint256(newStart),
+        ),
       ).to.eventually.equal(amount2);
     });
   });
@@ -1032,7 +1127,7 @@ describe('ERC7579ERC20Spender', function () {
         this.spender2.address,
         futureStart,
         this.limit,
-        this.renewPeriod,
+        ethers.Typed.uint48(this.renewPeriod),
       );
 
       await expect(
@@ -1044,12 +1139,15 @@ describe('ERC7579ERC20Spender', function () {
 
     it('respects updated limits', async function () {
       const newLimit = ethers.parseEther('5');
-      await this.mockFromAccount.setCurrentSpendingConfig(
+      const futureStart = this.start + time.duration.days(1);
+      await this.mockFromAccount.setSpendingConfig(
         this.token1.target,
         this.spender1.address,
+        futureStart,
         newLimit,
-        this.renewPeriod,
+        ethers.Typed.uint48(this.renewPeriod),
       );
+      await time.increaseTo.timestamp(futureStart);
 
       const amount = ethers.parseEther('6');
       await expect(
