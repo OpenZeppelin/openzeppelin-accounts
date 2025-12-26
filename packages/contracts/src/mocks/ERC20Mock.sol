@@ -14,4 +14,3 @@ contract ERC20Mock is ERC20 {
         _burn(account, amount);
     }
 }
-
