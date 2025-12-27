@@ -19,27 +19,14 @@ async function fixture() {
   const validator = await ethers.deployContract('$ERC7579ValidatorMock');
   const executor = await ethers.deployContract('$ERC7579ExecutorMock');
   const target = await ethers.deployContract('CallReceiverMock');
-  const accountFactory = await ethers.getContractFactory('$OpenAccount');
-  const erc1967Factory = await ethers.getContractFactory('ERC1967Proxy');
   const implementation = await factory.implementation();
 
-  const getProxyCodeHash = (moduleTypeIds, modules, initDatas, configMode = ethers.ZeroHash, configCalldata = '0x') =>
+  const getProxyCodeHash = () =>
     ethers.keccak256(
       ethers.concat([
-        erc1967Factory.bytecode,
-        ethers.AbiCoder.defaultAbiCoder().encode(
-          ['address', 'bytes'],
-          [
-            implementation,
-            accountFactory.interface.encodeFunctionData('initialize', [
-              moduleTypeIds,
-              modules,
-              initDatas,
-              configMode,
-              configCalldata,
-            ]),
-          ],
-        ),
+        '0x60395f8160225f3973',
+        implementation,
+        '0x60095155f3365f5f375f5f365f7f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc545af43d5f5f3e5f3d91603757fd5bf3',
       ]),
     );
 
@@ -56,11 +43,22 @@ describe('OpenAccountFactory', function () {
       const moduleTypeIds = [MODULE_TYPE_VALIDATOR];
       const modules = [this.validator.target];
       const initDatas = [ethers.solidityPacked(['address'], [this.signer.address])];
-      const proxyCodeHash = this.getProxyCodeHash(moduleTypeIds, modules, initDatas);
+      const proxyCodeHash = this.getProxyCodeHash();
 
       await expect(
         this.factory.predictAddress(moduleTypeIds, modules, initDatas, ethers.ZeroHash, '0x', ethers.ZeroHash),
-      ).to.eventually.be.eq(ethers.getCreate2Address(this.factory.target, ethers.ZeroHash, proxyCodeHash));
+      ).to.eventually.be.eq(
+        ethers.getCreate2Address(
+          this.factory.target,
+          ethers.keccak256(
+            ethers.AbiCoder.defaultAbiCoder().encode(
+              ['uint256[]', 'address[]', 'bytes[]', 'bytes32', 'bytes', 'bytes32'],
+              [moduleTypeIds, modules, initDatas, ethers.ZeroHash, '0x', ethers.ZeroHash],
+            ),
+          ),
+          proxyCodeHash,
+        ),
+      );
     });
 
     it('predicts an address with multiple modules', async function () {
@@ -68,10 +66,21 @@ describe('OpenAccountFactory', function () {
       const modules = [this.validator.target, this.executor.target];
       const initDatas = [ethers.solidityPacked(['address'], [this.signer.address]), '0x'];
 
-      const proxyCodeHash = this.getProxyCodeHash(moduleTypeIds, modules, initDatas);
+      const proxyCodeHash = this.getProxyCodeHash();
       await expect(
         this.factory.predictAddress(moduleTypeIds, modules, initDatas, ethers.ZeroHash, '0x', ethers.ZeroHash),
-      ).to.eventually.be.eq(ethers.getCreate2Address(this.factory.target, ethers.ZeroHash, proxyCodeHash));
+      ).to.eventually.be.eq(
+        ethers.getCreate2Address(
+          this.factory.target,
+          ethers.keccak256(
+            ethers.AbiCoder.defaultAbiCoder().encode(
+              ['uint256[]', 'address[]', 'bytes[]', 'bytes32', 'bytes', 'bytes32'],
+              [moduleTypeIds, modules, initDatas, ethers.ZeroHash, '0x', ethers.ZeroHash],
+            ),
+          ),
+          proxyCodeHash,
+        ),
+      );
     });
 
     it('predicts an address with single configuration', async function () {
@@ -85,10 +94,21 @@ describe('OpenAccountFactory', function () {
         0,
         this.target.interface.encodeFunctionData('mockFunctionWithArgs', [42n, 100n]),
       );
-      const proxyCodeHash = this.getProxyCodeHash(moduleTypeIds, modules, initDatas, configMode, configCalldata);
+      const proxyCodeHash = this.getProxyCodeHash();
       await expect(
         this.factory.predictAddress(moduleTypeIds, modules, initDatas, configMode, configCalldata, ethers.ZeroHash),
-      ).to.eventually.be.eq(ethers.getCreate2Address(this.factory.target, ethers.ZeroHash, proxyCodeHash));
+      ).to.eventually.be.eq(
+        ethers.getCreate2Address(
+          this.factory.target,
+          ethers.keccak256(
+            ethers.AbiCoder.defaultAbiCoder().encode(
+              ['uint256[]', 'address[]', 'bytes[]', 'bytes32', 'bytes', 'bytes32'],
+              [moduleTypeIds, modules, initDatas, configMode, configCalldata, ethers.ZeroHash],
+            ),
+          ),
+          proxyCodeHash,
+        ),
+      );
     });
 
     it('predicts an address with batch configuration', async function () {
@@ -100,10 +120,21 @@ describe('OpenAccountFactory', function () {
         [this.target, 0, this.target.interface.encodeFunctionData('mockFunctionWithArgs', [10n, 20n])],
         [this.target, 0, this.target.interface.encodeFunctionData('mockFunctionWithArgs', [30n, 40n])],
       );
-      const proxyCodeHash = this.getProxyCodeHash(moduleTypeIds, modules, initDatas, configMode, configCalldata);
+      const proxyCodeHash = this.getProxyCodeHash();
       await expect(
         this.factory.predictAddress(moduleTypeIds, modules, initDatas, configMode, configCalldata, ethers.ZeroHash),
-      ).to.eventually.be.eq(ethers.getCreate2Address(this.factory.target, ethers.ZeroHash, proxyCodeHash));
+      ).to.eventually.be.eq(
+        ethers.getCreate2Address(
+          this.factory.target,
+          ethers.keccak256(
+            ethers.AbiCoder.defaultAbiCoder().encode(
+              ['uint256[]', 'address[]', 'bytes[]', 'bytes32', 'bytes', 'bytes32'],
+              [moduleTypeIds, modules, initDatas, configMode, configCalldata, ethers.ZeroHash],
+            ),
+          ),
+          proxyCodeHash,
+        ),
+      );
     });
 
     it('predicts different addresses for different signers', async function () {
