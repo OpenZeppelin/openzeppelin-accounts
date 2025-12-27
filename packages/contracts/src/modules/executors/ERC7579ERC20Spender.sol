@@ -6,6 +6,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Nonces} from "@openzeppelin/contracts/utils/Nonces.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC6372} from "@openzeppelin/contracts/interfaces/IERC6372.sol";
 import {
     ERC7579Utils,
     ModeSelector,
@@ -24,6 +25,9 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * with predefined limits. Each spender gets a renewable spending limit that automatically
  * resets at the end of each period, allowing the same spending capacity to be used again
  * without requiring manual intervention.
+ *
+ * The module implements ERC-6372 to use the token's clock when available. See {clock}
+ * and {CLOCK_MODE}.
  *
  * See {SpendingConfig} for the configuration details.
  *
@@ -107,8 +111,8 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
      *
      * The configuration includes:
      *
-     * * `start`: When the spending limit becomes active (Unix timestamp)
-     * * `renewPeriod`: Duration of each spending period in seconds
+     * * `start`: When the spending limit becomes active (in the token's clock timepoint)
+     * * `renewPeriod`: Duration of each spending period (in the token's clock units)
      * * `limit`: Maximum spendable amount per period
      */
     struct SpendingConfig {
@@ -125,6 +129,29 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
     mapping(address account => mapping(uint256 installation => mapping(address token => EnumerableSet.AddressSet)))
         private _spenders;
     mapping(address account => mapping(uint256 installation => EnumerableSet.AddressSet)) private _tokens;
+
+    /**
+     * @dev Clock used for flagging checkpoints. Defaults to the token's clock if it implements
+     * ERC-6372, otherwise falls back to timestamp.
+     */
+    function clock(address token) public view virtual returns (uint48) {
+        try IERC6372(token).clock() returns (uint48 timepoint) {
+            return timepoint;
+        } catch {
+            return Time.timestamp();
+        }
+    }
+
+    /**
+     * @dev Machine-readable description of the clock as specified in ERC-6372.
+     */
+    function CLOCK_MODE(address token) public view virtual returns (string memory) {
+        try IERC6372(token).CLOCK_MODE() returns (string memory clockmode) {
+            return clockmode;
+        } catch {
+            return "mode=timestamp";
+        }
+    }
 
     /// @dev Returns whether the module is installed for an `account`.
     function installed(address account) public view virtual returns (bool) {
@@ -370,7 +397,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
 
     /// @dev Same as {setSpendingConfig} but sets a configuration that starts immediately.
     function setSpendingConfig(address token, address spender, uint160 newLimit, uint48 newRenewPeriod) public virtual {
-        setSpendingConfig(token, spender, Time.timestamp(), newLimit, newRenewPeriod);
+        setSpendingConfig(token, spender, clock(token), newLimit, newRenewPeriod);
     }
 
     /**
@@ -476,7 +503,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         uint256 amount
     ) internal virtual {
         uint256 installation_ = installation(account);
-        (uint256 start_, uint256 period) = _periodAt(account, installation_, token, spender, Time.timestamp());
+        (uint256 start_, uint256 period) = _periodAt(account, installation_, token, spender, clock(token));
         (, uint256 available) = _spendingAt(account, installation_, token, spender, period, start_);
         require(amount <= available, ERC7579ERC20InsufficientAvailable(account, token, spender, amount));
         _spentFor[account][installation_][token][spender][start_][period] += amount;
@@ -508,7 +535,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
     ) internal virtual {
         require(tos.length == amounts.length, ERC7579ERC20SpenderMismatchedBatchLengths(tos.length, amounts.length));
         uint256 installation_ = installation(account);
-        (uint256 start_, uint256 period) = _periodAt(account, installation_, token, spender, Time.timestamp());
+        (uint256 start_, uint256 period) = _periodAt(account, installation_, token, spender, clock(token));
         (, uint256 available) = _spendingAt(account, installation_, token, spender, period, start_);
         uint256 totalAmount = 0;
         for (uint256 i = 0; i < amounts.length; ++i) {
@@ -558,8 +585,8 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
      * * Each renewal period must be greater than zero. Reverts with {ERC7579ERC20SpenderInvalidRenewPeriod} if not.
      * * Each limit must be greater than zero. Reverts with {ERC7579ERC20SpenderInvalidLimit} if not.
      * * The token must be a contract address. Reverts with {ERC7579ERC20SpenderInvalidToken} if not.
-     * * If keeping the same start time (to update limit/renewPeriod), no timestamp validation is performed.
-     * * If changing the start time, the new start must be >= current timestamp. Reverts with
+     * * If keeping the same start time (to update limit/renewPeriod), no timepoint validation is performed.
+     * * If changing the start time, the new start must be >= current timepoint. Reverts with
      *   {ERC7579ERC20SpenderInvalidStart} if attempting to set a different past start time
      *   (this prevents reusing old start times that might have existing spending data).
      *
@@ -580,7 +607,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         require(newRenewPeriod > 0, ERC7579ERC20SpenderInvalidRenewPeriod(newRenewPeriod));
         require(newLimit > 0, ERC7579ERC20SpenderInvalidLimit(newLimit));
         require(address(token).code.length > 0, ERC7579ERC20SpenderInvalidToken(token));
-        require(newStart >= Time.timestamp(), ERC7579ERC20SpenderInvalidStart(newStart));
+        require(newStart >= clock(token), ERC7579ERC20SpenderInvalidStart(newStart));
         _spenders[account][installation_][token].add(spender);
         _tokens[account][installation_].add(token);
         _config[account][installation_][token][spender].start = newStart;

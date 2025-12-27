@@ -25,6 +25,8 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * resets at the end of each period, allowing the same spending capacity to be used again
  * without requiring manual intervention.
  *
+ * The module implements ERC-6372 clock functions. See {clock} and {CLOCK_MODE}.
+ *
  * See {SpendingConfig} for the configuration details.
  *
  * TIP: Set {start} to a future timepoint to schedule a spending limit that activates later.
@@ -89,8 +91,8 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
      *
      * The configuration includes:
      *
-     * * `start`: When the spending limit becomes active (Unix timestamp)
-     * * `renewPeriod`: Duration of each spending period in seconds
+     * * `start`: When the spending limit becomes active (in the clock's timepoint)
+     * * `renewPeriod`: Duration of each spending period (in the clock's units)
      * * `limit`: Maximum spendable amount per period
      */
     struct SpendingConfig {
@@ -105,6 +107,23 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
     mapping(address account => mapping(uint256 installation => mapping(address spender => mapping(uint256 start => mapping(uint256 period => uint256)))))
         private _spentFor;
     mapping(address account => mapping(uint256 installation => EnumerableSet.AddressSet)) private _spenders;
+
+    /**
+     * @dev Clock used for flagging checkpoints. Defaults to timestamp but can be overridden
+     * to use block numbers if needed.
+     */
+    function clock() public view virtual returns (uint48) {
+        return Time.timestamp();
+    }
+
+    /**
+     * @dev Machine-readable description of the clock as specified in ERC-6372.
+     * Can be overridden to return `"mode=blocknumber&from=default"` if using block numbers.
+     */
+    // solhint-disable-next-line func-name-mixedcase
+    function CLOCK_MODE() public view virtual returns (string memory) {
+        return "mode=timestamp";
+    }
 
     /// @dev Returns whether the module is installed for an `account`.
     function installed(address account) public view virtual returns (bool) {
@@ -306,7 +325,7 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
 
     /// @dev Same as {setSpendingConfig} but sets a configuration that starts immediately.
     function setSpendingConfig(address spender, uint160 newLimit, uint48 newRenewPeriod) public virtual {
-        setSpendingConfig(spender, Time.timestamp(), newLimit, newRenewPeriod);
+        setSpendingConfig(spender, clock(), newLimit, newRenewPeriod);
     }
 
     /**
@@ -397,7 +416,7 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
         address to,
         uint256 amount
     ) internal virtual {
-        (uint256 start_, uint256 period) = _periodAt(account, installation_, spender, Time.timestamp());
+        (uint256 start_, uint256 period) = _periodAt(account, installation_, spender, clock());
         (, uint256 available) = _spendingAt(account, installation_, spender, period, start_);
         require(amount <= available, ERC7579NativeInsufficientAvailable(account, spender, amount));
         _spentFor[account][installation_][spender][start_][period] += amount;
@@ -419,7 +438,7 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
         uint256[] calldata amounts
     ) internal virtual {
         require(tos.length == amounts.length, ERC7579NativeSpenderMismatchedBatchLengths(tos.length, amounts.length));
-        (uint256 start_, uint256 period) = _periodAt(account, installation_, spender, Time.timestamp());
+        (uint256 start_, uint256 period) = _periodAt(account, installation_, spender, clock());
         (, uint256 available) = _spendingAt(account, installation_, spender, period, start_);
         uint256 totalAmount = 0;
         for (uint256 i = 0; i < amounts.length; ++i) {
@@ -452,7 +471,7 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
      * * Each renewal period must be greater than zero. Reverts with {ERC7579NativeSpenderInvalidRenewPeriod} if not.
      * * Each limit must be greater than zero. Reverts with {ERC7579NativeSpenderInvalidLimit} if not.
      * * If keeping the same start time (to update limit/renewPeriod), no timestamp validation is performed.
-     * * If changing the start time, the new start must be >= current timestamp. Reverts with
+     * * If changing the start time, the new start must be >= current timepoint. Reverts with
      *   {ERC7579NativeSpenderInvalidStart} if attempting to set a different past start time
      *   (this prevents reusing old start times that might have existing spending data).
      *
@@ -471,7 +490,7 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
     ) internal virtual {
         require(newRenewPeriod > 0, ERC7579NativeSpenderInvalidRenewPeriod(newRenewPeriod));
         require(newLimit > 0, ERC7579NativeSpenderInvalidLimit(newLimit));
-        require(newStart >= Time.timestamp(), ERC7579NativeSpenderInvalidStart(newStart));
+        require(newStart >= clock(), ERC7579NativeSpenderInvalidStart(newStart));
         _spenders[account][installation_].add(spender);
         _config[account][installation_][spender].start = newStart;
         _config[account][installation_][spender].renewPeriod = newRenewPeriod;
