@@ -1,3 +1,7 @@
+## 26-12-2025
+
+- Add `ERC7579ERC20Spender` and `ERC7579NativeSpender` contract modules extending `ERC7579Executor` with spending limits and automatic renewal periods for ERC20 tokens and native tokens (ETH) respectively.
+
 ## 24-12-2025
 
 - `ERC7579Executor` no longer provides public `execute` and internal `_validateExecution` functions. Developers must now implement their own public `execute` function with custom validation and access control logic, and call the internal `_execute` function after validation.
