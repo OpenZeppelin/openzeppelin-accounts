@@ -2,7 +2,6 @@
 pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC7579DelayedExecutorMock} from "../../../src/mocks/modules/ERC7579Mock.sol";
 import {CallReceiverMock} from "../../../src/mocks/CallReceiverMock.sol";
 import {
     ERC7579Utils,
@@ -11,7 +10,6 @@ import {
     ModePayload
 } from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
-import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
@@ -20,7 +18,24 @@ import {ERC7579DelayedExecutor} from "../../../src/modules/executors/ERC7579Dela
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {OpenAccountFactory} from "../../../src/OpenAccountFactory.sol";
 
-contract ERC7579DelayedExecutorTestMock is ERC7579DelayedExecutorMock {}
+contract ERC7579DelayedExecutorTestMock is ERC7579DelayedExecutor {
+    function schedule(address account, bytes32 salt, bytes32 mode, bytes calldata data) public virtual {
+        _schedule(account, salt, mode, data);
+    }
+
+    function cancel(address account, bytes32 salt, bytes32 mode, bytes calldata data) public virtual {
+        _cancel(account, salt, mode, data);
+    }
+
+    function execute(
+        address account,
+        bytes32 salt,
+        bytes32 mode,
+        bytes memory data
+    ) public virtual returns (bytes[] memory) {
+        return _execute(account, salt, mode, data);
+    }
+}
 
 contract ERC7579DelayedExecutorTest is Test {
     using ERC7579Utils for *;

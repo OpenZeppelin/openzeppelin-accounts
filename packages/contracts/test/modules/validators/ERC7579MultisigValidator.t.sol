@@ -11,7 +11,6 @@ import {
     ModePayload
 } from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {ERC4337Utils, IEntryPointExtra} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
-import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-AccountERC7579.sol";
@@ -66,7 +65,9 @@ contract ERC7579MultisigValidatorTest is Test {
             bytes[] memory initDatas
         ) = _buildInstallationModules(signers, uint64(signers.length));
         _account = OpenAccount(
-            payable(_factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0)))
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
         );
         vm.deal(address(_account), MAX_ETH);
 
@@ -97,9 +98,22 @@ contract ERC7579MultisigValidatorTest is Test {
             uint256[] memory moduleTypeIds,
             address[] memory modules,
             bytes[] memory initDatas
-        ) = _buildInstallationModules(signers, uint64(numSigners)); // forge-lint: disable-next-line(unsafe-typecast)
+        ) = _buildInstallationModules(
+                signers,
+                // forge-lint: disable-next-line(unsafe-typecast)
+                uint64(numSigners)
+            );
         _account = OpenAccount(
-            payable(_factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(uint256(1))))
+            payable(
+                _factory.createAndInitialize(
+                    moduleTypeIds,
+                    modules,
+                    initDatas,
+                    Mode.wrap(0),
+                    bytes(""),
+                    bytes32(uint256(1))
+                )
+            )
         );
         vm.deal(address(_account), MAX_ETH);
 

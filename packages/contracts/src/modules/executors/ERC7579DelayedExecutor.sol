@@ -5,21 +5,26 @@ import {Time} from "@openzeppelin/contracts/utils/types/Time.sol";
 import {ERC7579Executor} from "./ERC7579Executor.sol";
 
 /**
- * @dev Extension of {ERC7579Executor} that allows scheduling and executing delayed operations
- * with expiration. This module enables time-delayed execution patterns for smart accounts.
+ * @dev Extension of {ERC7579Executor} that provides time-delayed execution patterns
+ * for smart accounts with scheduling and expiration capabilities.
+ *
+ * This contract provides the basic scheduling functionality through the {_schedule},
+ * {_scheduleAt}, and {_cancel} functions. Developers must implement their own public
+ * `schedule`, `cancel`, and `execute` functions in derived contracts to define the
+ * specific validation and access control logic for each operation.
  *
  * ==== Operation Lifecycle
  *
- * 1. Scheduling: Operations are scheduled via {schedule} with a specified delay period.
+ * 1. Scheduling: Operations are scheduled via {_schedule} with a specified delay period.
  * The delay period is set during {onInstall} and can be customized via {setDelay}. Each
  * operation enters a `Scheduled` state and must wait for its delay period to elapse.
  *
  * 2. Security Window: During the delay period, operations remain in `Scheduled` state but
  * cannot be executed. Through this period, suspicious operations can be monitored and
- * canceled via {cancel} if appropriate.
+ * canceled via {_cancel} if appropriate.
  *
  * 3. Execution & Expiration: Once the delay period elapses, operations transition to `Ready` state.
- * Operations can be executed via {execute} and have an expiration period after becoming
+ * Operations can be executed via {_execute} and have an expiration period after becoming
  * executable. If an operation is not executed within the expiration period, it becomes `Expired`
  * and can't be executed. Expired operations must be rescheduled with a different salt.
  *
@@ -31,13 +36,7 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * after a transition period defined by the current delay or {minSetback}, whichever
  * is longer.
  *
- * ==== Authorization
- *
- * Authorization for scheduling and canceling operations is controlled through the {_validateSchedule}
- * and {_validateCancel} functions. These functions can be overridden to implement custom
- * authorization logic, such as requiring specific signers or roles.
- *
- * TIP: Use {_scheduleAt} to schedule operations at a specific points in time. This is
+ * TIP: Use {_scheduleAt} to schedule operations at specific points in time. This is
  * useful to pre-schedule operations for non-deployed accounts (e.g. subscriptions).
  */
 abstract contract ERC7579DelayedExecutor is ERC7579Executor {
@@ -173,7 +172,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
         address account,
         bytes32 salt,
         bytes32 mode,
-        bytes calldata executionCalldata
+        bytes memory executionCalldata
     ) public view virtual returns (bytes32) {
         return keccak256(abi.encode(account, salt, mode, executionCalldata));
     }
@@ -225,26 +224,6 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
     }
 
     /**
-     * @dev Schedules an operation to be executed after the account's delay period (see {getDelay}).
-     * Operations are uniquely identified by the combination of `salt`, `mode`, and `data`.
-     * See {_validateSchedule} for authorization checks.
-     */
-    function schedule(address account, bytes32 salt, bytes32 mode, bytes calldata data) public virtual {
-        require(_configs[account].installed, ERC7579ExecutorModuleNotInstalled());
-        _validateSchedule(account, salt, mode, data);
-        (uint32 executableAfter, , ) = getDelay(account);
-        _scheduleAt(account, salt, mode, data, Time.timestamp(), executableAfter);
-    }
-
-    /**
-     * @dev Cancels a previously scheduled operation. See {_validateCancel} and {_cancel}.
-     */
-    function cancel(address account, bytes32 salt, bytes32 mode, bytes calldata data) public virtual {
-        _validateCancel(account, salt, mode, data);
-        _cancel(account, salt, mode, data); // Prioritize errors thrown in _cancel
-    }
-
-    /**
      * @dev Cleans up the {getDelay} and {getExpiration} values by scheduling them to `0`
      * and respecting the previous delay and expiration values.
      *
@@ -262,58 +241,6 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
         _setDelay(msg.sender, 0, minSetback()); // Avoids immediate downgrades
         _setExpiration(msg.sender, 0);
     }
-
-    /**
-     * @dev Returns `data` as the execution calldata. See {ERC7579Executor-_execute}.
-     *
-     * NOTE: This function relies on the operation state validation in {_execute} for
-     * authorization. Extensions of this module should override this function to implement
-     * additional validation logic if needed.
-     */
-    function _validateExecution(
-        address /* account */,
-        bytes32 /* salt */,
-        bytes32 /* mode */,
-        bytes calldata data
-    ) internal virtual override returns (bytes calldata) {
-        return data;
-    }
-
-    /**
-     * @dev Validates whether an operation can be canceled.
-     *
-     * Example extension:
-     *
-     * ```solidity
-     *  function _validateCancel(address account, bytes32 salt, bytes32 mode, bytes calldata data) internal override {
-     *    // e.g. require(msg.sender == account);
-     *  }
-     *```
-     */
-    function _validateCancel(
-        address account,
-        bytes32 /* salt */,
-        bytes32 /* mode */,
-        bytes calldata /* data */
-    ) internal virtual;
-
-    /**
-     * @dev Validates whether an operation can be scheduled.
-     *
-     * Example extension:
-     *
-     * ```solidity
-     *  function _validateSchedule(address account, bytes32 salt, bytes32 mode, bytes calldata data) internal override {
-     *    // e.g. require(msg.sender == account);
-     *  }
-     *```
-     */
-    function _validateSchedule(
-        address account,
-        bytes32 /* salt */,
-        bytes32 /* mode */,
-        bytes calldata /* data */
-    ) internal virtual;
 
     /**
      * @dev Internal implementation for setting an account's delay. See {getDelay}.
@@ -338,14 +265,33 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
     }
 
     /**
-     * @dev Internal version of {schedule} that takes an `account` address to schedule
-     * an operation that starts its security window at `at` and expires after `delay`.
+     * @dev Schedules an operation to be executed after the account's delay period (see {getDelay}).
+     * Operations are uniquely identified by the combination of `account`, `salt`, `mode`, and `data`.
+     * This should be called by derived contracts after performing their custom validation logic.
+     *
+     * Requirements:
+     *
+     * * The module must be installed on the account. Reverts with {ERC7579ExecutorModuleNotInstalled} if not.
+     *
+     * NOTE: This function does not have any access control validation.
+     */
+    function _schedule(address account, bytes32 salt, bytes32 mode, bytes calldata data) internal virtual {
+        require(_configs[account].installed, ERC7579ExecutorModuleNotInstalled());
+        (uint32 executableAfter, , ) = getDelay(account);
+        _scheduleAt(account, salt, mode, data, Time.timestamp(), executableAfter);
+    }
+
+    /**
+     * @dev Internal function to schedule an operation at a specific timepoint with a custom delay.
+     * The operation starts its security window at `timepoint` and becomes executable after `delay`.
      *
      * Requirements:
      *
      * * The operation must be `Unknown`.
      *
      * Emits an {ERC7579ExecutorOperationScheduled} event.
+     *
+     * NOTE: This function does not have any access control validation.
      */
     function _scheduleAt(
         address account,
@@ -377,7 +323,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
         address account,
         bytes32 salt,
         bytes32 mode,
-        bytes calldata executionCalldata
+        bytes memory executionCalldata
     ) internal virtual override returns (bytes[] memory returnData) {
         bytes32 id = hashOperation(account, salt, mode, executionCalldata);
         _validateStateBitmap(id, _encodeStateBitmap(OperationState.Ready));
@@ -388,13 +334,16 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
     }
 
     /**
-     * @dev Internal version of {cancel} that takes an `account` address as an argument.
+     * @dev Internal function to cancel a scheduled operation.
+     * This should be called by derived contracts after performing their custom validation logic.
      *
      * Requirements:
      *
      * * The operation must be `Scheduled` or `Ready`.
      *
      * Canceled operations can't be rescheduled. Emits an {ERC7579ExecutorOperationCanceled} event.
+     *
+     * NOTE: This function does not have any access control validation.
      */
     function _cancel(address account, bytes32 salt, bytes32 mode, bytes calldata executionCalldata) internal virtual {
         bytes32 id = hashOperation(account, salt, mode, executionCalldata);
