@@ -8,7 +8,10 @@ src = 'packages/contracts/src'
 out = 'packages/contracts/out'
 test = 'packages/contracts/test'
 cache_path = 'packages/contracts/cache_forge'
-fs_permissions = [{ access = "read", path = "packages/contracts/node_modules/hardhat-predeploy/bin/0x433709009B8330FDa32311DF1C2AFA402eD8D009.bytecode"}]
+fs_permissions = [
+  { access = "read", path = "packages/contracts/node_modules/hardhat-predeploy/bin/0x433709009B8330FDa32311DF1C2AFA402eD8D009.bytecode"},
+  { access = "read-write", path = "packages/contracts/deployments.json"}
+]
 libs = ["node_modules", "lib"]
 
 [lint]
@@ -19,3 +22,20 @@ lint_on_build = false
 [fuzz]
 runs = 5000
 max_test_rejects = 150000
+
+[rpc_endpoints]
+mainnet = "https://ethereum-rpc.publicnode.com"
+arbitrum = "https://arbitrum-one-rpc.publicnode.com"
+avalanche = "https://avalanche-c-chain-rpc.publicnode.com"
+base = "https://base-rpc.publicnode.com"
+bnb_smart_chain = "https://bsc-rpc.publicnode.com"
+optimism = "https://optimism-rpc.publicnode.com"
+polygon = "https://polygon-bor-rpc.publicnode.com"
+
+sepolia = "https://ethereum-sepolia-rpc.publicnode.com"
+arbitrum_sepolia = "wss://arbitrum-sepolia-rpc.publicnode.com"
+avalanche_fuji = "https://avalanche-fuji-c-chain-rpc.publicnode.com"
+base_sepolia = "https://base-sepolia-rpc.publicnode.com"
+bnb_smart_chain_testnet = "https://bsc-testnet-rpc.publicnode.com"
+optimism_sepolia = "https://optimism-sepolia-rpc.publicnode.com"
+polygon_amoy = "https://polygon-amoy-bor-rpc.publicnode.com"

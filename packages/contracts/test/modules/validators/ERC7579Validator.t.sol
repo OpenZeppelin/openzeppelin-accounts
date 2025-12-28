@@ -18,10 +18,7 @@ import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-A
 import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {OpenAccount} from "../../../src/OpenAccount.sol";
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
-
-contract OpenAccountMock is OpenAccount {
-    constructor() EIP712("TestAccount", "1") {}
-}
+import {OpenAccountFactory} from "../../../src/OpenAccountFactory.sol";
 
 contract ERC7579ValidatorTest is Test {
     using ERC7579Utils for *;
@@ -37,6 +34,7 @@ contract ERC7579ValidatorTest is Test {
     address private _signer = vm.addr(_signerPrivateKey);
     uint256 private _otherPrivateKey = 0x5678;
     address private _other = vm.addr(_otherPrivateKey);
+    OpenAccountFactory private _factory;
 
     function setUp() public {
         // Deploy target contract
@@ -45,10 +43,9 @@ contract ERC7579ValidatorTest is Test {
         // Deploy validator
         _validator = new ERC7579ValidatorMock();
 
-        // Deploy account
-        _account = new OpenAccountMock();
+        // Deploy factory
+        _factory = new OpenAccountFactory();
 
-        vm.deal(address(_account), MAX_ETH);
 
         // Setup entrypoint
         address entrypoint = address(ERC4337Utils.ENTRYPOINT_V09);
@@ -71,7 +68,10 @@ contract ERC7579ValidatorTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules();
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(_factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0)))
+        );
+        vm.deal(address(_account), MAX_ETH);
         assertTrue(_validator.isModuleType(MODULE_TYPE_VALIDATOR));
         assertFalse(_validator.isModuleType(999)); // Random invalid type
     }
@@ -82,7 +82,10 @@ contract ERC7579ValidatorTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules();
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(_factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0)))
+        );
+        vm.deal(address(_account), MAX_ETH);
 
         PackedUserOperation memory userOp = _prepareUserOperation();
 
@@ -104,7 +107,10 @@ contract ERC7579ValidatorTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules();
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(_factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0)))
+        );
+        vm.deal(address(_account), MAX_ETH);
 
         PackedUserOperation memory userOp = _prepareUserOperation();
 
@@ -126,7 +132,10 @@ contract ERC7579ValidatorTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules();
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(_factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0)))
+        );
+        vm.deal(address(_account), MAX_ETH);
 
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(_signerPrivateKey, messageHash);
         bytes memory signature = abi.encodePacked(r, s, v);
@@ -143,7 +152,10 @@ contract ERC7579ValidatorTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules();
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(_factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0)))
+        );
+        vm.deal(address(_account), MAX_ETH);
 
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(_otherPrivateKey, messageHash);
         bytes memory signature = abi.encodePacked(r, s, v);
@@ -160,7 +172,10 @@ contract ERC7579ValidatorTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules();
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(_factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0)))
+        );
+        vm.deal(address(_account), MAX_ETH);
 
         vm.prank(address(_account));
         _validator.onUninstall(""); // Must not revert

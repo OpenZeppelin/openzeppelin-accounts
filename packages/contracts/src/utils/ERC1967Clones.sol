@@ -3,6 +3,13 @@ pragma solidity ^0.8.27;
 
 import {Errors} from "@openzeppelin/contracts/utils/Errors.sol";
 
+/**
+ * @dev Library for deploying minimal ERC1967 proxy clones using CREATE2.
+ *
+ * This library provides gas-efficient methods to create deterministic ERC1967 proxies that delegate
+ * all calls to an implementation contract stored in the standard storage slot:
+ * `bytes32(uint256(keccak256('eip1967.proxy.implementation')) - 1)`
+ */
 library ERC1967Clones {
     /**
      * @dev Clones a deterministic ERC1967 proxy with `implementation` and `salt`.
@@ -75,9 +82,7 @@ library ERC1967Clones {
             mstore(0x40, m) // Restore the free memory pointer.
             mstore(0x60, 0) // Restore the zero slot.
         }
-        if (instance == address(0)) {
-            revert Errors.FailedDeployment();
-        }
+        require(instance != address(0), Errors.FailedDeployment());
         return instance;
     }
 

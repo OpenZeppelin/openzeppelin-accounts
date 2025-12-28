@@ -15,12 +15,10 @@ import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-AccountERC7579.sol";
+import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {OpenAccount} from "../../../src/OpenAccount.sol";
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
-
-contract OpenAccountMock is OpenAccount {
-    constructor() EIP712("TestAccount", "1") {}
-}
+import {OpenAccountFactory} from "../../../src/OpenAccountFactory.sol";
 
 contract ERC7579ECDSAValidatorMock is ERC7579ECDSAValidator {}
 
@@ -34,6 +32,7 @@ contract ERC7579ECDSAValidatorTest is Test {
     CallReceiverMock private _target;
     ERC7579ECDSAValidatorMock private _validator;
     OpenAccount private _account;
+    OpenAccountFactory private _factory;
 
     function setUp() public {
         // Deploy target contract
@@ -42,10 +41,8 @@ contract ERC7579ECDSAValidatorTest is Test {
         // Deploy validator
         _validator = new ERC7579ECDSAValidatorMock();
 
-        // Deploy account
-        _account = new OpenAccountMock();
-
-        vm.deal(address(_account), MAX_ETH);
+        // Deploy factory
+        _factory = new OpenAccountFactory();
 
         // Setup entrypoint
         address entrypoint = address(ERC4337Utils.ENTRYPOINT_V09);
@@ -183,9 +180,17 @@ contract ERC7579ECDSAValidatorTest is Test {
         value = bound(value, 0, MAX_ETH);
         address signerAddr = vm.addr(privateKey);
 
-        // Install signer
-        vm.prank(address(_account));
-        _validator.onInstall(abi.encodePacked(signerAddr));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(signerAddr);
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
+        vm.deal(address(_account), MAX_ETH);
 
         PackedUserOperation memory userOp = _prepareUserOperation(nonce, value);
         bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
@@ -208,9 +213,16 @@ contract ERC7579ECDSAValidatorTest is Test {
 
         address correctSigner = vm.addr(correctKey);
 
-        // Install correct signer
-        vm.prank(address(_account));
-        _validator.onInstall(abi.encodePacked(correctSigner));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(correctSigner);
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         PackedUserOperation memory userOp = _prepareUserOperation(nonce, 0);
         bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
@@ -251,5 +263,16 @@ contract ERC7579ECDSAValidatorTest is Test {
                 paymasterAndData: bytes(""),
                 signature: bytes("")
             });
+    }
+
+    function _buildInstallationModules(
+        address signer
+    ) private view returns (uint256[] memory moduleTypeIds, address[] memory modules, bytes[] memory initDatas) {
+        moduleTypeIds = new uint256[](1);
+        modules = new address[](1);
+        initDatas = new bytes[](1);
+        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
+        modules[0] = address(_validator);
+        initDatas[0] = abi.encodePacked(signer);
     }
 }

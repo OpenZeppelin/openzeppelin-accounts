@@ -18,10 +18,7 @@ import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IER
 import {OpenAccount} from "../../../src/OpenAccount.sol";
 import {ERC7579DelayedExecutor} from "../../../src/modules/executors/ERC7579DelayedExecutor.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-
-contract OpenAccountMock is OpenAccount {
-    constructor() EIP712("TestAccount", "1") {}
-}
+import {OpenAccountFactory} from "../../../src/OpenAccountFactory.sol";
 
 contract ERC7579DelayedExecutorTestMock is ERC7579DelayedExecutorMock {}
 
@@ -34,6 +31,7 @@ contract ERC7579DelayedExecutorTest is Test {
     ERC7579DelayedExecutorTestMock private _delayedExecutor;
     OpenAccount private _account;
     address private _other;
+    OpenAccountFactory private _factory;
 
     function setUp() public {
         // Deploy target contract
@@ -42,30 +40,24 @@ contract ERC7579DelayedExecutorTest is Test {
         // Deploy delayed executor
         _delayedExecutor = new ERC7579DelayedExecutorTestMock();
 
-        // Deploy account
-        _account = new OpenAccountMock();
+        // Deploy factory
+        _factory = new OpenAccountFactory();
 
         // Create other address
         _other = makeAddr("other");
     }
 
     function testDelayedExecutorInstallation(uint32 initialDelay, uint32 initialExpiration) public {
-        vm.expectEmit(true, true, true, true);
-        emit ERC7579DelayedExecutor.ERC7579ExecutorDelayUpdated(
-            address(_account),
-            initialDelay,
-            uint48(block.timestamp)
-        );
-
-        vm.expectEmit(true, true, true, true);
-        emit ERC7579DelayedExecutor.ERC7579ExecutorExpirationUpdated(address(_account), initialExpiration);
-
         (
             uint256[] memory moduleTypeIds,
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(initialDelay, initialExpiration);
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         assertTrue(_delayedExecutor.isModuleType(MODULE_TYPE_EXECUTOR));
         assertFalse(_delayedExecutor.isModuleType(999)); // Random invalid type
@@ -79,25 +71,16 @@ contract ERC7579DelayedExecutorTest is Test {
     }
 
     function testDelayedExecutorInstallationWithDefaults() public {
-        vm.expectEmit(true, true, true, true);
-        emit ERC7579DelayedExecutor.ERC7579ExecutorDelayUpdated(
-            address(_account),
-            _delayedExecutor.minSetback(),
-            uint48(block.timestamp)
-        );
-
-        vm.expectEmit(true, true, true, true);
-        emit ERC7579DelayedExecutor.ERC7579ExecutorExpirationUpdated(
-            address(_account),
-            _delayedExecutor.defaultExpiration()
-        );
-
         (
             uint256[] memory moduleTypeIds,
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         (uint32 delay, , ) = _delayedExecutor.getDelay(address(_account));
         assertEq(delay, _delayedExecutor.minSetback());
@@ -110,7 +93,11 @@ contract ERC7579DelayedExecutorTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(initialDelay, initialExpiration);
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         vm.expectEmit(true, true, true, true);
         emit ERC7579DelayedExecutor.ERC7579ExecutorDelayUpdated(
@@ -136,7 +123,11 @@ contract ERC7579DelayedExecutorTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(initialDelay, initialExpiration);
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
         (bytes memory data, bytes32 mode) = _prepareDataAndMode();
 
         // Initially Unknown
@@ -181,7 +172,11 @@ contract ERC7579DelayedExecutorTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(initialDelay, initialExpiration);
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         // Schedule operation
         vm.prank(address(_account));
@@ -209,7 +204,11 @@ contract ERC7579DelayedExecutorTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         // Schedule operation
         vm.prank(address(_account));
@@ -244,7 +243,11 @@ contract ERC7579DelayedExecutorTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         bytes32 operationId = _delayedExecutor.hashOperation(address(_account), salt, mode, data);
 
@@ -284,7 +287,11 @@ contract ERC7579DelayedExecutorTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         // Schedule operation
         vm.prank(address(_account));
@@ -316,7 +323,11 @@ contract ERC7579DelayedExecutorTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         // Schedule operation
         vm.prank(address(_account));
@@ -336,7 +347,11 @@ contract ERC7579DelayedExecutorTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         uint32 newDelay = 5 days;
         uint48 expectedEffectTime = uint48(block.timestamp + _delayedExecutor.minSetback());
@@ -366,7 +381,11 @@ contract ERC7579DelayedExecutorTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         uint32 newExpiration = 30 days;
 
@@ -387,7 +406,11 @@ contract ERC7579DelayedExecutorTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         // Schedule operation
         vm.prank(address(_account));
@@ -416,7 +439,11 @@ contract ERC7579DelayedExecutorTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         // Schedule operation
         vm.prank(address(_account));
