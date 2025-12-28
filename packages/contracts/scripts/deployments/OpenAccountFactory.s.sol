@@ -34,12 +34,12 @@ contract OpenAccountFactoryScript is BaseScript {
             DEPLOYMENT_PROXY
         );
         if (deployedAddress == address(0) || deployedAddress.code.length == 0 || predictedAddress != deployedAddress) {
-            (bool success, bytes32 encodedAddress, ) = LowLevelCall.callReturn64Bytes(
+            (bool success) = LowLevelCall.callNoReturn(
                 DEPLOYMENT_PROXY,
                 abi.encodePacked(salt, type(OpenAccountFactory).creationCode)
             );
             require(success, "Failed to call deployment proxy");
-            deployedAddress = address(bytes20(encodedAddress));
+            deployedAddress = predictedAddress;
         }
         vm.writeJson(
             vm.serializeAddress("address", CONTRACT_KEY, deployedAddress),
