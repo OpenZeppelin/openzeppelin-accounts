@@ -2,6 +2,7 @@
 pragma solidity ^0.8.27;
 
 import {BaseScript} from "../Base.s.sol";
+import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {console} from "forge-std/console.sol";
 import {LowLevelCall} from "@openzeppelin/contracts/utils/LowLevelCall.sol";
@@ -26,13 +27,16 @@ contract OpenAccountFactoryScript is BaseScript {
             string.concat("$.", block.chainid.toString(), ".", CONTRACT_KEY)
         );
         address deployedAddress = address(uint160(uint256(bytes32(parsedValue))));
-        if (deployedAddress == address(0) || deployedAddress.code.length == 0) {
+        bytes32 salt = bytes32(0);
+        address predictedAddress = Create2.computeAddress(
+            salt,
+            keccak256(type(OpenAccountFactory).creationCode),
+            DEPLOYMENT_PROXY
+        );
+        if (deployedAddress == address(0) || deployedAddress.code.length == 0 || predictedAddress != deployedAddress) {
             (bool success, bytes32 encodedAddress, ) = LowLevelCall.callReturn64Bytes(
                 DEPLOYMENT_PROXY,
-                abi.encodePacked(
-                    bytes32(0), // Salt
-                    type(OpenAccountFactory).creationCode
-                )
+                abi.encodePacked(salt, type(OpenAccountFactory).creationCode)
             );
             require(success, "Failed to call deployment proxy");
             deployedAddress = address(bytes20(encodedAddress));
