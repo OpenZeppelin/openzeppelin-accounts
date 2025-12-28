@@ -45,7 +45,6 @@ contract ERC7579ValidatorTest is Test {
         // Deploy factory
         _factory = new OpenAccountFactory();
 
-
         // Setup entrypoint
         address entrypoint = address(ERC4337Utils.ENTRYPOINT_V09);
         vm.deal(entrypoint, MAX_ETH);
@@ -68,7 +67,9 @@ contract ERC7579ValidatorTest is Test {
             bytes[] memory initDatas
         ) = _buildInstallationModules();
         _account = OpenAccount(
-            payable(_factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0)))
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
         );
         vm.deal(address(_account), MAX_ETH);
         assertTrue(_validator.isModuleType(MODULE_TYPE_VALIDATOR));
@@ -82,7 +83,9 @@ contract ERC7579ValidatorTest is Test {
             bytes[] memory initDatas
         ) = _buildInstallationModules();
         _account = OpenAccount(
-            payable(_factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0)))
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
         );
         vm.deal(address(_account), MAX_ETH);
 
@@ -107,7 +110,9 @@ contract ERC7579ValidatorTest is Test {
             bytes[] memory initDatas
         ) = _buildInstallationModules();
         _account = OpenAccount(
-            payable(_factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0)))
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
         );
         vm.deal(address(_account), MAX_ETH);
 
@@ -132,7 +137,9 @@ contract ERC7579ValidatorTest is Test {
             bytes[] memory initDatas
         ) = _buildInstallationModules();
         _account = OpenAccount(
-            payable(_factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0)))
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
         );
         vm.deal(address(_account), MAX_ETH);
 
@@ -152,7 +159,9 @@ contract ERC7579ValidatorTest is Test {
             bytes[] memory initDatas
         ) = _buildInstallationModules();
         _account = OpenAccount(
-            payable(_factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0)))
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
         );
         vm.deal(address(_account), MAX_ETH);
 
@@ -172,7 +181,9 @@ contract ERC7579ValidatorTest is Test {
             bytes[] memory initDatas
         ) = _buildInstallationModules();
         _account = OpenAccount(
-            payable(_factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0)))
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
         );
         vm.deal(address(_account), MAX_ETH);
 
