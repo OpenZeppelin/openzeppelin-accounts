@@ -15,7 +15,7 @@ const {
 async function fixture() {
   const [deployer, signer, otherSigner] = await ethers.getSigners();
 
-  const factory = await ethers.deployContract('OpenAccountFactory');
+  const factory = await ethers.deployContract('$OpenAccountFactory');
   const validator = await ethers.deployContract('$ERC7579ValidatorMock');
   const executor = await ethers.deployContract('$ERC7579ExecutorMock');
   const target = await ethers.deployContract('CallReceiverMock');
@@ -219,7 +219,7 @@ describe('OpenAccountFactory', function () {
 
       await this.factory.createAndInitialize(moduleTypeIds, modules, initDatas, ethers.ZeroHash, '0x', ethers.ZeroHash);
 
-      const account = await ethers.getContractAt('OpenAccount', deployed);
+      const account = await ethers.getContractAt('$OpenAccount', deployed);
       await expect(account.isModuleInstalled(MODULE_TYPE_VALIDATOR, this.validator.target, '0x')).to.eventually.be.true;
     });
 
@@ -249,7 +249,7 @@ describe('OpenAccountFactory', function () {
 
       await this.factory.createAndInitialize(moduleTypeIds, modules, initDatas, ethers.ZeroHash, '0x', ethers.ZeroHash);
 
-      const account = await ethers.getContractAt('OpenAccount', deployed);
+      const account = await ethers.getContractAt('$OpenAccount', deployed);
       await expect(account.isModuleInstalled(MODULE_TYPE_VALIDATOR, this.validator.target, '0x')).to.eventually.be.true;
       await expect(account.isModuleInstalled(MODULE_TYPE_EXECUTOR, this.executor.target, '0x')).to.eventually.be.true;
     });
@@ -324,8 +324,8 @@ describe('OpenAccountFactory', function () {
 
       expect(deployed1).to.not.equal(deployed2);
 
-      const account1 = await ethers.getContractAt('OpenAccount', deployed1);
-      const account2 = await ethers.getContractAt('OpenAccount', deployed2);
+      const account1 = await ethers.getContractAt('$OpenAccount', deployed1);
+      const account2 = await ethers.getContractAt('$OpenAccount', deployed2);
       await expect(account1.isModuleInstalled(MODULE_TYPE_VALIDATOR, this.validator.target, '0x')).to.eventually.be
         .true;
       await expect(account1.isModuleInstalled(MODULE_TYPE_EXECUTOR, this.executor.target, '0x')).to.eventually.be.false;
@@ -349,7 +349,7 @@ describe('OpenAccountFactory', function () {
       );
       await this.factory.createAndInitialize(moduleTypeIds, modules, initDatas, ethers.ZeroHash, '0x', ethers.ZeroHash);
 
-      const account = await ethers.getContractAt('OpenAccount', deployed);
+      const account = await ethers.getContractAt('$OpenAccount', deployed);
 
       await expect(
         account.initialize(moduleTypeIds, modules, initDatas, ethers.ZeroHash, '0x'),
@@ -390,7 +390,7 @@ describe('OpenAccountFactory', function () {
         .to.emit(this.target, 'MockFunctionCalledWithArgs')
         .withArgs(42n, 100n);
 
-      const account = await ethers.getContractAt('OpenAccount', predicted);
+      const account = await ethers.getContractAt('$OpenAccount', predicted);
       await expect(account.isModuleInstalled(MODULE_TYPE_VALIDATOR, this.validator.target, '0x')).to.eventually.be.true;
     });
 
@@ -429,7 +429,7 @@ describe('OpenAccountFactory', function () {
         .to.emit(this.target, 'MockFunctionCalledWithArgs')
         .withArgs(30n, 40n);
 
-      const account = await ethers.getContractAt('OpenAccount', predicted);
+      const account = await ethers.getContractAt('$OpenAccount', predicted);
       await expect(account.isModuleInstalled(MODULE_TYPE_VALIDATOR, this.validator.target, '0x')).to.eventually.be.true;
     });
   });
