@@ -1,26 +1,10 @@
 {
   "11155111": {
-    "OpenAccountFactory": "0x3f66163B317A4Bc3fE2a33645Cb1D387C4326402"
+    "OpenAccountImplementation": "0xE6be3dC9f5dE910618E9fEdDfd6f4Ff21329aD77",
+    "OpenAccountFactory": "0x1C5C860062e03fD7715D4cfCFadEe5Eb016f7409"
   },
   "31337": {
-    "OpenAccountFactory": "0x3f66163B317A4Bc3fE2a33645Cb1D387C4326402"
-  },
-  "421614": {
-    "OpenAccountFactory": "0x3f66163B317A4Bc3fE2a33645Cb1D387C4326402"
-  },
-  "84532": {
-    "OpenAccountFactory": "0x3f66163B317A4Bc3fE2a33645Cb1D387C4326402"
-  },
-  "43113": {
-    "OpenAccountFactory": "0x3f66163B317A4Bc3fE2a33645Cb1D387C4326402"
-  },
-  "97": {
-    "OpenAccountFactory": "0x3f66163B317A4Bc3fE2a33645Cb1D387C4326402"
-  },
-  "11155420": {
-    "OpenAccountFactory": "0x3f66163B317A4Bc3fE2a33645Cb1D387C4326402"
-  },
-  "80002": {
-    "OpenAccountFactory": "0x3f66163B317A4Bc3fE2a33645Cb1D387C4326402"
+    "OpenAccountFactory": "0x1C5C860062e03fD7715D4cfCFadEe5Eb016f7409",
+    "OpenAccountImplementation": "0xE6be3dC9f5dE910618E9fEdDfd6f4Ff21329aD77"
   }
 }

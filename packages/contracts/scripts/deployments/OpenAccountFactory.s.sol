@@ -18,13 +18,14 @@ contract OpenAccountFactoryScript is BaseScript {
     // through proposals like [RIP-7740](https://github.com/ethereum/RIPs/blob/master/RIPS/rip-7740.md).
     address public constant DEPLOYMENT_PROXY = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
-    string internal constant CONTRACT_KEY = "OpenAccountFactory";
+    string internal constant OPEN_ACCOUNT_FACTORY_KEY = "OpenAccountFactory";
+    string internal constant OPEN_ACCOUNT_IMPLEMENTATION_KEY = "OpenAccountImplementation";
 
     function run() public broadcast {
         string memory deployments = vm.readFile("packages/contracts/deployments.json");
         bytes memory parsedValue = vm.parseJson(
             deployments,
-            string.concat("$.", block.chainid.toString(), ".", CONTRACT_KEY)
+            string.concat("$.", block.chainid.toString(), ".", OPEN_ACCOUNT_FACTORY_KEY)
         );
         address deployedAddress = address(uint160(uint256(bytes32(parsedValue))));
         bytes32 salt = bytes32(0);
@@ -42,7 +43,16 @@ contract OpenAccountFactoryScript is BaseScript {
             deployedAddress = predictedAddress;
         }
         vm.writeJson(
-            vm.serializeAddress("address", CONTRACT_KEY, deployedAddress),
+            vm.serializeAddress("address", OPEN_ACCOUNT_FACTORY_KEY, deployedAddress),
+            "packages/contracts/deployments.json",
+            string.concat("$.", block.chainid.toString())
+        );
+        vm.writeJson(
+            vm.serializeAddress(
+                "address",
+                OPEN_ACCOUNT_IMPLEMENTATION_KEY,
+                OpenAccountFactory(deployedAddress).implementation()
+            ),
             "packages/contracts/deployments.json",
             string.concat("$.", block.chainid.toString())
         );
