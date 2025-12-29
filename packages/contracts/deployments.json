@@ -1,0 +1,10 @@
+{
+  "11155111": {
+    "OpenAccountFactory": "0x1C5C860062e03fD7715D4cfCFadEe5Eb016f7409",
+    "OpenAccountImplementation": "0xE6be3dC9f5dE910618E9fEdDfd6f4Ff21329aD77",
+  },
+  "31337": {
+    "OpenAccountFactory": "0x1C5C860062e03fD7715D4cfCFadEe5Eb016f7409",
+    "OpenAccountImplementation": "0xE6be3dC9f5dE910618E9fEdDfd6f4Ff21329aD77"
+  }
+}
