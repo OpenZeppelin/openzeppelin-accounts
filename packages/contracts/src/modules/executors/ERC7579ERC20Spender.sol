@@ -289,7 +289,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
      */
     function onInstall(bytes calldata initData) public virtual {
         address account = msg.sender;
-        require(tokensCount(account) == 0, ERC7579ERC20SpenderAlreadyInstalled());
+        require(!installed(account), ERC7579ERC20SpenderAlreadyInstalled());
         (
             address[] calldata tokens_,
             address[] calldata spenders_,

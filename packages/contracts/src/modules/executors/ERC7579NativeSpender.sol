@@ -231,7 +231,7 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
      */
     function onInstall(bytes calldata initData) public virtual {
         address account = msg.sender;
-        require(spendersCount(account) == 0, ERC7579NativeSpenderAlreadyInstalled());
+        require(!installed(account), ERC7579NativeSpenderAlreadyInstalled());
         (
             address[] calldata spenders_,
             uint48[] calldata starts,
