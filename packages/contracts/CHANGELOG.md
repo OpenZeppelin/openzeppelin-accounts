@@ -1,3 +1,7 @@
+## 30-12-2025
+
+- Add `ERC7579ERC20Spender` and `ERC7579NativeSpender` contract modules extending `ERC7579Executor` with spending limits and automatic renewal periods for ERC20 tokens and native tokens (ETH) respectively.
+
 ## 29-12-2025
 
 - `OpenAccount` now uses `draft-AccountERC7579Upgradeable` instead of `draft-AccountERC7579` for ERC-7579 compatibility.
