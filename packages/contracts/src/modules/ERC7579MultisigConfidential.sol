@@ -4,7 +4,7 @@ pragma solidity ^0.8.27;
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {FHE, euint64, ebool} from "@fhevm/solidity/lib/FHE.sol";
-import {ERC7579Validator} from "./ERC7579Validator.sol";
+import {ERC7579Validator} from "./validators/ERC7579Validator.sol";
 
 abstract contract ERC7579MultisigConfidential is ERC7579Validator {
     using EnumerableSet for EnumerableSet.BytesSet;

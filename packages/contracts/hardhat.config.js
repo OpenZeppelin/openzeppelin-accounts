@@ -30,6 +30,7 @@ module.exports = {
         enabled: true,
         runs: 200,
       },
+      viaIR: true,
       evmVersion: argv.hardfork,
     },
   },
@@ -40,7 +41,6 @@ module.exports = {
   },
   exposed: {
     imports: true,
-    initializers: true,
   },
   paths: {
     sources: 'src',

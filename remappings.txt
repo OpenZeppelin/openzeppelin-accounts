@@ -1,3 +1,4 @@
 @openzeppelin/contracts/=packages/contracts/node_modules/@openzeppelin/contracts/contracts/
+@openzeppelin/contracts-upgradeable/=packages/contracts/node_modules/@openzeppelin/contracts-upgradeable/contracts/
 @fhevm/solidity/=packages/contracts/node_modules/@fhevm/solidity/
 encrypted-types/=packages/contracts/node_modules/encrypted-types/
