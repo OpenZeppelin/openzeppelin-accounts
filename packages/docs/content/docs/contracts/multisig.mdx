@@ -35,6 +35,20 @@ The framework provides two base multisig modules:
 - Configurable thresholds
 - Weighted voting support (in `ERC7579MultisigWeighted`)
 
+The framework also provides confidential versions of the multisig modules that use Fully Homomorphic Encryption (FHE) to keep signer addresses, weights, and thresholds encrypted on-chain. This provides privacy benefits by hiding sensitive information from public view.
+
+**`ERC7579MultisigConfidential`**: A confidential threshold-based multisig module that keeps signer addresses and threshold values encrypted.
+
+**`ERC7579MultisigWeightedConfidential`**: A confidential weighted multisig module that keeps signer addresses, individual weights, and threshold values encrypted.
+
+<Callout>The confidential module variants don't support ERC-7913 signers, only addresses.</Callout>
+
+<Callout>
+  Due to FHE's probabilistic nature, encrypting the same address multiple times produces different ciphertexts. This
+  means the same signer can be added multiple times with different encrypted handles. The validation logic handles
+  duplicates by checking plaintext addresses.
+</Callout>
+
 ### As validators
 
 The framework provides validator implementations that combine the base multisig modules with validator functionality:
