@@ -105,12 +105,12 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
     }
 
     /// @dev Returns the encrypted extra weight of an encrypted signer for the specified account.
-    function extraWeight(address account, eaddress signer) public virtual returns (euint16) {
+    function extraWeight(address account, eaddress signer) public view virtual returns (euint16) {
         return _extraWeights[account][signer];
     }
 
     /// @dev Returns the encrypted total extra weight of all signers for the specified account.
-    function totalExtraWeight(address account) public virtual returns (euint32) {
+    function totalExtraWeight(address account) public view virtual returns (euint32) {
         return _totalExtraWeight[account];
     }
 
@@ -165,6 +165,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
         bytes calldata initData
     )
         internal
+        pure
         virtual
         returns (
             externalEaddress[] calldata signers,

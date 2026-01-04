@@ -381,6 +381,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         bytes calldata initData
     )
         internal
+        pure
         virtual
         returns (
             externalEaddress[] calldata signers,
