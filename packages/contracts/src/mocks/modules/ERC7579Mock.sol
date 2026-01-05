@@ -4,12 +4,16 @@ pragma solidity ^0.8.27;
 import {
     MODULE_TYPE_FALLBACK,
     MODULE_TYPE_HOOK,
+    MODULE_TYPE_VALIDATOR,
     IERC7579Module,
     IERC7579Hook
 } from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
+import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {ERC7579Validator} from "../../modules/validators/ERC7579Validator.sol";
 import {ERC7579Executor} from "../../modules/executors/ERC7579Executor.sol";
+import {ERC7579MultisigConfidential} from "../../modules/ERC7579MultisigConfidential.sol";
+import {ERC7579MultisigWeightedConfidential} from "../../modules/ERC7579MultisigWeightedConfidential.sol";
 
 abstract contract ERC7579ModuleMock is IERC7579Module {
     uint256 private _moduleTypeId;
@@ -120,5 +124,17 @@ contract ERC7579ExecutorMock is ERC7579Executor {
         bytes calldata data
     ) public virtual returns (bytes[] memory returnData) {
         return _execute(account, salt, mode, data);
+    }
+}
+
+contract ERC7579MultisigConfidentialMock is ERC7579MultisigConfidential, ZamaEthereumConfig {
+    function isModuleType(uint256 moduleTypeId) public pure returns (bool) {
+        return moduleTypeId == MODULE_TYPE_VALIDATOR;
+    }
+}
+
+contract ERC7579MultisigWeightedConfidentialMock is ERC7579MultisigWeightedConfidential, ZamaEthereumConfig {
+    function isModuleType(uint256 moduleTypeId) public pure returns (bool) {
+        return moduleTypeId == MODULE_TYPE_VALIDATOR;
     }
 }

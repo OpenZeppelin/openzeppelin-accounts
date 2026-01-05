@@ -319,6 +319,7 @@ abstract contract ERC7579Multisig is IERC7579Module {
         // Validate offset is within bounds and has space for array length
         require(signersOffset > 0x3f && signersDataOffset <= initData.length, ERC7579MultisigInvalidInitData());
         uint256 signersLength = uint256(bytes32(initData[signersOffset:signersDataOffset]));
+        require(signersDataOffset + signersLength * 0x20 <= initData.length, ERC7579MultisigInvalidInitData());
 
         // Set up the calldata slice for the signers array
         assembly ("memory-safe") {

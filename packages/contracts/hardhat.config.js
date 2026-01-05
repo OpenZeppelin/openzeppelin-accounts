@@ -20,7 +20,7 @@ require('@nomicfoundation/hardhat-ethers');
 require('hardhat-exposed');
 require('hardhat-predeploy');
 require('solidity-coverage');
-require('../../lib/@openzeppelin-contracts/hardhat/remappings');
+require('./hardhat/remappings');
 
 module.exports = {
   solidity: {

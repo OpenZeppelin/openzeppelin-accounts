@@ -35,9 +35,6 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     /// @dev The `initData` is invalid or improperly formatted.
     error ERC7579MultisigInvalidInitData();
 
-    /// @dev The `newSigners` and `inputProofs` arrays have mismatched lengths.
-    error ERC7579MultisigMismatchedSignersProofs();
-
     /// @dev The validation arrays have mismatched lengths.
     error ERC7579MultisigMismatchedValidationLength(
         uint256 signingSignersLength,
@@ -88,14 +85,13 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     function onInstall(bytes calldata initData) public virtual {
         require(getSignerCount(msg.sender) == 0, ERC7579MultisigAlreadyInstalled());
         (
+            bytes calldata inputProof,
             externalEaddress[] calldata externalSigners,
-            bytes[] calldata signerProofs,
-            externalEuint32 externalThreshold,
-            bytes calldata thresholdProof
+            externalEuint32 externalThreshold
         ) = _decodeMultisigInitData(initData);
         require(externalSigners.length > 0, ERC7579MultisigEmptySigners());
-        addSigners(externalSigners, signerProofs);
-        setThreshold(externalThreshold, thresholdProof);
+        addSigners(externalSigners, inputProof);
+        setThreshold(externalThreshold, inputProof);
     }
 
     /**
@@ -109,7 +105,9 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
      */
     function onUninstall(bytes calldata /* data */) public virtual {
         _signersSetByAccount[msg.sender].clear();
-        _thresholdByAccount[msg.sender] = FHE.asEuint32(0);
+        euint32 zero = FHE.asEuint32(0);
+        _thresholdByAccount[msg.sender] = zero;
+        FHE.makePubliclyDecryptable(zero);
     }
 
     /**
@@ -155,14 +153,12 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
      *
      * Requirements:
      *
-     * * The `newSigners` and `inputProofs` arrays must have the same length. Reverts with {ERC7579MultisigMismatchedSignersProofs} if not.
      * * Those of {_addSigners} for additional requirements.
      */
-    function addSigners(externalEaddress[] calldata newSigners, bytes[] calldata inputProofs) public virtual {
-        require(newSigners.length == inputProofs.length, ERC7579MultisigMismatchedSignersProofs());
+    function addSigners(externalEaddress[] calldata newSigners, bytes calldata inputProof) public virtual {
         eaddress[] memory signers = new eaddress[](newSigners.length);
         for (uint256 i = 0; i < newSigners.length; ++i) {
-            signers[i] = FHE.fromExternal(newSigners[i], inputProofs[i]);
+            signers[i] = FHE.fromExternal(newSigners[i], inputProof);
             FHE.allowThis(signers[i]);
             FHE.allow(signers[i], msg.sender);
         }
@@ -251,7 +247,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         _thresholdByAccount[account] = thresholdToSet;
         FHE.allowThis(thresholdToSet);
         FHE.allow(thresholdToSet, account);
-        emit ERC7579MultisigThresholdSet(account, newThreshold);
+        emit ERC7579MultisigThresholdSet(account, thresholdToSet);
     }
 
     /// @dev Returns the maximum threshold for the specified account.
@@ -278,8 +274,13 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         eaddress[] calldata signerHandles,
         bytes[] calldata signatures
     ) internal virtual returns (ebool) {
-        return
-            _validateThreshold(account, _validateSignatures(account, hash, signingSigners, signerHandles, signatures));
+        ebool valid = _validateThreshold(
+            account,
+            _validateSignatures(account, hash, signingSigners, signerHandles, signatures)
+        );
+        FHE.allowThis(valid);
+        FHE.allow(valid, account);
+        return valid;
     }
 
     /**
@@ -368,11 +369,11 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
      * @dev Decodes multisig initialization data from calldata without memory allocation.
      *
      * The initData should be encoded as:
-     * `abi.encode(externalEaddress[] signers, bytes[] inputProofs, externalEuint32 threshold, bytes inputProof)`
+     * `abi.encode(bytes inputProof, externalEaddress[] signers, externalEuint32 threshold)`
      *
      * Requirements:
      *
-     * * The `initData` must be at least 224 bytes long to contain the minimum structure.
+     * * The `initData` must be at least 160 bytes long to contain the minimum structure.
      * * All offsets must be properly aligned and within bounds.
      * * All array length fields must be accessible within the provided data.
      * * The proof data must be fully contained within the provided data.
@@ -383,22 +384,18 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         internal
         pure
         virtual
-        returns (
-            externalEaddress[] calldata signers,
-            bytes[] calldata signerProofs,
-            externalEuint32 threshold_,
-            bytes calldata thresholdProof
-        )
+        returns (bytes calldata inputProof, externalEaddress[] calldata signers, externalEuint32 threshold_)
     {
         // Minimum length:
-        // signersOffset(32) + inputProofsOffset(32) + externalEuint32(32) + inputProofOffset(32) + signersArrayLength(32) + proofLength(32) + inputProofLength(32) = 224 bytes
-        require(initData.length > 0xdf, ERC7579MultisigInvalidInitData());
+        // inputProofOffset(32) + signersOffset(32) + threshold(32) +
+        // inputProofLength(32) + signersArrayLength(32) = 160 bytes
+        require(initData.length > 0x9f, ERC7579MultisigInvalidInitData());
 
         // Get the externally encrypted threshold handle
-        threshold_ = externalEuint32.wrap(bytes32(initData[0x20:0x40]));
+        threshold_ = externalEuint32.wrap(bytes32(initData[0x40:0x60]));
 
         // Get offset to the input proof
-        uint256 inputProofOffset = uint256(bytes32(initData[0x40:0x60]));
+        uint256 inputProofOffset = uint256(bytes32(initData[:0x20]));
         uint256 proofDataOffset = inputProofOffset + 0x20;
 
         // Validate inputProof offset is within bounds and has space for proof data length
@@ -408,42 +405,25 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
 
         // Extract the input proof
         assembly ("memory-safe") {
-            thresholdProof.offset := add(initData.offset, proofDataOffset)
-            thresholdProof.length := proofLength
+            inputProof.offset := add(initData.offset, proofDataOffset)
+            inputProof.length := proofLength
         }
 
         // Get offset to the signers array
-        uint256 signersOffset = uint256(bytes32(initData[:0x20]));
+        uint256 signersOffset = uint256(bytes32(initData[0x20:0x40]));
         uint256 signersDataOffset = signersOffset + 0x20;
-
-        // Get offset to the input proofs array
-        uint256 signerProofsOffset = uint256(bytes32(initData[0x60:0x80]));
-        uint256 signerProofsDataOffset = signerProofsOffset + 0x20;
 
         // Validate signers offset is within bounds and has space for array length
         require(signersOffset > 0x7f && signersDataOffset <= initData.length, ERC7579MultisigInvalidInitData());
         uint256 signersLength = uint256(bytes32(initData[signersOffset:signersDataOffset]));
         require(signersDataOffset + signersLength * 0x20 <= initData.length, ERC7579MultisigInvalidInitData());
 
-        // Validate offset is within bounds and has space for array length
-        require(
-            signerProofsOffset > 0x7f && signerProofsDataOffset <= initData.length,
-            ERC7579MultisigInvalidInitData()
-        );
-        uint256 signerProofsLength = uint256(bytes32(initData[signerProofsOffset:signerProofsDataOffset]));
-        require(
-            signerProofsDataOffset + signerProofsLength * 0x20 <= initData.length,
-            ERC7579MultisigInvalidInitData()
-        );
-
         // Set up the calldata slice for the signers array
         assembly ("memory-safe") {
             signers.offset := add(initData.offset, signersDataOffset)
             signers.length := signersLength
-            signerProofs.offset := add(initData.offset, signerProofsDataOffset)
-            signerProofs.length := signerProofsLength
         }
 
-        return (signers, signerProofs, threshold_, thresholdProof);
+        return (inputProof, signers, threshold_);
     }
 }

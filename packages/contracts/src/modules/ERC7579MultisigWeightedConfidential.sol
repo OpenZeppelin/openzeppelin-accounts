@@ -49,9 +49,6 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
     /// @dev Emitted when an encrypted signer's weight is changed.
     event ERC7579MultisigWeightChanged(address indexed account, eaddress signer, euint16 weight);
 
-    /// @dev The `externalWeights` and `weightProofs` arrays have mismatched lengths.
-    error ERC7579MultisigMismatchedWeightsProofs();
-
     /// @dev The `signers` and `weights` arrays have mismatched lengths.
     error ERC7579MultisigMismatchedSignerWeights();
 
@@ -76,17 +73,15 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
     function onInstall(bytes calldata initData) public virtual override {
         require(getSignerCount(msg.sender) == 0, ERC7579MultisigAlreadyInstalled());
         (
+            bytes calldata inputProof,
             externalEaddress[] calldata externalSigners,
-            bytes[] calldata signerProofs,
             externalEuint32 externalThreshold,
-            bytes calldata thresholdProof,
-            externalEuint16[] calldata externalWeights,
-            bytes[] calldata weightProofs
+            externalEuint16[] calldata externalWeights
         ) = _decodeMultisigWeightedInitData(initData);
         require(externalSigners.length > 0, ERC7579MultisigEmptySigners());
-        addSigners(externalSigners, signerProofs);
-        setSignerWeights(getSigners(msg.sender, 0, type(uint16).max), externalWeights, weightProofs);
-        setThreshold(externalThreshold, thresholdProof);
+        addSigners(externalSigners, inputProof);
+        setSignerWeights(getSigners(msg.sender, 0, type(uint16).max), externalWeights, inputProof);
+        setThreshold(externalThreshold, inputProof);
     }
 
     /**
@@ -130,18 +125,16 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
      *
      * Requirements:
      *
-     * * The `externalWeights` and `weightProofs` arrays must have the same length. Reverts with {ERC7579MultisigMismatchedWeightsProofs} if not.
      * * Those of {_setSignerWeights} for additional requirements.
      */
     function setSignerWeights(
         eaddress[] memory signers,
         externalEuint16[] calldata externalWeights,
-        bytes[] calldata weightProofs
+        bytes calldata inputProof
     ) public virtual {
-        require(externalWeights.length == weightProofs.length, ERC7579MultisigMismatchedWeightsProofs());
         euint16[] memory weights = new euint16[](externalWeights.length);
         for (uint256 i = 0; i < externalWeights.length; ++i) {
-            weights[i] = FHE.fromExternal(externalWeights[i], weightProofs[i]);
+            weights[i] = FHE.fromExternal(externalWeights[i], inputProof);
             FHE.allowThis(weights[i]);
             FHE.allow(weights[i], msg.sender);
         }
@@ -152,11 +145,11 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
      * @dev Decodes weighted multisig initialization data from calldata without memory allocation.
      *
      * The initData should be encoded as:
-     * `abi.encode(externalEaddress[] signers, bytes[] signerProofs, externalEuint32 threshold, bytes thresholdProof, externalEuint16[] weights, bytes[] weightProofs)`
+     * `abi.encode(bytes inputProof, externalEaddress[] signers, externalEuint32 threshold, externalEuint16[] weights)`
      *
      * Requirements:
      *
-     * * The `initData` must be at least 320 bytes long to contain the minimum structure.
+     * * The `initData` must be at least 224 bytes long to contain the minimum structure.
      * * All offsets must be properly aligned and within bounds.
      * * All array length fields must be accessible within the provided data.
      * * The proof data must be fully contained within the provided data.
@@ -168,44 +161,31 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
         pure
         virtual
         returns (
-            externalEaddress[] calldata signers,
-            bytes[] calldata inputProofs,
-            externalEuint32 threshold_,
             bytes calldata inputProof,
-            externalEuint16[] calldata weights,
-            bytes[] calldata weightProofs
+            externalEaddress[] calldata signers,
+            externalEuint32 threshold_,
+            externalEuint16[] calldata weights
         )
     {
-        (signers, inputProofs, threshold_, inputProof) = _decodeMultisigInitData(initData);
+        // Minimum length:
+        // inputProofOffset(32) + signersOffset(32) + threshold(32) + weightsOffset(32) +
+        // inputProofLength(32) + signersArrayLength(32) + weightsArrayLength(32) = 224 bytes
+        require(initData.length > 0xdf, ERC7579MultisigInvalidInitData());
+        (inputProof, signers, threshold_) = _decodeMultisigInitData(initData);
 
-        uint256 weightsOffset = uint256(bytes32(initData[0x80:0xa0]));
+        uint256 weightsOffset = uint256(bytes32(initData[0x60:0x80]));
         uint256 weightsDataOffset = weightsOffset + 0x20;
 
-        require(weightsOffset > 0xdf && weightsDataOffset <= initData.length, ERC7579MultisigInvalidInitData());
+        require(weightsOffset > 0xbf && weightsDataOffset <= initData.length, ERC7579MultisigInvalidInitData());
         uint256 weightsLength = uint256(bytes32(initData[weightsOffset:weightsDataOffset]));
         require(weightsDataOffset + weightsLength * 0x20 <= initData.length, ERC7579MultisigInvalidInitData());
-
-        uint256 weightProofsOffset = uint256(bytes32(initData[0xa0:0xc0]));
-        uint256 weightProofsDataOffset = weightProofsOffset + 0x20;
-
-        require(
-            weightProofsOffset > 0xdf && weightProofsDataOffset <= initData.length,
-            ERC7579MultisigInvalidInitData()
-        );
-        uint256 weightProofsLength = uint256(bytes32(initData[weightProofsOffset:weightProofsDataOffset]));
-        require(
-            weightProofsDataOffset + weightProofsLength * 0x20 <= initData.length,
-            ERC7579MultisigInvalidInitData()
-        );
 
         assembly ("memory-safe") {
             weights.offset := add(initData.offset, weightsDataOffset)
             weights.length := weightsLength
-            weightProofs.offset := add(initData.offset, weightProofsDataOffset)
-            weightProofs.length := weightProofsLength
         }
 
-        return (signers, inputProofs, threshold_, inputProof, weights, weightProofs);
+        return (inputProof, signers, threshold_, weights);
     }
 
     /**

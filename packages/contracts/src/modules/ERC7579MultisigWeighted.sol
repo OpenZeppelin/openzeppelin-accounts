@@ -138,19 +138,20 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
     function _decodeMultisigWeightedInitData(
         bytes calldata initData
     ) internal pure virtual returns (bytes[] calldata signers, uint64 threshold_, uint64[] calldata weights) {
+        // Minimum length: offset(32) + threshold(32) + weightsOffset(32) + array_length(32) + array_length(32) = 160 bytes
+        require(initData.length > 0x9f, ERC7579MultisigInvalidInitData());
         (signers, threshold_) = _decodeMultisigInitData(initData);
 
         // Get offset to the weights array (third 32 bytes)
         uint256 weightsOffset = uint256(bytes32(initData[0x40:0x60]));
 
-        // Get the weights array length
-        uint256 weightsLength = uint256(bytes32(initData[weightsOffset:weightsOffset + 0x20]));
-
         // The weights data starts after the length field
         uint256 weightsDataOffset = weightsOffset + 0x20;
 
         // Validate offset is within bounds and has space for array length
-        require(weightsOffset > 0x3f && weightsDataOffset <= initData.length, ERC7579MultisigInvalidInitData());
+        require(weightsOffset > 0x7f && weightsDataOffset <= initData.length, ERC7579MultisigInvalidInitData());
+        uint256 weightsLength = uint256(bytes32(initData[weightsOffset:weightsDataOffset]));
+        require(weightsDataOffset + weightsLength * 0x20 <= initData.length, ERC7579MultisigInvalidInitData());
 
         // Set up the calldata slice for the weights array
         assembly ("memory-safe") {
