@@ -2,17 +2,14 @@
 pragma solidity ^0.8.27;
 
 import {ERC7579MultisigConfidential} from "./ERC7579MultisigConfidential.sol";
-import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {
     FHE,
     euint16,
     euint32,
-    euint64,
     externalEuint16,
     externalEuint32,
     externalEaddress,
-    eaddress,
-    ebool
+    eaddress
 } from "@fhevm/solidity/lib/FHE.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
