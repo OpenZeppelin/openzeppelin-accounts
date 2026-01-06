@@ -4,6 +4,7 @@ set -euo pipefail
 
 export COVERAGE=true
 export FOUNDRY_FUZZ_RUNS=10
+export SOLIDITY_COVERAGE=true
 
 # Hardhat coverage
 hardhat coverage
