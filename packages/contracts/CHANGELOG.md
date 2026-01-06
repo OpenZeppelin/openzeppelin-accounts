@@ -1,6 +1,22 @@
-## 23-12-2025
+## 06-01-2026
 
+- `ERC7579DelayedExecutor`: The `onInstall` function now enforces `minSetback()` when reinstalling the module with a prior delay configuration still present. This ensures consistent delay transition behavior whether updating via `setDelay` or through module reinstallation.
 - `ERC7579DelayedExecutor`: The `_scheduleAt` internal function does not return an `Schedule` struct anymore. Previously, the returned struct was empty.
+
+## 30-12-2025
+
+- Add `ERC7579ERC20Spender` and `ERC7579NativeSpender` contract modules extending `ERC7579Executor` with spending limits and automatic renewal periods for ERC20 tokens and native tokens (ETH) respectively.
+
+## 29-12-2025
+
+- `OpenAccount` now uses `draft-AccountERC7579Upgradeable` instead of `draft-AccountERC7579` for ERC-7579 compatibility.
+- Add `OpenAccountFactory` contract, a factory to create OpenAccount instances on demand using ERC-1967 proxy clones with CREATE2 for deterministic addresses.
+- Add `ERC1967Clones` library, providing gas-efficient methods to create deterministic ERC-1967 proxy clones.
+
+## 24-12-2025
+
+- `ERC7579Executor` no longer provides public `execute` and internal `_validateExecution` functions. Developers must now implement their own public `execute` function with custom validation and access control logic, and call the internal `_execute` function after validation.
+- `ERC7579DelayedExecutor` no longer provides public `schedule` and `cancel` functions, nor internal `_validateSchedule` and `_validateCancel` functions. Developers must now implement their own public `schedule` and `cancel` functions with custom validation and access control logic, and call the internal `_schedule` or `_cancel` functions after validation.
 
 ## 22-12-2025
 
