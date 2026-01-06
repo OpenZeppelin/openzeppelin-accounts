@@ -10,7 +10,7 @@ import {ERC7579MultisigWeighted} from "../ERC7579MultisigWeighted.sol";
  * @dev Extension of {ERC7579MultisigValidator} that uses {ERC7579MultisigWeighted} for multisignature validation
  * with weighted signatures.
  */
-abstract contract ERC7579MultisigWeightedValidator is ERC7579MultisigValidator, ERC7579MultisigWeighted {
+contract ERC7579MultisigWeightedValidator is ERC7579MultisigValidator, ERC7579MultisigWeighted {
     /// @inheritdoc ERC7579MultisigWeighted
     function onInstall(
         bytes calldata initData

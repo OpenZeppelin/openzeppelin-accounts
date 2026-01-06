@@ -37,24 +37,24 @@ Given the framework's is designed to provide compatibility with major ERC-7579 a
 - EIP-712 signature support
 - NFT holder capabilities (ERC721 and ERC1155)
 
-#### Using OpenAccount
+#### Using OpenAccountFactory
 
-If you don't already have an ERC-7579 compatible account, you can deploy `OpenAccount` as your base account. Simply extend it and provide EIP-712 domain parameters:
+The `OpenAccountFactory` is deployed across all major EVM chains at the same deterministic address:
 
-```solidity
-import { OpenAccount } from '@open-accounts-framework/contracts/OpenAccount.sol';
-import { EIP712 } from '@openzeppelin/contracts/utils/cryptography/EIP712.sol';
-
-contract MyAccount is OpenAccount {
-  constructor() EIP712('MyAccount', '1') {}
-}
+```
+0x9045eF209067701bE7b78AaC216C04Ffa6543330
 ```
 
-#### Deploying with a Factory
+This factory creates minimal ERC-1967 proxy clones of the `OpenAccount` implementation, providing deterministic addresses and efficient ERC-1967 proxy deployment. By design, the OpenAccount is upgradeable allowing the account itself (or the entrypoint) to upgrade the implementation contract.
 
-The recommended approach for deploying accounts is using a factory pattern. When you send your first user operation, the account will be created deterministically (its address can be predicted) using the `initCode` field in the UserOperation. This field contains both the address of a factory contract and the data required to call it and create your smart account.
+<Callout type="info">
+  ZKSync has a different CREATE2 derivation scheme making it impossible to deploy deterministically in chains using the
+  ZKStack.
+</Callout>
 
-You can create your own account factory using OpenZeppelin's [Clones library](https://docs.openzeppelin.com/contracts/5.x/api/proxy#Clones), which takes advantage of decreased deployment costs and account address predictability:
+#### Creating a Custom Factory
+
+If you need custom account logic or want to extend `OpenAccount`, you can create your own account factory using OpenZeppelin's [Clones library](https://docs.openzeppelin.com/contracts/5.x/api/proxy#Clones):
 
 ```solidity
 // contracts/MyFactoryAccount.sol
@@ -95,6 +95,12 @@ contract MyFactoryAccount {
   }
 }
 ```
+
+<Callout type="info">
+  Most developers are fine using deployed `OpenAccountFactory` at `0x9045eF209067701bE7b78AaC216C04Ffa6543330`. Only
+  create a custom factory if you need to extend `OpenAccount` with custom logic or implement a different account
+  contract.
+</Callout>
 
 <Callout type="warning">
   Account factories should be carefully implemented to ensure the account address is deterministically tied to the
