@@ -67,9 +67,6 @@ contract ERC7579P256Validator is ERC7579Validator {
      * * Decode `data` into `abi.encode(bytes32 qx, bytes32 qy)`.
      * * The `data` must contain valid P256 public key coordinates. Reverts with {ERC7579P256ValidatorInvalidPublicKey} if not.
      *
-     * NOTE: An account can only set a signer once. If called directly by an account
-     * that already has a signer configured, this function will behave as a no-op.
-     *
      * Emits a {ERC7579P256ValidatorSignerSet} event if the signer is set.
      */
     function onInstall(bytes calldata data) public virtual override {
