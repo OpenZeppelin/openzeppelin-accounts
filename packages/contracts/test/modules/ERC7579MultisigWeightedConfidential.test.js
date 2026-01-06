@@ -163,23 +163,12 @@ describe('ERC7579MultisigWeightedConfidential', function () {
     const signerCount = await this.mock.getSignerCount(this.mockAccount.address);
     expect(signerCount).to.equal(0);
 
-    const threshold = await this.mock.threshold(this.mockAccount.address);
-    await expect(fhevm.publicDecryptEuint(FhevmType.euint32, threshold, this.mockAccount.address)).to.eventually.equal(
-      0,
-    );
-
-    const totalExtraWeight = await this.mock.totalExtraWeight(this.mockAccount.address);
-    await expect(
-      fhevm.publicDecryptEuint(FhevmType.euint32, totalExtraWeight, this.mockAccount.address),
-    ).to.eventually.equal(0);
+    await expect(this.mock.threshold(this.mockAccount.address)).to.eventually.equal(ethers.ZeroHash);
+    await expect(this.mock.totalExtraWeight(this.mockAccount.address)).to.eventually.equal(ethers.ZeroHash);
 
     const signers = await this.mock.getSigners(this.mockAccount.address, 0, MAX_UINT32);
     for (const signer of signers) {
-      const extraWeight = await this.mock.extraWeight(this.mockAccount.address, signer);
-      await allowHandle(this.accountAsSigner, signerECDSA1.address, extraWeight);
-      await expect(
-        fhevm.userDecryptEuint(FhevmType.euint16, extraWeight, this.mockAccount.address, signerECDSA1),
-      ).to.eventually.equal(0);
+      await expect(this.mock.extraWeight(this.mockAccount.address, signer)).to.eventually.equal(ethers.ZeroHash);
     }
   });
 

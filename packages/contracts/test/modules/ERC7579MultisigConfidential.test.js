@@ -123,10 +123,7 @@ describe('ERC7579MultisigConfidential', function () {
     const signerCount = await this.mock.getSignerCount(this.mockAccount.address);
     expect(signerCount).to.equal(0);
 
-    const threshold = await this.mock.threshold(this.mockAccount.address);
-    await expect(fhevm.publicDecryptEuint(FhevmType.euint32, threshold, this.mockAccount.address)).to.eventually.equal(
-      0,
-    );
+    await expect(this.mock.threshold(this.mockAccount.address)).to.eventually.equal(ethers.ZeroHash);
   });
 
   describe('addSigners', function () {

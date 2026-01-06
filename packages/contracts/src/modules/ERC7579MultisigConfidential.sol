@@ -105,9 +105,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
      */
     function onUninstall(bytes calldata /* data */) public virtual {
         _signersSetByAccount[msg.sender].clear();
-        euint32 zero = FHE.asEuint32(0);
-        _thresholdByAccount[msg.sender] = zero;
-        FHE.makePubliclyDecryptable(zero);
+        _thresholdByAccount[msg.sender] = euint32.wrap(0);
     }
 
     /**

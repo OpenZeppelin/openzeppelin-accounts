@@ -90,9 +90,9 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
     function onUninstall(bytes calldata data) public virtual override {
         eaddress[] memory allSigners = getSigners(msg.sender, 0, type(uint32).max);
         for (uint256 i = 0; i < allSigners.length; ++i) {
-            _setExtraWeight(msg.sender, allSigners[i], FHE.asEuint16(0));
+            _extraWeights[msg.sender][allSigners[i]] = euint16.wrap(0);
         }
-        _setTotalExtraWeight(msg.sender, FHE.asEuint32(0));
+        _totalExtraWeight[msg.sender] = euint32.wrap(0);
         super.onUninstall(data);
     }
 
