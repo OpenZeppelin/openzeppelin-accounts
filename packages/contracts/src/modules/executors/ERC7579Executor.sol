@@ -66,7 +66,7 @@ abstract contract ERC7579Executor is IERC7579Module {
         address account,
         bytes32 salt,
         bytes32 mode,
-        bytes calldata executionCalldata
+        bytes memory executionCalldata
     ) internal virtual returns (bytes[] memory returnData) {
         emit ERC7579ExecutorOperationExecuted(account, salt, mode, executionCalldata);
         return IERC7579Execution(account).executeFromExecutor(mode, executionCalldata);

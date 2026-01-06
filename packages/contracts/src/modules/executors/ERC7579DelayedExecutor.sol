@@ -175,7 +175,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
         address account,
         bytes32 salt,
         bytes32 mode,
-        bytes calldata executionCalldata
+        bytes memory executionCalldata
     ) public view virtual returns (bytes32) {
         return keccak256(abi.encode(account, salt, mode, executionCalldata));
     }
@@ -326,7 +326,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
         address account,
         bytes32 salt,
         bytes32 mode,
-        bytes calldata executionCalldata
+        bytes memory executionCalldata
     ) internal virtual override returns (bytes[] memory returnData) {
         bytes32 id = hashOperation(account, salt, mode, executionCalldata);
         _validateStateBitmap(id, _encodeStateBitmap(OperationState.Ready));

@@ -2,6 +2,7 @@
   "title": "Executors",
   "defaultOpen": true,
   "pages": [
-    "social-recovery"
+    "social-recovery",
+    "spending-limits"
   ]
 }

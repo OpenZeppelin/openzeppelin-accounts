@@ -5,13 +5,9 @@ import {Test} from "forge-std/Test.sol";
 import {Mode} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {ERC7579Multisig} from "../../src/modules/ERC7579Multisig.sol";
 import {CallReceiverMock} from "../../src/mocks/CallReceiverMock.sol";
-import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {OpenAccount} from "../../src/OpenAccount.sol";
-
-contract OpenAccountMock is OpenAccount {
-    constructor() EIP712("TestAccount", "1") {}
-}
+import {OpenAccountFactory} from "../../src/OpenAccountFactory.sol";
 
 contract ERC7579MultisigMock is ERC7579Multisig {
     function isModuleType(uint256) public pure override returns (bool) {
@@ -33,6 +29,7 @@ contract ERC7579MultisigTest is Test {
     CallReceiverMock private _target;
     ERC7579MultisigMock private _multisig;
     OpenAccount private _account;
+    OpenAccountFactory private _factory;
 
     function setUp() public {
         // Deploy target contract
@@ -41,8 +38,8 @@ contract ERC7579MultisigTest is Test {
         // Deploy multisig
         _multisig = new ERC7579MultisigMock();
 
-        // Deploy account
-        _account = new OpenAccountMock();
+        // Deploy factory
+        _factory = new OpenAccountFactory();
     }
 
     function testMultisigInstallation(uint256 numSigners, uint64 threshold) public {
@@ -56,7 +53,11 @@ contract ERC7579MultisigTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(signers, threshold);
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         assertEq(_multisig.getSignerCount(address(_account)), numSigners);
         assertEq(_multisig.threshold(address(_account)), threshold);
@@ -77,7 +78,11 @@ contract ERC7579MultisigTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(signers, uint64(1));
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         bytes[] memory slice = _multisig.getSigners(address(_account), start, end);
 
@@ -99,7 +104,11 @@ contract ERC7579MultisigTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(signers, uint64(1));
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         (, bytes[] memory additionalSigners) = _buildSigners(newSigners, initialSigners);
 
@@ -126,7 +135,11 @@ contract ERC7579MultisigTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(signers, threshold);
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         (, bytes[] memory signersToRemove) = _buildSigners(removeCount);
 
@@ -155,7 +168,11 @@ contract ERC7579MultisigTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(signers, uint64(1));
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         vm.prank(address(_account));
         _multisig.setThreshold(newThreshold);
@@ -174,7 +191,11 @@ contract ERC7579MultisigTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(signers, uint64(1));
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         vm.prank(address(_account));
         vm.expectRevert(
@@ -190,7 +211,11 @@ contract ERC7579MultisigTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(signers, uint64(1));
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         vm.prank(address(_account));
         vm.expectRevert(ERC7579Multisig.ERC7579MultisigZeroThreshold.selector);
@@ -210,7 +235,11 @@ contract ERC7579MultisigTest is Test {
         ) = _buildInstallationModules(signers, uint64(1));
 
         vm.expectRevert(abi.encodeWithSelector(ERC7579Multisig.ERC7579MultisigInvalidSigner.selector, invalidSigner));
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
     }
 
     function testRevertAlreadyExistsSigner() public {
@@ -220,7 +249,11 @@ contract ERC7579MultisigTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(signers, uint64(1));
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         vm.prank(address(_account));
         vm.expectRevert(abi.encodeWithSelector(ERC7579Multisig.ERC7579MultisigAlreadyExists.selector, signers[0]));
@@ -234,7 +267,11 @@ contract ERC7579MultisigTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(signers, uint64(1));
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         (, bytes[] memory nonExistentSigners) = _buildSigners(1, 999);
 
