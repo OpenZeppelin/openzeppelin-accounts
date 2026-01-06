@@ -93,9 +93,9 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
     function onUninstall(bytes calldata data) public virtual override {
         eaddress[] memory allSigners = getSigners(msg.sender, 0, type(uint32).max);
         for (uint256 i = 0; i < allSigners.length; ++i) {
-            _extraWeights[msg.sender][allSigners[i]] = FHE.asEuint16(0);
+            _setExtraWeight(msg.sender, allSigners[i], FHE.asEuint16(0));
         }
-        _totalExtraWeight[msg.sender] = FHE.asEuint32(0);
+        _setTotalExtraWeight(msg.sender, FHE.asEuint32(0));
         super.onUninstall(data);
     }
 
@@ -116,7 +116,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
 
     /// @dev Returns the encrypted total weight of all signers for the specified account.
     function totalWeight(address account) public virtual returns (euint32) {
-        return FHE.add(FHE.asEuint32(uint32(getSignerCount(account))), totalExtraWeight(account));
+        return _totalWeight(account);
     }
 
     /**
@@ -232,8 +232,6 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
 
             euint16 oldExtraWeight = extraWeight(account, signer);
             // extraWeightRemoved can't overflow because there are at most `type(uint16).max` signers
-            // with at most `type(uint16).max - 1` extra weight each, so the total extra weight is at most
-            // `type(uint16).max * (type(uint16).max - 1) = type(uint16).max**2 - type(uint16).max`.
             extraWeightRemoved = FHE.add(
                 extraWeightRemoved,
                 // On the first call to _setSignerWeights, oldExtraWeight is not initialized, so we use 0.
@@ -241,16 +239,14 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
             );
             // extraWeightAdded can't overflow for the same reason as extraWeightRemoved.
             extraWeightAdded = FHE.add(extraWeightAdded, newExtraWeight);
-            _extraWeights[account][signer] = newExtraWeight;
-            FHE.allowThis(newExtraWeight);
-            FHE.allow(newExtraWeight, account);
+            _setExtraWeight(account, signer, newExtraWeight);
             emit ERC7579MultisigWeightChanged(account, signer, weight);
         }
 
         euint32 oldTotalExtraWeight = totalExtraWeight(account);
         // The `extraWeightRemoved` is bounded by `totalExtraWeight(account)` by construction,
         // so the subtraction can't overflow. Addition can't overflow for the same reason as extraWeightAdded.
-        euint32 newTotalExtraWeight = _totalExtraWeight[account] = FHE.add(
+        euint32 newTotalExtraWeight = FHE.add(
             FHE.sub(
                 // On the first call to _setSignerWeights, oldTotalExtraWeight is not initialized, so we use 0.
                 FHE.isInitialized(oldTotalExtraWeight) ? oldTotalExtraWeight : FHE.asEuint32(0),
@@ -258,8 +254,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
             ),
             extraWeightAdded
         );
-        FHE.allowThis(newTotalExtraWeight);
-        FHE.allow(newTotalExtraWeight, account);
+        _setTotalExtraWeight(account, newTotalExtraWeight);
         _setThreshold(account, threshold(account)); // Caps the threshold at the total weight
     }
 
@@ -273,15 +268,28 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
         for (uint256 i = 0; i < oldSigners.length; ++i) {
             eaddress signer = oldSigners[i];
             // extraWeightRemoved can't overflow because there are at most `type(uint16).max` signers
-            // with at most `type(uint16).max - 1` extra weight each, so the total extra weight is at most
-            // `type(uint16).max * (type(uint16).max - 1) = type(uint16).max**2 - type(uint16).max`.
             extraWeightRemoved = FHE.add(extraWeightRemoved, extraWeight(account, signer));
-            _extraWeights[account][signer] = FHE.asEuint16(0);
+            _setExtraWeight(account, signer, FHE.asEuint16(0));
         }
         // The `extraWeightRemoved` is bounded by `totalExtraWeight(account)` by construction,
         // so the subtraction can't overflow.
-        _totalExtraWeight[account] = FHE.sub(totalExtraWeight(account), extraWeightRemoved);
+        euint32 newTotalExtraWeight = FHE.sub(totalExtraWeight(account), extraWeightRemoved);
+        _setTotalExtraWeight(account, newTotalExtraWeight);
         super._removeSigners(account, oldSigners);
+    }
+
+    /// @dev Sets the total extra weight for the specified account.
+    function _setTotalExtraWeight(address account, euint32 newTotalExtraWeight) internal virtual {
+        _totalExtraWeight[account] = newTotalExtraWeight;
+        FHE.allowThis(newTotalExtraWeight);
+        FHE.allow(newTotalExtraWeight, account);
+    }
+
+    /// @dev Sets the extra weight for a signer for the specified account.
+    function _setExtraWeight(address account, eaddress signer, euint16 newExtraWeight) internal virtual {
+        _extraWeights[account][signer] = newExtraWeight;
+        FHE.allowThis(newExtraWeight);
+        FHE.allow(newExtraWeight, account);
     }
 
     /**
@@ -289,7 +297,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
      * See {ERC7579MultisigConfidential-_maxThreshold}.
      */
     function _maxThreshold(address account) internal virtual override returns (euint32) {
-        return totalWeight(account);
+        return _totalWeight(account);
     }
 
     /**
@@ -299,11 +307,24 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
      * Returns 0 if the signer is not authorized, otherwise returns 1 plus the signer's extra weight.
      */
     function _signerWeight(address account, eaddress signer) internal virtual override returns (euint16) {
-        return
-            FHE.select(
-                FHE.asEbool(isSigner(account, signer)),
-                FHE.add(FHE.asEuint16(1), extraWeight(account, signer)),
-                FHE.asEuint16(0)
-            );
+        euint16 weight = FHE.select(
+            FHE.asEbool(isSigner(account, signer)),
+            FHE.add(FHE.asEuint16(1), extraWeight(account, signer)),
+            FHE.asEuint16(0)
+        );
+        FHE.allowThis(weight);
+        FHE.allow(weight, account);
+        return weight;
+    }
+
+    /// @dev Returns the encrypted total weight of all signers for the specified account.
+    function _totalWeight(address account) internal virtual returns (euint32) {
+        // total can't overflow because there are at most `type(uint16).max` signers
+        // with at most `type(uint16).max - 1` extra weight each, so the total extra weight is at most
+        // `type(uint16).max * (type(uint16).max - 1) = type(uint16).max**2 - type(uint16).max`.
+        euint32 total = FHE.add(FHE.asEuint32(uint32(getSignerCount(account))), totalExtraWeight(account));
+        FHE.allowThis(total);
+        FHE.allow(total, account);
+        return total;
     }
 }
