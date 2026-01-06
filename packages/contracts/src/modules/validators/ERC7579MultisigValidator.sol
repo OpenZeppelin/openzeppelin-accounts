@@ -7,7 +7,7 @@ import {ERC7579Multisig} from "../ERC7579Multisig.sol";
 /**
  * @dev Implementation of {ERC7579Validator} that uses {ERC7579Multisig} for multisignature validation.
  */
-abstract contract ERC7579MultisigValidator is ERC7579Multisig, ERC7579Validator {
+contract ERC7579MultisigValidator is ERC7579Multisig, ERC7579Validator {
     /// @dev The signature format for the signature provided to `_rawERC7579Validation` is invalid.
     error ERC7579MultisigInvalidMultisignature();
 

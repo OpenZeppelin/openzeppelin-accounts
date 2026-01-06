@@ -23,7 +23,7 @@ import {P256} from "@openzeppelin/contracts/utils/cryptography/P256.sol";
  * account.installModule(MODULE_TYPE_VALIDATOR, validatorAddress, initData);
  * ```
  */
-abstract contract ERC7579P256Validator is ERC7579Validator {
+contract ERC7579P256Validator is ERC7579Validator {
     /// @dev The provided signer data is too short (must be at least 64 bytes for P256 coordinates).
     error ERC7579P256ValidatorInvalidSignerLength();
 

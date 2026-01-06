@@ -12,16 +12,12 @@ import {
     Execution
 } from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
-import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {OpenAccount} from "../../../src/OpenAccount.sol";
 import {ERC7579Executor} from "../../../src/modules/executors/ERC7579Executor.sol";
-
-contract OpenAccountMock is OpenAccount {
-    constructor() EIP712("TestAccount", "1") {}
-}
+import {OpenAccountFactory} from "../../../src/OpenAccountFactory.sol";
 
 contract ERC7579ExecutorTest is Test {
     using ERC7579Utils for *;
@@ -33,6 +29,7 @@ contract ERC7579ExecutorTest is Test {
     CallReceiverMock private _target;
     ERC7579ExecutorMock private _executor;
     OpenAccount private _account;
+    OpenAccountFactory private _factory;
 
     function setUp() public {
         // Deploy target contract
@@ -41,14 +38,21 @@ contract ERC7579ExecutorTest is Test {
         // Deploy executor
         _executor = new ERC7579ExecutorMock();
 
-        // Deploy account
-        _account = new OpenAccountMock();
-
-        vm.deal(address(_account), MAX_ETH);
+        // Deploy factory
+        _factory = new OpenAccountFactory();
     }
 
     function testExecute(uint256 arg1, uint256 arg2) public {
-        _account.initialize(MODULE_TYPE_EXECUTOR, address(_executor), "");
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules();
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         bytes32 salt = bytes32(0);
         bytes32 mode = Mode.unwrap(
@@ -75,8 +79,18 @@ contract ERC7579ExecutorTest is Test {
         assertEq(returnData.length, 1);
     }
 
-    function testExecuteBatch(uint256 arg1, uint256 arg2) public {
-        _account.initialize(MODULE_TYPE_EXECUTOR, address(_executor), "");
+    function testExecuteBatch(uint256 arg1, uint256 arg2, uint256 value1) public {
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules();
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
+        vm.deal(address(_account), value1);
 
         bytes32 salt = bytes32(0);
         bytes32 mode = Mode.unwrap(
@@ -91,7 +105,7 @@ contract ERC7579ExecutorTest is Test {
         Execution[] memory execution = new Execution[](2);
         execution[0] = Execution({
             target: address(_target),
-            value: 1 ether,
+            value: value1,
             callData: abi.encodeCall(CallReceiverMock.mockFunctionExtra, ())
         });
         execution[1] = Execution({
@@ -113,5 +127,18 @@ contract ERC7579ExecutorTest is Test {
 
         bytes[] memory returnData = _executor.execute(address(_account), salt, mode, data);
         assertEq(returnData.length, 2);
+    }
+
+    function _buildInstallationModules()
+        private
+        view
+        returns (uint256[] memory moduleTypeIds, address[] memory modules, bytes[] memory initDatas)
+    {
+        moduleTypeIds = new uint256[](1);
+        modules = new address[](1);
+        initDatas = new bytes[](1);
+        moduleTypeIds[0] = MODULE_TYPE_EXECUTOR;
+        modules[0] = address(_executor);
+        initDatas[0] = "";
     }
 }

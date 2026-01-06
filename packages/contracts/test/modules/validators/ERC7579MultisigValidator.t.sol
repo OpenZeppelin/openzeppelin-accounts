@@ -11,16 +11,12 @@ import {
     ModePayload
 } from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {ERC4337Utils, IEntryPointExtra} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
-import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-AccountERC7579.sol";
 import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {OpenAccount} from "../../../src/OpenAccount.sol";
-
-contract OpenAccountMock is OpenAccount {
-    constructor() EIP712("TestAccount", "1") {}
-}
+import {OpenAccountFactory} from "../../../src/OpenAccountFactory.sol";
 
 contract ERC7579MultisigValidatorMock is ERC7579MultisigValidator {}
 
@@ -32,6 +28,7 @@ contract ERC7579MultisigValidatorTest is Test {
     CallReceiverMock private _target;
     ERC7579MultisigValidatorMock private _multisig;
     OpenAccount private _account;
+    OpenAccountFactory private _factory;
 
     function setUp() public {
         // Deploy target contract
@@ -40,10 +37,8 @@ contract ERC7579MultisigValidatorTest is Test {
         // Deploy multisig
         _multisig = new ERC7579MultisigValidatorMock();
 
-        // Deploy account
-        _account = new OpenAccountMock();
-
-        vm.deal(address(_account), MAX_ETH);
+        // Deploy factory
+        _factory = new OpenAccountFactory();
 
         // Setup entrypoint
         address entrypoint = address(ERC4337Utils.ENTRYPOINT_V09);
@@ -64,8 +59,17 @@ contract ERC7579MultisigValidatorTest is Test {
         numSigners = bound(numSigners, 1, 10);
         (uint256[] memory keys, bytes[] memory signers) = _buildSigners(numSigners);
 
-        bytes memory initData = abi.encode(signers, uint64(signers.length));
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), initData);
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(signers, uint64(signers.length));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
+        vm.deal(address(_account), MAX_ETH);
 
         PackedUserOperation memory userOp = _prepareUserOperation();
         bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
@@ -90,9 +94,28 @@ contract ERC7579MultisigValidatorTest is Test {
         numSigners = bound(numSigners, 1, 10);
         (, bytes[] memory signers) = _buildSigners(numSigners);
 
-        // forge-lint: disable-next-line(unsafe-typecast)
-        bytes memory initData = abi.encode(signers, uint64(numSigners));
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), initData);
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(
+                signers,
+                // forge-lint: disable-next-line(unsafe-typecast)
+                uint64(numSigners)
+            );
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(
+                    moduleTypeIds,
+                    modules,
+                    initDatas,
+                    Mode.wrap(0),
+                    bytes(""),
+                    bytes32(uint256(1))
+                )
+            )
+        );
+        vm.deal(address(_account), MAX_ETH);
 
         PackedUserOperation memory userOp = _prepareUserOperation();
         bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
@@ -160,5 +183,17 @@ contract ERC7579MultisigValidatorTest is Test {
                 paymasterAndData: bytes(""),
                 signature: bytes("")
             });
+    }
+
+    function _buildInstallationModules(
+        bytes[] memory signers,
+        uint64 threshold
+    ) private view returns (uint256[] memory moduleTypeIds, address[] memory modules, bytes[] memory initDatas) {
+        moduleTypeIds = new uint256[](1);
+        modules = new address[](1);
+        initDatas = new bytes[](1);
+        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
+        modules[0] = address(_multisig);
+        initDatas[0] = abi.encode(signers, threshold);
     }
 }

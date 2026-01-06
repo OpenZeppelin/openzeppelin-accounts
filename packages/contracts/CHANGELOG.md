@@ -1,3 +1,22 @@
+## 30-12-2025
+
+- Add `ERC7579ERC20Spender` and `ERC7579NativeSpender` contract modules extending `ERC7579Executor` with spending limits and automatic renewal periods for ERC20 tokens and native tokens (ETH) respectively.
+
+## 29-12-2025
+
+- `OpenAccount` now uses `draft-AccountERC7579Upgradeable` instead of `draft-AccountERC7579` for ERC-7579 compatibility.
+- Add `OpenAccountFactory` contract, a factory to create OpenAccount instances on demand using ERC-1967 proxy clones with CREATE2 for deterministic addresses.
+- Add `ERC1967Clones` library, providing gas-efficient methods to create deterministic ERC-1967 proxy clones.
+
+## 24-12-2025
+
+- `ERC7579Executor` no longer provides public `execute` and internal `_validateExecution` functions. Developers must now implement their own public `execute` function with custom validation and access control logic, and call the internal `_execute` function after validation.
+- `ERC7579DelayedExecutor` no longer provides public `schedule` and `cancel` functions, nor internal `_validateSchedule` and `_validateCancel` functions. Developers must now implement their own public `schedule` and `cancel` functions with custom validation and access control logic, and call the internal `_schedule` or `_cancel` functions after validation.
+
+## 22-12-2025
+
+- `OpenAccount` initialization now supports installing multiple modules in a single transaction and executing arbitrary configuration calls during initialization via the `configMode` and `configCalldata` parameters.
+
 ## 05-12-2025
 
 - The `onInstall` function of `ERC7579Multisig`, `ERC7579MultisigWeighted`, `ERC7579DelayedExecutor`, `ERC7579ECDSAValidator`, `ERC7579P256Validator` now explicitly revert if the module is already installed or if their configuration is invalid.
