@@ -19,7 +19,7 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
  * account.installModule(MODULE_TYPE_VALIDATOR, validatorAddress, initData);
  * ```
  */
-abstract contract ERC7579ECDSAValidator is ERC7579Validator {
+contract ERC7579ECDSAValidator is ERC7579Validator {
     /// @dev The provided signer data is too short (must be at least 20 bytes for an address).
     error ERC7579ECDSAValidatorInvalidSignerLength();
 
