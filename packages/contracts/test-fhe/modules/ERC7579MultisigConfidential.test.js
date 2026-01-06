@@ -11,7 +11,7 @@ const {
   MultiERC7913SigningKey,
 } = require('../../../../lib/@openzeppelin-contracts/test/helpers/signers');
 
-const { shouldBehaveLikeERC7579Module } = require('./ERC7579Module.behavior');
+const { shouldBehaveLikeERC7579Module } = require('../../test/modules/ERC7579Module.behavior');
 const { allowHandle } = require('../helpers/fhe');
 const { MAX_UINT32 } = require('../../../../lib/@openzeppelin-contracts/test/helpers/constants');
 

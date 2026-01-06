@@ -1,5 +1,6 @@
 // - COMPILER:      compiler version (default: 0.8.27)
 // - HARDFORK:      hardfork version (default: prague)
+// - FHE:           enable FHE compilation (default: false)
 
 const { argv } = require('yargs/yargs')()
   .env('')
@@ -12,9 +13,13 @@ const { argv } = require('yargs/yargs')()
       type: 'string',
       default: 'prague',
     },
+    fhe: {
+      type: 'boolean',
+      default: false,
+    },
   });
 
-require('@fhevm/hardhat-plugin');
+if (argv.fhe) require('@fhevm/hardhat-plugin');
 require('@nomicfoundation/hardhat-chai-matchers');
 require('@nomicfoundation/hardhat-ethers');
 require('hardhat-exposed');
@@ -44,5 +49,6 @@ module.exports = {
   },
   paths: {
     sources: 'src',
+    tests: argv.fhe ? 'test-fhe' : 'test',
   },
 };

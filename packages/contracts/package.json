@@ -12,7 +12,9 @@
     "compile": "hardhat compile",
     "clean": "hardhat clean && rimraf build contracts/build",
     "coverage": "scripts/checks/coverage.sh",
-    "test": "hardhat test"
+    "test": "pnpm run test:regular && pnpm run test:fhe",
+    "test:regular": "hardhat test",
+    "test:fhe": "FHE=true hardhat test"
   },
   "keywords": [
     "solidity",

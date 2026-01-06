@@ -7,7 +7,13 @@ export FOUNDRY_FUZZ_RUNS=10
 export SOLIDITY_COVERAGE=true
 
 # Hardhat coverage
-hardhat coverage
+
+# FHE
+export FHE=true; hardhat coverage
+mv coverage coverage-fhe
+
+# Regular
+export FHE=false; hardhat coverage
 
 if [ "${CI:-"false"}" == "true" ]; then
   # Foundry coverage
