@@ -1,3 +1,7 @@
+## 06-01-2026
+
+- `ERC7579DelayedExecutor`: The `onInstall` function now enforces `minSetback()` when reinstalling the module with a prior delay configuration still present. This ensures consistent delay transition behavior whether updating via `setDelay` or through module reinstallation.
+
 ## 30-12-2025
 
 - Add `ERC7579ERC20Spender` and `ERC7579NativeSpender` contract modules extending `ERC7579Executor` with spending limits and automatic renewal periods for ERC20 tokens and native tokens (ETH) respectively.

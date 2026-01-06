@@ -2,6 +2,7 @@
 pragma solidity ^0.8.27;
 
 import {Time} from "@openzeppelin/contracts/utils/types/Time.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ERC7579Executor} from "./ERC7579Executor.sol";
 
 /**
@@ -197,9 +198,8 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
         require(!_configs[msg.sender].installed, ERC7579DelayedExecutorAlreadyInstalled());
         _configs[msg.sender].installed = true;
         (uint32 initialDelay, uint32 initialExpiration) = _decodeDelayedExecutorInitData(initData);
-        // An old delay might be still present
-        // So we set 0 for the minimum setback relying on any old value as the minimum delay
-        _setDelay(msg.sender, initialDelay, 0);
+        (uint32 currentDelay, , ) = getDelay(msg.sender); // An old delay might be still present after uninstallation
+        _setDelay(msg.sender, initialDelay, uint32(Math.ternary(currentDelay > 0, minSetback(), 0)));
         _setExpiration(msg.sender, initialExpiration);
     }
 
@@ -228,9 +228,10 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      * design choice for efficiency, but module implementations may want to override this behavior
      * to clear scheduled operations during uninstallation for their specific use cases.
      *
-     * NOTE: Calling this function directly will remove the expiration ({getExpiration}) value and
-     * will schedule a reset of the delay ({getDelay}) to `0` for the account. Reinstalling the
-     * module will not immediately reset the delay if the delay reset hasn't taken effect yet.
+     * NOTE: Uninstalling the module schedules the delay to reset to `0` after {minSetback}, and
+     * immediately removes the expiration. If the module is reinstalled before the delay reset
+     * completes, the new delay will be subject to {minSetback} protection to prevent bypassing
+     * the minimum security window for delay reductions.
      */
     function onUninstall(bytes calldata) public virtual {
         _configs[msg.sender].installed = false;
