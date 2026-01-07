@@ -1,3 +1,7 @@
+## 07-01-2026
+
+- The `execute` function of `ERC7579Executor` is now `payable` and forwards the payment to the account.
+
 ## 06-01-2026
 
 - `ERC7579DelayedExecutor`: The `onInstall` function now enforces `minSetback()` when reinstalling the module with a prior delay configuration still present. This ensures consistent delay transition behavior whether updating via `setDelay` or through module reinstallation.
