@@ -63,12 +63,17 @@ abstract contract ERC7579Validator is IERC7579Module, IERC7579Validator {
     }
 
     /// @inheritdoc IERC7579Validator
-    function validateUserOp(
+    function validateUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash) public virtual returns (uint256) {
+        return _validateUserOp(userOp, userOpHash);
+    }
+
+    // @dev Internal version of {validateUserOp}.
+    function _validateUserOp(
         PackedUserOperation calldata userOp,
         bytes32 userOpHash
-    ) public view virtual returns (uint256) {
+    ) internal virtual returns (uint256) {
         return
-            _rawERC7579Validation(msg.sender, userOpHash, userOp.signature)
+            _rawERC7579Validation(userOp.sender, userOpHash, userOp.signature)
                 ? ERC4337Utils.SIG_VALIDATION_SUCCESS
                 : ERC4337Utils.SIG_VALIDATION_FAILED;
     }
