@@ -6,7 +6,6 @@
 
 - `ERC7579DelayedExecutor`: The `onInstall` function now enforces `minSetback()` when reinstalling the module with a prior delay configuration still present. This ensures consistent delay transition behavior whether updating via `setDelay` or through module reinstallation.
 - `ERC7579DelayedExecutor`: The `_scheduleAt` internal function does not return an `Schedule` struct anymore. Previously, the returned struct was empty.
-- The `execute` function of `ERC7579Executor` is now `payable` and forwards the payment to the account.
 
 ## 30-12-2025
 
