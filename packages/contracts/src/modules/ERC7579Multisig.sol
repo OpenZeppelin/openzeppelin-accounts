@@ -254,22 +254,18 @@ abstract contract ERC7579Multisig is IERC7579Module {
 
     /**
      * @dev Validates the signatures using the signers and their corresponding signatures.
-     * Returns whether the signers are authorized and the signatures are valid for the given hash.
+     * Returns whether the signers are authorized, are not duplicated and the signatures
+     * are valid for the given hash.
      *
-     * The signers must be ordered by their `keccak256` hash to prevent duplications and to optimize
-     * the verification process. The function will return `false` if any signer is not authorized or
-     * if the signatures are invalid for the given hash.
-     *
-     * Requirements:
-     *
-     * * The `signatures` array must be at least the `signers` array's length.
+     * IMPORTANT: Sorting the signers by their `keccak256` hash will improve the gas
+     * efficiency of this function.
      */
     function _validateSignatures(
         address account,
         bytes32 hash,
         bytes[] calldata signingSigners,
         bytes[] calldata signatures
-    ) internal view virtual returns (bool valid) {
+    ) internal view virtual returns (bool) {
         for (uint256 i = 0; i < signingSigners.length; ++i) {
             if (!isSigner(account, signingSigners[i])) {
                 return false;
@@ -319,6 +315,7 @@ abstract contract ERC7579Multisig is IERC7579Module {
         // Validate offset is within bounds and has space for array length
         require(signersOffset > 0x3f && signersDataOffset <= initData.length, ERC7579MultisigInvalidInitData());
         uint256 signersLength = uint256(bytes32(initData[signersOffset:signersDataOffset]));
+        require(signersDataOffset + signersLength * 0x20 <= initData.length, ERC7579MultisigInvalidInitData());
 
         // Set up the calldata slice for the signers array
         assembly ("memory-safe") {
