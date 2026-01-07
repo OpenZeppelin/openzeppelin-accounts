@@ -111,13 +111,18 @@ contract ERC7579ExecutorTest is Test {
             value: value,
             callData: abi.encodeCall(CallReceiverMock.mockFunctionExtra, ())
         });
+        execution[1] = Execution({
+            target: address(_target),
+            value: 0,
+            callData: abi.encodeCall(CallReceiverMock.mockFunctionWithArgs, (arg1, arg2))
+        });
 
         bytes memory data = execution.encodeBatch();
 
         vm.expectEmit(true, true, true, true);
         emit ERC7579Executor.ERC7579ExecutorOperationExecuted(address(_account), salt, mode, data);
 
-        // vm.expectEmit(true, true, true, true);
+        vm.expectEmit(true, true, true, true);
         emit CallReceiverMock.MockFunctionCalledWithArgs(arg1, arg2);
         emit CallReceiverMock.MockFunctionCalledExtra(address(_account), value);
 
