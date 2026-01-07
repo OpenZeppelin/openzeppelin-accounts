@@ -73,6 +73,6 @@ abstract contract ERC7579Executor is IERC7579Module {
         bytes memory executionCalldata
     ) internal virtual returns (bytes[] memory) {
         emit ERC7579ExecutorOperationExecuted(account, salt, mode, executionCalldata);
-        return IERC7579Execution(account).executeFromExecutor(mode, executionCalldata);
+        return IERC7579Execution(account).executeFromExecutor{value: msg.value}(mode, executionCalldata);
     }
 }
