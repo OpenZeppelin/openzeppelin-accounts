@@ -42,7 +42,7 @@ async function fixture() {
   const installData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes[]', 'uint256'], [signers, threshold]);
 
   // ERC-7579 account
-  const mockAccount = await helper.newAccount('$AccountERC7579');
+  const mockAccount = await helper.newAccount('$OpenAccount', ['OpenAccount', '1']);
   const mockFromAccount = await impersonate(mockAccount.address).then(asAccount => mock.connect(asAccount));
   const mockAccountFromEntrypoint = await impersonate(predeploy.entrypoint.v09.target).then(asEntrypoint =>
     mockAccount.connect(asEntrypoint),

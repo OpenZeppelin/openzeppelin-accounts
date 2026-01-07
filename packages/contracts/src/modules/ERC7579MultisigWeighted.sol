@@ -55,8 +55,6 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
      * The initData should be encoded as:
      * `abi.encode(bytes[] signers, uint64 threshold, uint64[] weights)`
      *
-     * If weights are not provided but signers are, all signers default to weight 1.
-     *
      * NOTE: An account can only call onInstall once. If called directly by the account,
      * the signer will be set to the provided data. Future installations will revert with
      * {ERC7579MultisigAlreadyInstalled}.
@@ -143,14 +141,13 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
         // Get offset to the weights array (third 32 bytes)
         uint256 weightsOffset = uint256(bytes32(initData[0x40:0x60]));
 
-        // Get the weights array length
-        uint256 weightsLength = uint256(bytes32(initData[weightsOffset:weightsOffset + 0x20]));
-
         // The weights data starts after the length field
         uint256 weightsDataOffset = weightsOffset + 0x20;
 
         // Validate offset is within bounds and has space for array length
         require(weightsOffset > 0x3f && weightsDataOffset <= initData.length, ERC7579MultisigInvalidInitData());
+        uint256 weightsLength = uint256(bytes32(initData[weightsOffset:weightsDataOffset]));
+        require(weightsDataOffset + weightsLength * 0x20 <= initData.length, ERC7579MultisigInvalidInitData());
 
         // Set up the calldata slice for the weights array
         assembly ("memory-safe") {

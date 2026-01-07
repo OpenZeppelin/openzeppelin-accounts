@@ -1,0 +1,327 @@
+---
+title: Spending Limits
+description: ERC20 and native token spending limit executors with automatic renewal periods
+---
+
+Spending limit executors enable accounts to configure renewable spending allowances for external spenders. These modules are particularly useful for subscription services, recurring payments, delegated spending, or any use case requiring controlled access to account funds with predefined limits.
+
+Each spender gets a renewable spending limit that automatically resets at the end of each period, allowing the same spending capacity to be used again without requiring manual intervention from the account owner.
+
+## Overview
+
+The framework provides two spending limit executor implementations:
+
+- **`ERC7579NativeSpender`**: Manages spending limits for native tokens (ETH)
+- **`ERC7579ERC20Spender`**: Manages spending limits for ERC20 tokens
+
+Both executors share the same core concepts and configuration structure, differing primarily in the token type they manage. Each spender is configured with three key parameters defined in the `SpendingConfig` struct:
+
+- **`start`** (`uint48`): Unix timestamp when the spending limit becomes active
+- **`renewPeriod`** (`uint48`): Duration of each spending period in seconds
+- **`limit`** (`uint160`): Maximum spendable amount per period
+
+Spending limits automatically renew at the end of each period. For example, with a limit of 1 ETH and a renewal period of 30 days:
+
+1. A spender can spend up to 1 ETH in the first 30-day period
+2. After 30 days, the limit resets and the spender can spend another 1 ETH
+3. This continues indefinitely until the configuration is changed or the module is uninstalled
+
+You can completely remove a spending limit configuration using the `unsetSpendingConfig` function, available in both `ERC7579ERC20Spender` and `ERC7579NativeSpender`. This removes the spender (or token-spender pair) from the account's configuration and frees up storage.
+
+<Callout>
+  The spending limit must be greater than zero. To remove a spender's access entirely, use `unsetSpendingConfig` instead
+  of trying to set the limit to zero. Note that at least one spender (or token) must remain configured after removal to
+  prevent the module from becoming unusable.
+</Callout>
+
+## Available Spenders
+
+### ERC7579NativeSpender
+
+Manages spending limits for native tokens (ETH). Spenders can transfer native tokens from the account up to their configured limit per renewal period. To install the native spender module:
+
+```solidity
+import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
+import {ERC7579NativeSpender} from "@open-accounts-framework/contracts/modules/executors/ERC7579NativeSpender.sol";
+
+// Deploy the executor (singleton, can be reused)
+ERC7579NativeSpender nativeSpender = new ERC7579NativeSpender();
+
+// Configure spenders
+address[] memory spenders = new address[](2);
+spenders[0] = subscriptionService;
+spenders[1] = recurringPaymentService;
+
+// Configure start times (when spending becomes active)
+uint48[] memory starts = new uint48[](2);
+starts[0] = uint48(block.timestamp); // Active immediately
+starts[1] = uint48(block.timestamp + 7 days); // Active in 7 days
+
+// Configure spending limits per period
+uint160[] memory limits = new uint160[](2);
+limits[0] = 1 ether; // 1 ETH per period
+limits[1] = 0.5 ether; // 0.5 ETH per period
+
+// Configure renewal periods
+uint48[] memory renewPeriods = new uint48[](2);
+renewPeriods[0] = 30 days; // Monthly renewal
+renewPeriods[1] = 7 days; // Weekly renewal
+
+// Encode initialization data
+bytes memory initData = abi.encode(spenders, starts, limits, renewPeriods);
+
+// Install the module
+account.installModule(MODULE_TYPE_EXECUTOR, address(nativeSpender), initData);
+```
+
+<Callout>
+  The module requires that all arrays have the same length and aren't empty. Also, each `renewPeriod` must be greater
+  than zero.
+</Callout>
+
+Later on, any authorized spender can transfer native tokens using the `transferFrom` or `batchTransferFrom` functions:
+
+```solidity
+// Transfer 0.5 ETH from the account to a recipient
+address recipient = 0x1234...;
+uint256 amount = 0.5 ether;
+nativeSpender.transferFrom(address(account), recipient, amount);
+
+// Transfer to multiple recipients
+address[] memory recipients = new address[](3);
+recipients[0] = 0x1234...;
+recipients[1] = 0x5678...;
+recipients[2] = 0x9abc...;
+uint256[] memory amounts = new uint256[](3);
+amounts[0] = 0.2 ether;
+amounts[1] = 0.1 ether;
+amounts[2] = 0.2 ether; // Total: 0.5 ether
+nativeSpender.batchTransferFrom(address(account), recipients, amounts);
+```
+
+The `batchTransferFrom` relies on [ERC-7579 default execution type](../erc7579#execution-modes), which means that all transfers must succeed, otherwise the batch reverts completely.
+
+The module tracks the spending every period defined by the `renewPeriod` duration after the specified `startTime`. Users can check a spender's configuration and its current spending:
+
+```solidity
+// Get the spending configuration
+uint256 startTime = nativeSpender.start(account, spender);
+uint256 period = nativeSpender.renewPeriod(account, spender);
+uint256 limitAmount = nativeSpender.limit(account, spender);
+
+// Get the current period and spending information
+uint48 currentTime = uint48(block.timestamp);
+(uint256 periodStart, uint256 periodNumber) =
+    nativeSpender.periodAt(account, spender, currentTime);
+
+// Get spending for the current period
+(uint256 spent, uint256 available) =
+    nativeSpender.spendingAt(account, spender, periodNumber);
+```
+
+The module also tracks the list of spenders with a spending configuration for the account. Users can query the list of spenders:
+
+```solidity
+// Get the number of spenders
+uint256 count = nativeSpender.spendersCount(account);
+
+// Get all spenders
+address[] memory allSpenders = nativeSpender.spenders(account, 0, type(uint256).max);
+
+// Get a slice of spenders (e.g., first 10)
+address[] memory firstTenSpenders = nativeSpender.spenders(account, 0, 10);
+```
+
+<Callout>
+  Use `unsetSpendingConfig` to completely remove a spender from the configuration. This frees up storage and removes
+  the spender from the set.
+</Callout>
+
+#### Spending Configuration
+
+The account owner can update spending configurations at any time. Setting a new configuration creates new spending periods:
+
+```solidity
+// Set a new configuration with a future start time
+nativeSpender.setSpendingConfig(
+    spender,
+    uint48(block.timestamp + 1 days), // New start time
+    2 ether, // New limit
+    60 days  // New renewal period
+);
+
+// Or use the convenience overload to start immediately (uses current timestamp)
+nativeSpender.setSpendingConfig(
+    spender,
+    2 ether, // New limit
+    60 days  // New renewal period
+);
+```
+
+To remove a spender's configuration completely, use `unsetSpendingConfig`:
+
+```solidity
+// Remove a spender's configuration entirely
+nativeSpender.unsetSpendingConfig(spender);
+```
+
+<Callout>Setting a new start time creates new spending periods from that start, effectively resetting the spending tracking</Callout>
+
+<Callout type="idea">
+  To create a one-time spending limit that doesn't renew, users can call `setSpendingConfig` with a `renewPeriod` of
+  `type(uint48).max`.
+</Callout>
+
+### ERC7579ERC20Spender
+
+Manages spending limits for ERC20 tokens. Spenders can transfer ERC20 tokens from the account up to their configured limit per renewal period. To install the ERC20 spender module:
+
+```solidity
+import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
+import {ERC7579ERC20Spender} from "@open-accounts-framework/contracts/modules/executors/ERC7579ERC20Spender.sol";
+
+// Deploy the executor (singleton, can be reused)
+ERC7579ERC20Spender erc20Spender = new ERC7579ERC20Spender();
+
+// Configure token-spender pairs
+address[] memory tokens = new address[](3);
+tokens[0] = usdcAddress;
+tokens[1] = usdcAddress;
+tokens[2] = daiAddress;
+
+address[] memory spenders = new address[](3);
+spenders[0] = subscriptionService;
+spenders[1] = delegatedSpender;
+spenders[2] = recurringPaymentService;
+
+// Configure start times (when spending becomes active)
+uint48[] memory starts = new uint48[](3);
+starts[0] = uint48(block.timestamp); // Active immediately
+starts[1] = uint48(block.timestamp); // Active immediately
+starts[2] = uint48(block.timestamp + 7 days); // Active in 7 days
+
+// Configure spending limits per period
+uint160[] memory limits = new uint160[](3);
+limits[0] = 100e6; // 100 USDC (6 decimals)
+limits[1] = 50e6;  // 50 USDC per period
+limits[2] = 1000e18; // 1000 DAI per period (18 decimals)
+
+// Configure renewal periods
+uint48[] memory renewPeriods = new uint48[](3);
+renewPeriods[0] = 30 days; // Monthly renewal
+renewPeriods[1] = 7 days; // Weekly renewal
+renewPeriods[2] = 30 days; // Monthly renewal
+
+// Encode initialization data
+bytes memory initData = abi.encode(tokens, spenders, starts, limits, renewPeriods);
+
+// Install the module
+account.installModule(MODULE_TYPE_EXECUTOR, address(erc20Spender), initData);
+```
+
+<Callout>
+  The module requires that all arrays have the same length and aren't empty. Also, each `renewPeriod` must be greater
+  than zero and each `token` address must be a contract.
+</Callout>
+
+Later on, any authorized spender can transfer ERC20 tokens using the `transferFrom` or `batchTransferFrom` functions:
+
+```solidity
+// Transfer 50 USDC from the account to a recipient
+address token = usdcAddress;
+address recipient = 0x1234...;
+uint256 amount = 50e6; // 50 USDC (6 decimals)
+erc20Spender.transferFrom(address(account), token, recipient, amount);
+
+// Transfer USDC to multiple recipients
+address[] memory recipients = new address[](3);
+recipients[0] = 0x1234...;
+recipients[1] = 0x5678...;
+recipients[2] = 0x9abc...;
+uint256[] memory amounts = new uint256[](3);
+amounts[0] = 20e6; // 20 USDC
+amounts[1] = 10e6; // 10 USDC
+amounts[2] = 20e6; // 20 USDC (Total: 50 USDC)
+erc20Spender.batchTransferFrom(address(account), token, recipients, amounts);
+```
+
+The `batchTransferFrom` relies on [ERC-7579 default execution type](../erc7579#execution-modes), which means that all transfers must succeed, otherwise the batch reverts completely. The executor verifies that ERC20 transfers succeed by checking return values. Non-standard ERC20 tokens that don't return a boolean are supported (return value is optional).
+
+The module tracks the spending every period defined by the `renewPeriod` duration after the specified `startTime`. Users can check a spender's configuration and its current spending for a specific token:
+
+```solidity
+// Get the spending configuration
+uint256 startTime = erc20Spender.start(account, token, spender);
+uint256 period = erc20Spender.renewPeriod(account, token, spender);
+uint256 limitAmount = erc20Spender.limit(account, token, spender);
+
+// Get the current period and spending information
+uint48 currentTime = uint48(block.timestamp);
+(uint256 periodStart, uint256 periodNumber) =
+    erc20Spender.periodAt(account, token, spender, currentTime);
+
+// Get spending for the current period
+(uint256 spent, uint256 available) =
+    erc20Spender.spendingAt(account, token, spender, periodNumber);
+```
+
+The module also tracks the list of tokens with spending configurations and their respective spenders. Users can query these lists:
+
+```solidity
+// Get the number of tokens with spending configurations
+uint256 tokenCount = erc20Spender.tokensCount(account);
+
+// Get all tokens
+address[] memory allTokens = erc20Spender.tokens(account, 0, type(uint256).max);
+
+// Get a slice of tokens (e.g., first 5)
+address[] memory firstFiveTokens = erc20Spender.tokens(account, 0, 5);
+
+// Get the number of spenders for a specific token
+uint256 spenderCount = erc20Spender.spendersCount(account, token);
+
+// Get all spenders for a token
+address[] memory allSpenders = erc20Spender.spenders(account, token, 0, type(uint256).max);
+```
+
+<Callout>
+  Tokens and spenders are removed from their respective sets when using `unsetSpendingConfig`. If the last spender for a
+  token is removed, the token itself is also removed from the token list.
+</Callout>
+
+#### Spending Configuration
+
+The account owner can update spending configurations at any time for any token-spender pair. Setting a new configuration creates new spending periods:
+
+```solidity
+// Set a new configuration with a future start time
+erc20Spender.setSpendingConfig(
+    token,
+    spender,
+    uint48(block.timestamp + 1 days), // New start time
+    200e6, // New limit (200 USDC)
+    60 days  // New renewal period
+);
+
+// Or use the convenience overload to start immediately (uses current timestamp)
+erc20Spender.setSpendingConfig(
+    token,
+    spender,
+    200e6, // New limit (200 USDC)
+    60 days  // New renewal period
+);
+```
+
+To remove a token-spender configuration completely, use `unsetSpendingConfig`:
+
+```solidity
+// Remove a token-spender configuration entirely
+erc20Spender.unsetSpendingConfig(token, spender);
+```
+
+<Callout>Setting a new start time creates new spending periods from that start, effectively resetting the spending tracking</Callout>
+
+<Callout type="idea">
+  To create a one-time spending limit that doesn't renew, users can call `setSpendingConfig` with a `renewPeriod` of
+  `type(uint48).max`.
+</Callout>
