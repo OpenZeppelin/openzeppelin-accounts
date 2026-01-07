@@ -1,6 +1,7 @@
 ## 07-01-2026
 
 - `OpenAccountEnableMode`: Correctly validates UserOp signatures after successful module installation in enable mode. Previously, the contract would return success without validating the UserOp signature, allowing an attacker with a valid installation signature to execute arbitrary operations.
+- The `execute` function of `ERC7579Executor` is now `payable` and forwards the payment to the account.
 
 ## 06-01-2026
 
