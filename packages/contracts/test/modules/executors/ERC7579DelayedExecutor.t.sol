@@ -138,7 +138,11 @@ contract ERC7579DelayedExecutorTest is Test {
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(initialDelay, expiration);
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         vm.prank(address(_account));
         _delayedExecutor.onUninstall("");
