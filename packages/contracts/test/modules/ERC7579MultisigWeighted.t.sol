@@ -2,16 +2,13 @@
 pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
+import {Mode} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {ERC7579Multisig} from "../../src/modules/ERC7579Multisig.sol";
 import {ERC7579MultisigWeighted} from "../../src/modules/ERC7579MultisigWeighted.sol";
 import {CallReceiverMock} from "../../src/mocks/CallReceiverMock.sol";
-import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {OpenAccount} from "../../src/OpenAccount.sol";
-
-contract OpenAccountMock is OpenAccount {
-    constructor() EIP712("TestAccount", "1") {}
-}
+import {OpenAccountFactory} from "../../src/OpenAccountFactory.sol";
 
 contract ERC7579MultisigWeightedMock is ERC7579MultisigWeighted {
     function isModuleType(uint256) public pure override returns (bool) {
@@ -23,6 +20,7 @@ contract ERC7579MultisigWeightedTest is Test {
     CallReceiverMock private _target;
     ERC7579MultisigWeightedMock private _multisig;
     OpenAccount private _account;
+    OpenAccountFactory private _factory;
 
     function setUp() public {
         // Deploy target contract
@@ -31,8 +29,8 @@ contract ERC7579MultisigWeightedTest is Test {
         // Deploy weighted multisig
         _multisig = new ERC7579MultisigWeightedMock();
 
-        // Deploy account
-        _account = new OpenAccountMock();
+        // Deploy factory
+        _factory = new OpenAccountFactory();
     }
 
     function testWeightedMultisigInstallation(uint64 numSigners) public {
@@ -41,7 +39,16 @@ contract ERC7579MultisigWeightedTest is Test {
         (, bytes[] memory signers) = _buildSigners(numSigners);
         (uint64[] memory weights, uint64 totalWeight) = _buildWeights(numSigners);
 
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), abi.encode(signers, totalWeight, weights));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(signers, totalWeight, weights);
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         assertEq(_multisig.getSignerCount(address(_account)), numSigners);
         assertEq(_multisig.threshold(address(_account)), totalWeight);
@@ -59,7 +66,16 @@ contract ERC7579MultisigWeightedTest is Test {
 
         (, bytes[] memory signers) = _buildSigners(numSigners);
         (uint64[] memory weights, uint64 totalWeight) = _buildWeights(numSigners);
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), abi.encode(signers, totalWeight, weights));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(signers, totalWeight, weights);
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         (, bytes[] memory signersToUpdate) = _buildSigners(updateCount);
         (uint64[] memory newWeights, uint64 updatedNewTotalWeight) = _buildWeights(updateCount);
@@ -86,7 +102,16 @@ contract ERC7579MultisigWeightedTest is Test {
         (, bytes[] memory signers) = _buildSigners(initialSigners);
         (uint64[] memory weights, uint64 totalWeight) = _buildWeights(initialSigners);
 
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), abi.encode(signers, totalWeight, weights));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(signers, totalWeight, weights);
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         uint64 initialTotalWeight = _multisig.totalWeight(address(_account));
 
@@ -111,7 +136,16 @@ contract ERC7579MultisigWeightedTest is Test {
         (, bytes[] memory signers) = _buildSigners(totalSigners);
         (uint64[] memory weights, uint64 totalWeight) = _buildWeights(totalSigners);
 
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), abi.encode(signers, totalWeight, weights));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(signers, totalWeight, weights);
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         uint64 removedWeight = 0;
         (, bytes[] memory signersToRemove) = _buildSigners(removeCount);
@@ -140,7 +174,16 @@ contract ERC7579MultisigWeightedTest is Test {
 
         (, bytes[] memory signers) = _buildSigners(numSigners);
         (uint64[] memory weights, uint64 totalWeight) = _buildWeights(numSigners);
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), abi.encode(signers, totalWeight, weights));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(signers, totalWeight, weights);
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         assertEq(_multisig.threshold(address(_account)), totalWeight);
 
@@ -156,7 +199,16 @@ contract ERC7579MultisigWeightedTest is Test {
         (, bytes[] memory signers) = _buildSigners(numSigners);
         (uint64[] memory weights, uint64 totalWeight) = _buildWeights(numSigners);
         vm.assume(newThreshold > totalWeight);
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), abi.encode(signers, totalWeight, weights));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(signers, totalWeight, weights);
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         vm.prank(address(_account));
         vm.expectRevert(
@@ -172,7 +224,16 @@ contract ERC7579MultisigWeightedTest is Test {
     function testRevertZeroThreshold() public {
         (, bytes[] memory signers) = _buildSigners(1);
         (uint64[] memory weights, uint64 totalWeight) = _buildWeights(1);
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), abi.encode(signers, totalWeight, weights));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(signers, totalWeight, weights);
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         vm.prank(address(_account));
         vm.expectRevert(ERC7579Multisig.ERC7579MultisigZeroThreshold.selector);
@@ -187,13 +248,31 @@ contract ERC7579MultisigWeightedTest is Test {
         signers[0] = invalidSigner;
 
         vm.expectRevert(abi.encodeWithSelector(ERC7579Multisig.ERC7579MultisigInvalidSigner.selector, invalidSigner));
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), abi.encode(signers, totalWeight, weights));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(signers, totalWeight, weights);
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
     }
 
     function testRevertAlreadyExistsSigner() public {
         (, bytes[] memory signers) = _buildSigners(1);
         (uint64[] memory weights, uint64 totalWeight) = _buildWeights(1);
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), abi.encode(signers, totalWeight, weights));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(signers, totalWeight, weights);
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         vm.prank(address(_account));
         vm.expectRevert(abi.encodeWithSelector(ERC7579Multisig.ERC7579MultisigAlreadyExists.selector, signers[0]));
@@ -203,7 +282,16 @@ contract ERC7579MultisigWeightedTest is Test {
     function testRevertNonexistentSigner() public {
         (, bytes[] memory signers) = _buildSigners(1);
         (uint64[] memory weights, uint64 totalWeight) = _buildWeights(1);
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), abi.encode(signers, totalWeight, weights));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(signers, totalWeight, weights);
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         (, bytes[] memory nonexistentSigners) = _buildSigners(1, 999);
 
@@ -218,7 +306,16 @@ contract ERC7579MultisigWeightedTest is Test {
         // Setup one signer
         (, bytes[] memory signers) = _buildSigners(1);
         (uint64[] memory weights, uint64 totalWeight) = _buildWeights(1);
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), abi.encode(signers, totalWeight, weights));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(signers, totalWeight, weights);
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         weights[0] = 0;
 
@@ -238,7 +335,16 @@ contract ERC7579MultisigWeightedTest is Test {
         uint64[] memory weights;
         uint64 totalWeight;
         (weights, totalWeight) = _buildWeights(1);
-        _account.initialize(MODULE_TYPE_VALIDATOR, address(_multisig), abi.encode(signers, totalWeight, weights));
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(signers, totalWeight, weights);
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
 
         (, bytes[] memory signersToUpdate) = _buildSigners(signersLength);
         weights = new uint64[](weightsLength);
@@ -275,5 +381,19 @@ contract ERC7579MultisigWeightedTest is Test {
             totalWeight += weights[i];
         }
         return (weights, totalWeight);
+    }
+
+    function _buildInstallationModules(
+        bytes[] memory signers,
+        uint64 threshold,
+        uint64[] memory weights
+    ) private view returns (uint256[] memory moduleTypeIds, address[] memory modules, bytes[] memory initDatas) {
+        moduleTypeIds = new uint256[](1);
+        modules = new address[](1);
+        initDatas = new bytes[](1);
+        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
+        modules[0] = address(_multisig);
+        initDatas[0] = abi.encode(signers, threshold, weights);
+        return (moduleTypeIds, modules, initDatas);
     }
 }
