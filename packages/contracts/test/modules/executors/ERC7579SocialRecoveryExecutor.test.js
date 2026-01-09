@@ -358,6 +358,26 @@ describe('ERC7579SocialRecoveryExecutor', function () {
           this.mock.startRecovery(this.mockAccount.address, salt, this.mode, this.calldata, multisignature),
         ).to.be.revertedWithCustomError(this.mock, 'ERC7579SocialRecoveryExecutorInvalidSchedule');
       });
+
+      it('reverts when trying to schedule duplicate operation', async function () {
+        const domain = await getDomain(this.mockAccount);
+        const multiGuardianSigner = new NonNativeSigner(new MultiERC7913SigningKey([guardian1, guardian2]));
+        const multisignature = await multiGuardianSigner.signTypedData(
+          domain,
+          { ScheduleRecover },
+          {
+            salt: salt,
+            mode: this.mode,
+            recoveryCalldata: this.calldata,
+          },
+        );
+
+        await this.mock.startRecovery(this.mockAccount.address, salt, this.mode, this.calldata, multisignature);
+
+        await expect(
+          this.mock.startRecovery(this.mockAccount.address, salt, this.mode, this.calldata, multisignature),
+        ).to.be.revertedWithCustomError(this.mock, 'ERC7579ExecutorUnexpectedOperationState');
+      });
     });
 
     describe('executeRecovery', function () {
@@ -411,6 +431,15 @@ describe('ERC7579SocialRecoveryExecutor', function () {
         )
           .to.emit(this.target, 'MockFunctionCalledWithArgs')
           .withArgs(...this.args);
+      });
+
+      it('reverts when trying to execute already-executed operation', async function () {
+        await time.increase(this.delay);
+        await this.mock.executeRecovery(this.mockAccount.address, salt, this.mode, this.calldata);
+
+        await expect(
+          this.mock.executeRecovery(this.mockAccount.address, salt, this.mode, this.calldata),
+        ).to.be.revertedWithCustomError(this.mock, 'ERC7579ExecutorUnexpectedOperationState');
       });
     });
 
@@ -536,6 +565,77 @@ describe('ERC7579SocialRecoveryExecutor', function () {
         await expect(
           this.mock.connect(this.other).cancelRecovery(this.mockAccount.address, salt, this.mode, this.calldata),
         ).to.be.reverted;
+      });
+
+      it('reverts when trying to cancel already-canceled operation', async function () {
+        await this.mockFromAccount.cancelRecovery(this.mockAccount.address, salt, this.mode, this.calldata);
+
+        await expect(
+          this.mockFromAccount.cancelRecovery(this.mockAccount.address, salt, this.mode, this.calldata),
+        ).to.be.revertedWithCustomError(this.mock, 'ERC7579ExecutorUnexpectedOperationState');
+      });
+
+      it('reverts when trying to cancel after execution', async function () {
+        await time.increase(this.delay);
+        await this.mock.executeRecovery(this.mockAccount.address, salt, this.mode, this.calldata);
+
+        await expect(
+          this.mockFromAccount.cancelRecovery(this.mockAccount.address, salt, this.mode, this.calldata),
+        ).to.be.revertedWithCustomError(this.mock, 'ERC7579ExecutorUnexpectedOperationState');
+      });
+    });
+
+    describe('multiple concurrent recovery operations', function () {
+      it('can schedule multiple operations with different salts', async function () {
+        const salt1 = ethers.id('salt1');
+        const salt2 = ethers.id('salt2');
+
+        const domain = await getDomain(this.mockAccount);
+        const multiGuardianSigner = new NonNativeSigner(new MultiERC7913SigningKey([guardian1, guardian2]));
+
+        // Schedule first operation
+        const sig1 = await multiGuardianSigner.signTypedData(
+          domain,
+          { ScheduleRecover },
+          {
+            salt: salt1,
+            mode: this.mode,
+            recoveryCalldata: this.calldata,
+          },
+        );
+        await this.mock.startRecovery(this.mockAccount.address, salt1, this.mode, this.calldata, sig1);
+
+        // Schedule second operation
+        const sig2 = await multiGuardianSigner.signTypedData(
+          domain,
+          { ScheduleRecover },
+          {
+            salt: salt2,
+            mode: this.mode,
+            recoveryCalldata: this.calldata,
+          },
+        );
+        await this.mock.startRecovery(this.mockAccount.address, salt2, this.mode, this.calldata, sig2);
+
+        // Both should be in Scheduled state
+        await expect(this.mock.state(this.mockAccount.address, salt1, this.mode, this.calldata)).to.eventually.equal(
+          ERC7579OperationState.Scheduled,
+        );
+        await expect(this.mock.state(this.mockAccount.address, salt2, this.mode, this.calldata)).to.eventually.equal(
+          ERC7579OperationState.Scheduled,
+        );
+
+        // Execute both
+        await time.increase(this.delay);
+        await this.mock.executeRecovery(this.mockAccount.address, salt1, this.mode, this.calldata);
+        await this.mock.executeRecovery(this.mockAccount.address, salt2, this.mode, this.calldata);
+
+        await expect(this.mock.state(this.mockAccount.address, salt1, this.mode, this.calldata)).to.eventually.equal(
+          ERC7579OperationState.Executed,
+        );
+        await expect(this.mock.state(this.mockAccount.address, salt2, this.mode, this.calldata)).to.eventually.equal(
+          ERC7579OperationState.Executed,
+        );
       });
     });
   });
