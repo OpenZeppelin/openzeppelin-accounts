@@ -206,7 +206,7 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
     }
 
     /**
-     * @dev Generates the EIP-712 typed data hash for a operation using the `typehash` and the
+     * @dev Generates the EIP-712 typed data hash for an operation using the `typehash` and the
      * `account`'s domain separator.
      *
      * The typed data structure includes:

@@ -371,7 +371,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
     }
 
     /**
-     * @dev Check that the current state of a operation matches the requirements described by the `allowedStates` bitmap.
+     * @dev Check that the current state of an operation matches the requirements described by the `allowedStates` bitmap.
      * This bitmap should be built using {_encodeStateBitmap}.
      *
      * If requirements are not met, reverts with a {ERC7579ExecutorUnexpectedOperationState} error.

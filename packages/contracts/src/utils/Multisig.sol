@@ -85,7 +85,7 @@ library Multisig {
         return (signingSigners, signatures);
     }
 
-    /// @dev Returns empty bytes32 array.
+    /// @dev Returns empty bytes[] array.
     function _emptyBytesArray() private pure returns (bytes[] calldata result) {
         assembly ("memory-safe") {
             result.offset := 0
