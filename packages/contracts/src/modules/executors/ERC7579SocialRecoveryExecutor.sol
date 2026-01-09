@@ -20,7 +20,7 @@ import {ERC7579MultisigWeighted} from "../ERC7579MultisigWeighted.sol";
  * the account's domain separator and provide it to the {startRecovery} function. Once scheduled,
  * operations must wait for the configured delay period before becoming executable via {executeRecovery}.
  *
- * Operations can be canceled by either the account itself or by guardians via {cancelRecovery}
+ * Operations can be canceled either by the account itself or by guardians via {cancelRecovery}
  * with a valid multisignature.
  *
  * See {ERC7579DelayedExecutor} and {ERC7579MultisigWeighted} for more details.
@@ -165,7 +165,7 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
     /**
      * @dev Cancels a social recovery operation.
      *
-     * This function allows either the account itself or guardians with valid multisignature
+     * This function allows either the account itself or guardians with a valid multisignature
      * authorization to cancel a scheduled recovery operation. If the caller is not the account,
      * the `multisignature` must contain valid guardian signatures over the {CANCEL_RECOVER_TYPEHASH}
      * typed data hash using the account's domain separator.
