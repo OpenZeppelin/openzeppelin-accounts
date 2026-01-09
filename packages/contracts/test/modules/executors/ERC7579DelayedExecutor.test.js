@@ -177,6 +177,44 @@ describe('ERC7579DelayedExecutor', function () {
       .withArgs(this.mockAccount.address, 0);
   });
 
+  it('enforces minSetback when reinstalling before delay reset completes', async function () {
+    const delay = time.duration.days(7);
+    const installData = solidityPacked(['uint32', 'uint32'], [delay, this.expiration]);
+
+    await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, installData);
+    const [initialDelay] = await this.mock.getDelay(this.mockAccount.address);
+    expect(initialDelay).to.equal(delay);
+
+    // Uninstall schedules delay reset to 0 after minSetback
+    await this.mockAccountFromEntrypoint.uninstallModule(this.moduleType, this.mock.target, '0x');
+
+    // Immediately reinstall with a shorter delay before the reset completes
+    const minSetback = await this.mock.minSetback();
+    const newDelay = time.duration.days(4);
+    const newInstallData = solidityPacked(['uint32', 'uint32'], [newDelay, this.expiration]);
+
+    const tx = await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, newInstallData);
+
+    const now = await time.latest();
+    const expectedEffectTime = BigInt(now) + minSetback; // Instead of 7 - 4 = 3 days, it is 5 days
+    await expect(tx)
+      .to.emit(this.mock, 'ERC7579ExecutorDelayUpdated')
+      .withArgs(this.mockAccount.address, newDelay, expectedEffectTime);
+
+    await expect(this.mock.getDelay(this.mockAccount.address)).to.eventually.deep.equal([
+      initialDelay, // Still the old 10 day delay
+      newDelay, // New 4 day delay pending
+      expectedEffectTime, // Takes effect after max(minSetback, delay difference)
+    ]);
+
+    await time.increase(minSetback);
+    await expect(this.mock.getDelay(this.mockAccount.address)).to.eventually.deep.equal([
+      newDelay, // New 4 day delay
+      0, // No pending delay
+      0, // No effect time
+    ]);
+  });
+
   it('schedules a delay update', async function () {
     await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
 

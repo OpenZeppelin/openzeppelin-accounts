@@ -130,6 +130,39 @@ contract ERC7579DelayedExecutorTest is Test {
         assertEq(_delayedExecutor.getExpiration(address(_account)), 0);
     }
 
+    function testReinstallEnforcesMinSetback(uint32 initialDelay, uint32 expiration, uint32 newDelay) public {
+        vm.assume(initialDelay > 0);
+
+        (
+            uint256[] memory moduleTypeIds,
+            address[] memory modules,
+            bytes[] memory initDatas
+        ) = _buildInstallationModules(initialDelay, expiration);
+        _account = OpenAccount(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
+
+        vm.prank(address(_account));
+        _delayedExecutor.onUninstall("");
+
+        uint48 reinstallTime = uint48(block.timestamp);
+
+        vm.prank(address(_account));
+        _delayedExecutor.onInstall(abi.encodePacked(newDelay, expiration));
+
+        (uint32 delay, uint32 pendingDelay, uint48 effectTime) = _delayedExecutor.getDelay(address(_account));
+        assertEq(delay, initialDelay);
+        assertEq(pendingDelay, newDelay);
+        assertEq(
+            effectTime,
+            reinstallTime +
+                // At least minSetback is used
+                uint32(Math.max(_delayedExecutor.minSetback(), initialDelay > newDelay ? initialDelay - newDelay : 0))
+        );
+    }
+
     function testOperationStates(uint32 initialDelay, uint32 initialExpiration, bytes32 salt) public {
         vm.assume(initialDelay > 0);
         vm.assume(initialExpiration > 0);

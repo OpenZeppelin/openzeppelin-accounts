@@ -56,9 +56,6 @@ contract ERC7579ECDSAValidator is ERC7579Validator {
      * * The `data` must contain a valid signer address. Reverts with {ERC7579ECDSAValidatorInvalidSigner} if not.
      * * The `account` must have no signer installed. Reverts with {ERC7579ECDSAValidatorAlreadyInstalled} if not.
      *
-     * NOTE: An account can only set a signer once. If called directly by an account
-     * that already has a signer configured, this function will behave as a no-op.
-     *
      * Emits a {ERC7579ECDSAValidatorSignerSet} event if the signer is set.
      */
     function onInstall(bytes calldata data) public virtual override {

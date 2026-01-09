@@ -42,7 +42,8 @@ contract ERC7579ExecutorTest is Test {
         _factory = new OpenAccountFactory();
     }
 
-    function testExecute(uint256 arg1, uint256 arg2) public {
+    function testExecute(uint256 arg1, uint256 arg2, uint256 value) public {
+        value = bound(value, 0, MAX_ETH);
         (
             uint256[] memory moduleTypeIds,
             address[] memory modules,
@@ -53,6 +54,7 @@ contract ERC7579ExecutorTest is Test {
                 _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
             )
         );
+        vm.deal(address(_account), value);
 
         bytes32 salt = bytes32(0);
         bytes32 mode = Mode.unwrap(
@@ -65,7 +67,7 @@ contract ERC7579ExecutorTest is Test {
 
         bytes memory data = abi.encodePacked(
             address(_target),
-            uint256(0),
+            value,
             abi.encodeCall(CallReceiverMock.mockFunctionWithArgs, (arg1, arg2))
         );
 
@@ -75,11 +77,13 @@ contract ERC7579ExecutorTest is Test {
         vm.expectEmit(true, true, true, true);
         emit CallReceiverMock.MockFunctionCalledWithArgs(arg1, arg2);
 
-        bytes[] memory returnData = _executor.execute(address(_account), salt, mode, data);
+        vm.deal(address(this), value);
+        bytes[] memory returnData = _executor.execute{value: value}(address(_account), salt, mode, data);
         assertEq(returnData.length, 1);
     }
 
-    function testExecuteBatch(uint256 arg1, uint256 arg2, uint256 value1) public {
+    function testExecuteBatch(uint256 arg1, uint256 arg2, uint256 value) public {
+        value = bound(value, 0, MAX_ETH);
         (
             uint256[] memory moduleTypeIds,
             address[] memory modules,
@@ -90,7 +94,6 @@ contract ERC7579ExecutorTest is Test {
                 _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
             )
         );
-        vm.deal(address(_account), value1);
 
         bytes32 salt = bytes32(0);
         bytes32 mode = Mode.unwrap(
@@ -105,7 +108,7 @@ contract ERC7579ExecutorTest is Test {
         Execution[] memory execution = new Execution[](2);
         execution[0] = Execution({
             target: address(_target),
-            value: value1,
+            value: value,
             callData: abi.encodeCall(CallReceiverMock.mockFunctionExtra, ())
         });
         execution[1] = Execution({
@@ -121,11 +124,13 @@ contract ERC7579ExecutorTest is Test {
 
         vm.expectEmit(true, true, true, true);
         emit CallReceiverMock.MockFunctionCalledWithArgs(arg1, arg2);
+        emit CallReceiverMock.MockFunctionCalledExtra(address(_account), value);
 
         vm.expectCall(address(_target), execution[0].callData);
         vm.expectCall(address(_target), execution[1].callData);
 
-        bytes[] memory returnData = _executor.execute(address(_account), salt, mode, data);
+        vm.deal(address(this), value);
+        bytes[] memory returnData = _executor.execute{value: value}(address(_account), salt, mode, data);
         assertEq(returnData.length, 2);
     }
 
