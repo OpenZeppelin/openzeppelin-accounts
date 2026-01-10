@@ -40,8 +40,8 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * TIP: Use {_scheduleAt} to schedule operations at specific points in time. This is
  * useful to pre-schedule operations for non-deployed accounts (e.g. subscriptions).
  *
- * NOTE: Execution is not restricted by default once the operation is ready.
- * See {_execute} for more details.
+ * NOTE: Scheduling, executing and cancelling doesn't have any access control by default
+ * and should be validated accordingly while extending this contract.
  *
  * NOTE: Target addresses of an operation may return an arbitrary large amount of data, which
  * may cause the operation to fail due to insufficient gas. Consider that a target could return
@@ -323,6 +323,8 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      * Requirements:
      *
      * * The operation must be `Ready`.
+     *
+     * NOTE: This function does not have any access control validation.
      */
     function _execute(
         address account,

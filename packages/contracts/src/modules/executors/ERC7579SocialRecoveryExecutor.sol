@@ -11,7 +11,7 @@ import {ERC7579MultisigWeighted} from "../ERC7579MultisigWeighted.sol";
 /**
  * @dev Social recovery executor module for ERC-7579 accounts.
  *
- * This module combines weighted multisignature validation with time-delayed execution to provide
+ * This module combines weighted multisignatures with time-delayed execution to provide
  * a secure and flexible social recovery mechanism. Trusted guardians can collectively schedule
  * recovery operations, which execute after a security delay, giving the legitimate account owner
  * time to detect and cancel malicious recovery attempts.
