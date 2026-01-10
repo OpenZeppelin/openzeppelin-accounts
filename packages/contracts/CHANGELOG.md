@@ -1,3 +1,8 @@
+## 09-01-2026
+
+- Add `ERC7579SocialRecoveryExecutor` contract module, combining weighted multisignatures with time-delayed execution to provide a secure social recovery mechanism. Trusted guardians can collectively schedule recovery operations, which execute after a security delay, giving the account owner time to detect and cancel malicious recovery attempts.
+- Add `Multisig` utility library to decode multisignatures.
+
 ## 07-01-2026
 
 - `OpenAccountEnableMode`: Correctly validates UserOp signatures after successful module installation in enable mode. Previously, the contract would return success without validating the UserOp signature, allowing an attacker with a valid installation signature to execute arbitrary operations.

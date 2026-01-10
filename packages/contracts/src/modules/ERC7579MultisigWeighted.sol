@@ -60,7 +60,7 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
      * {ERC7579MultisigAlreadyInstalled}.
      *
      * NOTE: This function skips `super.onInstall` to avoid setting the threshold during installation
-     * since it can be greater than the total amount of signers. This functions adds the signers, sets the weights,
+     * since it can be greater than the total amount of signers. This function adds the signers, sets the weights,
      * and sets the threshold.
      *
      * Requirements:
