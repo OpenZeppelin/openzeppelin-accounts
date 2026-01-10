@@ -13,7 +13,7 @@ abstract contract ERC7579MultisigValidator is ERC7579Multisig, ERC7579Validator 
      * @dev Returns whether the number of valid signatures meets or exceeds the
      * threshold set for the target account.
      *
-     * See {_decodeValidationSignature} for the encoding details.
+     * See {Multisig-tryDecodeMultisignatureCalldata} for the encoding details.
      *
      * Where `signingSigners` are the authorized signers and signatures are their corresponding
      * signatures of the operation `hash`.

@@ -55,6 +55,14 @@ library Multisig {
         // Get the signatures array length
         uint256 signaturesLength = uint256(bytes32(multisignature[signaturesOffset:signaturesDataOffset]));
 
+        // Validate array lengths are within bounds
+        if (
+            signersOffset + signersLength * 0x20 > multisignature.length ||
+            signaturesOffset + signaturesLength * 0x20 > multisignature.length
+        ) {
+            return (false, _emptyBytesArray(), _emptyBytesArray());
+        }
+
         // Set up the calldata slices for both arrays
         assembly ("memory-safe") {
             signingSigners.offset := add(multisignature.offset, signersDataOffset)
