@@ -22,7 +22,7 @@ import {WebAuthn} from "@openzeppelin/contracts/utils/cryptography/WebAuthn.sol"
  * account.installModule(MODULE_TYPE_VALIDATOR, validatorAddress, initData);
  * ```
  */
-abstract contract ERC7579WebAuthnValidator is ERC7579P256Validator {
+contract ERC7579WebAuthnValidator is ERC7579P256Validator {
     /**
      * @dev Validates a signature against the configured signer for the account.
      *

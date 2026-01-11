@@ -9,15 +9,15 @@ Executor modules enable accounts to execute operations through a callback mechan
 
 **`ERC7579Executor`** is the abstract base contract for all executor modules. It provides:
 
-- Execution functionality via `execute(address account, bytes32 salt, bytes32 mode, bytes calldata data)`
+- Core execution functionality via the internal `_execute` function
 - Integration with ERC-7579's `executeFromExecutor` interface
-- A hook for custom validation logic via `_validateExecution`
+- Full flexibility for implementing custom validation and access control
 
 Developers extending this base contract must implement:
 
 - `onInstall(bytes calldata data)`: Initialize the executor with account-specific configuration
 - `onUninstall(bytes calldata data)`: Clean up executor state
-- `_validateExecution(address account, bytes32 salt, bytes32 mode, bytes calldata data)`: Custom validation logic before execution
+- A public `execute` function (or similar) that implements validation logic and calls `_execute`
 
 ## Available Executors
 
@@ -25,14 +25,14 @@ The framework provides the following executor implementations:
 
 ### ERC7579Executor
 
-A basic executor that executes operations immediately without delay or expiration mechanisms. This is suitable for simple execution patterns where operations should execute right away.
+A basic executor base contract that provides the core `_execute` function for immediate execution. This contract does not include any built-in validation or access control, developers must implement their own `execute` function with appropriate security measures.
 
 **Key Features:**
 
-- Immediate execution
-- Custom validation via `_validateExecution` hook
+- Internal `_execute` function for operation execution
 - Salt-based operation identification
 - Support for all ERC-7579 execution modes
+- Full flexibility for custom validation and access control
 
 <Callout>
 This is an abstract contract. You need to create a concrete implementation:
@@ -47,16 +47,17 @@ contract MyExecutor is ERC7579Executor {
     // Cleanup logic
   }
 
-  function _validateExecution(
+  function execute(
     address account,
     bytes32 salt,
     bytes32 mode,
     bytes calldata data
-  ) internal override returns (bytes calldata) {
-    // Custom validation logic
-    // Can extract additional data from `data` (e.g., signatures)
-    // Return the execution calldata to use
-    return data;
+  ) public returns (bytes[] memory) {
+    // Implement your validation logic here
+    // e.g., require(msg.sender == account, "unauthorized");
+    
+    // Call the internal _execute function
+    return _execute(account, salt, mode, executionCalldata);
   }
 }
 ```
@@ -74,13 +75,15 @@ import {ERC7579Executor} from "@open-accounts-framework/contracts/modules/execut
 contract MyExecutor is ERC7579Executor {
     function onInstall(bytes calldata) public override {}
     function onUninstall(bytes calldata) public override {}
-    function _validateExecution(
-        address,
-        bytes32,
-        bytes32,
+    
+    function execute(
+        address account,
+        bytes32 salt,
+        bytes32 mode,
         bytes calldata data
-    ) internal pure override returns (bytes calldata) {
-        return data; // No access control for educational purposes
+    ) public returns (bytes[] memory) {
+        // No access control for educational purposes.
+        return _execute(account, salt, mode, data);
     }
 }
 
@@ -92,7 +95,7 @@ bytes memory initData = "";
 account.installModule(MODULE_TYPE_EXECUTOR, address(executor), initData);
 ```
 
-To execute operatios through the module:
+To execute operations through the module:
 
 ```solidity
 // Execute an operation
@@ -100,32 +103,35 @@ bytes32 salt = keccak256("unique-operation-id");
 bytes32 mode = /* ERC-7579 execution mode */;
 bytes calldata executionData = /* calldata to execute */;
 
-bytes[] memory returnData = executor.execute(account, salt, mode, executionData);
+bytes[] memory returnData = executor.execute(address(account), salt, mode, executionData);
 ```
 
 ### ERC7579DelayedExecutor
 
-An executor that supports time-delayed execution with expiration. Operations are scheduled and must wait for a delay period before becoming executable. This provides a security window to cancel suspicious operations.
+An executor base contract that provides scheduling infrastructure for time-delayed execution with expiration. Operations are scheduled and must wait for a delay period before becoming executable. This provides a security window to cancel suspicious operations.
+
+Developers must implement their own `schedule`, `cancel`, and `execute` functions with appropriate validation and access control logic, then call the internal `_schedule`, `_cancel`, and `_execute` functions.
 
 **Key Features:**
 
-- Time-delayed execution (operations scheduled with a delay period)
+- Internal functions for scheduling (`_schedule`, `_scheduleAt`) and cancellation (`_cancel`)
+- Time-delayed execution with configurable delay periods
 - Expiration mechanism (operations expire if not executed in time)
 - Security window for canceling operations
-- Configurable delay and expiration periods
-- Operation state tracking (Scheduled, Ready, Expired, Executed, Canceled)
+- Operation state tracking (Unknown, Scheduled, Ready, Expired, Executed, Canceled)
+- Full flexibility for custom validation and access control
 
 **Operation Lifecycle:**
 
 ```mermaid
 stateDiagram-v2
     [*] --> Unknown: Operation not scheduled
-    Unknown --> Scheduled: schedule()
+    Unknown --> Scheduled: _schedule()
     Scheduled --> Ready: Delay period elapses
-    Scheduled --> Canceled: cancel()
-    Ready --> Executed: execute()
+    Scheduled --> Canceled: _cancel()
+    Ready --> Executed: _execute()
     Ready --> Expired: Expiration period elapses
-    Ready --> Canceled: cancel()
+    Ready --> Canceled: _cancel()
     Executed --> [*]
     Expired --> [*]
     Canceled --> [*]
@@ -148,12 +154,43 @@ This is an abstract contract. You need to create a concrete implementation:
 
 ```solidity
 contract MyDelayedExecutor is ERC7579DelayedExecutor {
-  function _validateSchedule(address account, bytes32 salt, bytes32 mode, bytes calldata data) internal override {
-    // Authorization logic for scheduling (e.g., require(msg.sender == account))
+  function schedule(
+    address account,
+    bytes32 salt,
+    bytes32 mode,
+    bytes calldata data
+  ) public {
+    // Implement authorization logic for scheduling
+    // e.g., require(msg.sender == account, "unauthorized");
+    
+    // Call the internal _schedule function
+    _schedule(account, salt, mode, data);
   }
 
-  function _validateCancel(address account, bytes32 salt, bytes32 mode, bytes calldata data) internal override {
-    // Authorization logic for canceling (e.g., require(msg.sender == account))
+  function cancel(
+    address account,
+    bytes32 salt,
+    bytes32 mode,
+    bytes calldata data
+  ) public {
+    // Implement authorization logic for canceling
+    // e.g., require(msg.sender == account, "unauthorized");
+    
+    // Call the internal _cancel function
+    _cancel(account, salt, mode, data);
+  }
+
+  function execute(
+    address account,
+    bytes32 salt,
+    bytes32 mode,
+    bytes calldata data
+  ) public returns (bytes[] memory) {
+    // Optionally implement authorization logic for execution
+    // Note: _execute already checks that the operation is Ready
+    
+    // Call the internal _execute function
+    return _execute(account, salt, mode, data);
   }
 }
 ```
@@ -169,12 +206,34 @@ import {ERC7579DelayedExecutor} from "@open-accounts-framework/contracts/modules
 // Create a concrete dummy implementation
 // WARNING: Do not use in production since it doesn't implement access control
 contract MyDelayedExecutor is ERC7579DelayedExecutor {
-    function _validateSchedule(address, bytes32, bytes32, bytes calldata) internal override {
-      // Empty for educational purposes
+    function schedule(
+        address account,
+        bytes32 salt,
+        bytes32 mode,
+        bytes calldata data
+    ) public {
+        // No access control for educational purposes.
+        _schedule(account, salt, mode, data);
     }
 
-    function _validateCancel(address, bytes32, bytes32, bytes calldata) internal override {
-      // Empty for educational purposes
+    function cancel(
+        address account,
+        bytes32 salt,
+        bytes32 mode,
+        bytes calldata data
+    ) public {
+        // No access control for educational purposes.
+        _cancel(account, salt, mode, data);
+    }
+
+    function execute(
+        address account,
+        bytes32 salt,
+        bytes32 mode,
+        bytes calldata data
+    ) public returns (bytes[] memory) {
+        // No access control for educational purposes.
+        return _execute(account, salt, mode, data);
     }
 }
 
@@ -199,37 +258,38 @@ bytes32 mode = /* ERC-7579 execution mode */;
 bytes calldata executionData = /* calldata to execute the operation */;
 
 // Schedule the operation
-executor.schedule(account, salt, mode, executionData);
+executor.schedule(address(account), salt, mode, executionData);
 ```
 
 You can check the current state of the scheduled operation and retrieve timestamps:
 
 ```solidity
 // Query the state of the operation
-ERC7579DelayedExecutor.OperationState state =
-    executor.state(account, salt, mode, executionData);
-// State will be one of: Scheduled, Ready, Expired, Executed, or Canceled
+ERC7579DelayedExecutor.OperationState operationState =
+    executor.state(address(account), salt, mode, executionData);
+// State will be one of: Unknown, Scheduled, Ready, Expired, Executed, or Canceled
 
 // Get timestamps for scheduled, executable, and expiration times
 (uint48 scheduledAt, uint48 executableAt, uint48 expiresAt) =
-    executor.getSchedule(account, salt, mode, executionData);
+    executor.getSchedule(address(account), salt, mode, executionData);
 ```
 
 Once the delay has elapsed and the state becomes `Ready`, you can execute the scheduled operation. Attempting to execute too early or after expiration will revert.
 
 ```solidity
 // If the operation is ready, execute it
-if (state == ERC7579DelayedExecutor.OperationState.Ready) {
-    bytes[] memory returnData = executor.execute(account, salt, mode, executionData);
+if (operationState == ERC7579DelayedExecutor.OperationState.Ready) {
+    bytes[] memory returnData = executor.execute(address(account), salt, mode, executionData);
 }
 ```
 
-If you need to cancel a scheduled operation (e.g., due to mistake or a change of plans), you can do so as long as the operation is still in the `Scheduled` state and not yet `Ready` or executed.
+If you need to cancel a scheduled operation (e.g., due to mistake or a change of plans), you can do so as long as the operation is still in the `Scheduled` or `Ready` state and not yet executed.
 
 ```solidity
-// Cancel the operation before it becomes ready
-if (state == ERC7579DelayedExecutor.OperationState.Scheduled) {
-    executor.cancel(account, salt, mode, executionData);
+// Cancel the operation
+if (operationState == ERC7579DelayedExecutor.OperationState.Scheduled ||
+    operationState == ERC7579DelayedExecutor.OperationState.Ready) {
+    executor.cancel(address(account), salt, mode, executionData);
 }
 ```
 
@@ -277,22 +337,24 @@ contract RecoveryExecutor is ERC7579Multisig, ERC7579Executor {
         super.onUninstall(data);
     }
 
-    function _validateExecution(
+    function execute(
         address account,
         bytes32 salt,
         bytes32 mode,
         bytes calldata data
-    ) internal view override returns (bytes calldata) {
-        (bytes memory multisignature, bytes memory executionCalldata) = abi.decode(data, (bytes, bytes))
-        (bytes[] calldata signingSigners, bytes[] calldata signatures) =
+    ) public returns (bytes[] memory) {
+        // Decode the multisig signature and execution calldata
+        (bytes memory multisignature, bytes memory executionCalldata) = abi.decode(data, (bytes, bytes));
+        (bytes[] memory signingSigners, bytes[] memory signatures) =
             abi.decode(multisignature, (bytes[], bytes[]));
 
         // NOTE: EIP-712 typed hashes are a better recommendation, but using a
         // simplified hash is better for educational purposes
         bytes32 hash = keccak256(abi.encode(account, salt, mode, executionCalldata));
-        require(_validateMultisig(account, hash, signingSigners, signatures));
+        require(_validateMultisig(account, hash, signingSigners, signatures), "Invalid multisig");
 
-        return executionCalldata;
+        // Call the internal _execute function
+        return _execute(account, salt, mode, executionCalldata);
     }
 }
 ```
@@ -321,7 +383,7 @@ account.installModule(MODULE_TYPE_EXECUTOR, address(recovery), initData);
 When guardians need to recover the account, they:
 
 1. Sign the recovery operation with their individual signatures
-2. Call `recovery.execute()` with the multisig signature and recovery calldata
+2. Call `recovery.execute()` with the account address, salt, mode, and combined data (multisig signature + recovery calldata)
 3. The executor validates that at least 3 guardians have signed
 4. If validated, the recovery operation executes immediately
 
@@ -350,7 +412,7 @@ import { ERC7579DelayedExecutor } from '@open-accounts-framework/contracts/modul
 contract DelayedRecoveryExecutor is ERC7579Multisig, ERC7579DelayedExecutor {
   function onInstall(bytes calldata data) public override(ERC7579Multisig, ERC7579DelayedExecutor, IERC7579Module) {
     // Decode: guardians, threshold, delay, expiration
-    (bytes[] calldata guardians, uint64 threshold, uint32 delay, uint32 expiration) = abi.decode(
+    (bytes[] memory guardians, uint64 threshold, uint32 delay, uint32 expiration) = abi.decode(
       data,
       (bytes[], uint64, uint32, uint32)
     );
@@ -369,20 +431,47 @@ contract DelayedRecoveryExecutor is ERC7579Multisig, ERC7579DelayedExecutor {
     super.onUninstall(data);
   }
 
-  function _validateSchedule(address account, bytes32 salt, bytes32 mode, bytes calldata data) internal view override {
-    (bytes memory multisignature, bytes memory executionCalldata) = abi.decode(data, (bytes, bytes))
-    (bytes[] calldata signingSigners, bytes[] calldata signatures) =
+  function schedule(
+    address account,
+    bytes32 salt,
+    bytes32 mode,
+    bytes calldata data
+  ) public {
+    // Decode the multisig signature and execution calldata
+    (bytes memory multisignature, bytes memory executionCalldata) = abi.decode(data, (bytes, bytes));
+    (bytes[] memory signingSigners, bytes[] memory signatures) =
         abi.decode(multisignature, (bytes[], bytes[]));
 
     // NOTE: EIP-712 typed hashes are a better recommendation, but using a
     // simplified hash is better for educational purposes
     bytes32 hash = keccak256(abi.encode(account, salt, mode, executionCalldata));
-    require(_validateMultisig(account, hash, signingSigners, signatures));
+    require(_validateMultisig(account, hash, signingSigners, signatures), "Invalid multisig");
+
+    // Call the internal _schedule function
+    _schedule(account, salt, mode, executionCalldata);
   }
 
-  function _validateCancel(address account, bytes32, bytes32, bytes calldata) internal view override {
+  function cancel(
+    address account,
+    bytes32 salt,
+    bytes32 mode,
+    bytes calldata data
+  ) public {
     // Only the account owner can cancel recovery operations
-    require(msg.sender == account);
+    require(msg.sender == account, "unauthorized");
+    
+    // Call the internal _cancel function
+    _cancel(account, salt, mode, data);
+  }
+
+  function execute(
+    address account,
+    bytes32 salt,
+    bytes32 mode,
+    bytes calldata data
+  ) public returns (bytes[] memory) {
+    // No authorization needed for execution. Operation state is checked in _execute
+    return _execute(account, salt, mode, data);
   }
 }
 ```
@@ -413,7 +502,7 @@ account.installModule(MODULE_TYPE_EXECUTOR, address(recovery), initData);
 When guardians need to recover the account:
 
 1. Guardians sign the recovery operation
-2. Call `recovery.schedule()` with the multisig signature and recovery calldata
+2. Call `recovery.schedule()` with the account address, salt, mode, and combined data (multisig signature + recovery calldata)
 3. The executor validates that at least 3 guardians have signed
 4. The operation enters `Scheduled` state and waits for the 7-day delay
 5. During the delay, the account owner can cancel if the recovery is suspicious

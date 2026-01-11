@@ -23,7 +23,7 @@ import {P256} from "@openzeppelin/contracts/utils/cryptography/P256.sol";
  * account.installModule(MODULE_TYPE_VALIDATOR, validatorAddress, initData);
  * ```
  */
-abstract contract ERC7579P256Validator is ERC7579Validator {
+contract ERC7579P256Validator is ERC7579Validator {
     /// @dev The provided signer data is too short (must be at least 64 bytes for P256 coordinates).
     error ERC7579P256ValidatorInvalidSignerLength();
 
@@ -66,9 +66,6 @@ abstract contract ERC7579P256Validator is ERC7579Validator {
      * * The `account` must have no signer installed. Reverts with {ERC7579P256ValidatorAlreadyInstalled} if not.
      * * Decode `data` into `abi.encode(bytes32 qx, bytes32 qy)`.
      * * The `data` must contain valid P256 public key coordinates. Reverts with {ERC7579P256ValidatorInvalidPublicKey} if not.
-     *
-     * NOTE: An account can only set a signer once. If called directly by an account
-     * that already has a signer configured, this function will behave as a no-op.
      *
      * Emits a {ERC7579P256ValidatorSignerSet} event if the signer is set.
      */

@@ -4,7 +4,11 @@ const { expect } = require('chai');
 
 const { impersonate } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/account');
 const { getDomain, PackedUserOperation } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/eip712');
-const { ERC4337Helper } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
+const {
+  ERC4337Helper,
+  SIG_VALIDATION_SUCCESS,
+  SIG_VALIDATION_FAILURE,
+} = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
 const { MODULE_TYPE_VALIDATOR } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc7579');
 
 const { shouldBehaveLikeERC7579Module, shouldBehaveLikeERC7579Validator } = require('../ERC7579Module.behavior');
@@ -31,7 +35,7 @@ async function fixture() {
   const installData = ethers.solidityPacked(['address'], [signer.address]);
 
   // ERC-7579 account
-  const mockAccount = await helper.newAccount('$AccountERC7579');
+  const mockAccount = await helper.newAccount('$OpenAccount', ['OpenAccount', '1']);
   const mockFromAccount = await impersonate(mockAccount.address).then(asAccount => mock.connect(asAccount));
 
   // Additional signers for testing
@@ -240,7 +244,9 @@ describe('ERC7579ECDSAValidator', function () {
           })
           .then(op => this.signUserOp(op));
 
-        await expect(this.mockFromAccount.validateUserOp(userOp.packed, userOp.hash())).to.eventually.equal(0);
+        await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+          .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+          .withArgs(SIG_VALIDATION_SUCCESS);
       });
 
       it('rejects user operation with invalid signature', async function () {
@@ -256,7 +262,9 @@ describe('ERC7579ECDSAValidator', function () {
           signature: '0x1234', // Invalid signature
         });
 
-        await expect(this.mockFromAccount.validateUserOp(userOp.packed, userOp.hash())).to.eventually.equal(1);
+        await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+          .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+          .withArgs(SIG_VALIDATION_FAILURE);
       });
     });
   });

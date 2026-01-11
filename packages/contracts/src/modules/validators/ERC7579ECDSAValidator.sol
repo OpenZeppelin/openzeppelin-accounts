@@ -19,7 +19,7 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
  * account.installModule(MODULE_TYPE_VALIDATOR, validatorAddress, initData);
  * ```
  */
-abstract contract ERC7579ECDSAValidator is ERC7579Validator {
+contract ERC7579ECDSAValidator is ERC7579Validator {
     /// @dev The provided signer data is too short (must be at least 20 bytes for an address).
     error ERC7579ECDSAValidatorInvalidSignerLength();
 
@@ -55,9 +55,6 @@ abstract contract ERC7579ECDSAValidator is ERC7579Validator {
      * * The `data` must be at least 20 bytes. Reverts with {ERC7579ECDSAValidatorInvalidSignerLength} if not.
      * * The `data` must contain a valid signer address. Reverts with {ERC7579ECDSAValidatorInvalidSigner} if not.
      * * The `account` must have no signer installed. Reverts with {ERC7579ECDSAValidatorAlreadyInstalled} if not.
-     *
-     * NOTE: An account can only set a signer once. If called directly by an account
-     * that already has a signer configured, this function will behave as a no-op.
      *
      * Emits a {ERC7579ECDSAValidatorSignerSet} event if the signer is set.
      */
