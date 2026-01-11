@@ -18,9 +18,9 @@ contract ERC7579ECDSAValidator is ERC7579Validator {
     event ERC7579ZKEmailValidatorVerifierSet(address indexed account, address indexed verifier);
     event ERC7579ZKEmailValidatorAccountSaltSet(address indexed account, bytes32 accountSalt);
 
-    mapping(address account => IDKIMRegistry registry) private _registries;
-    mapping(address account => IGroth16Verifier verifier) private _verifiers;
-    mapping(address account => bytes32 accountSalt) private _accountSalts;
+    mapping(address account => IDKIMRegistry) private _registries;
+    mapping(address account => IGroth16Verifier) private _verifiers;
+    mapping(address account => bytes32) private _accountSalts;
 
     modifier onlyAccount(address account) {
         require(msg.sender == account, ERC7579ZKEmailValidatorNotAuthorized(msg.sender, account));
