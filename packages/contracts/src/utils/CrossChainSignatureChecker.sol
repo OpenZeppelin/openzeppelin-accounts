@@ -131,34 +131,35 @@ library CrossChainSignatureChecker {
             bytes memory crossChainSignature
         )
     {
-        // magic (9 bytes) + fields (1 byte) + structIndex (2 bytes) + application (20 bytes) + structsArrayLength (32 bytes)
-        if (erc7964Signature.length < 64 || bytes9(erc7964Signature.asSlice().load(0)) != ERC7964_MAGIC) {
+        // magic (9 bytes) + fields (1 byte) + structIndex (2 bytes) + application (20 bytes) + structsArrayOffset (32 bytes) +
+        // structsArrayLength (32 bytes) + crossChainSignatureOffset (32 bytes) + crossChainSignatureLength (32 bytes)
+        if (erc7964Signature.length < 0x9f || bytes9(erc7964Signature.asSlice().load(0)) != ERC7964_MAGIC) {
             return (false, 0, 0, address(0), new bytes32[](0), new bytes(0));
         }
-
         fields = bytes1(erc7964Signature.asSlice().load(9));
         structIndex = uint16(bytes2(erc7964Signature.asSlice().load(10)));
         application = address(bytes20(erc7964Signature.asSlice().load(12)));
-        uint256 structsArrayLength = uint256(bytes32(erc7964Signature.asSlice().load(32)));
-        uint256 crossChainSignatureLengthOffset = 64 + structsArrayLength * 32;
-        if (erc7964Signature.length < crossChainSignatureLengthOffset + 32) {
+        uint256 structsArrayOffset = uint256(bytes32(erc7964Signature.asSlice().load(0x20)));
+        uint256 structsArrayDataOffset = structsArrayOffset + 32;
+        if (structsArrayOffset < 0x60 || structsArrayDataOffset > erc7964Signature.length) {
+            return (false, 0, 0, address(0), new bytes32[](0), new bytes(0));
+        }
+        uint256 structsArrayLength = uint256(erc7964Signature.asSlice().slice(structsArrayOffset).load(0));
+        uint256 crossChainSignatureOffset = structsArrayDataOffset + structsArrayLength * 32;
+        uint256 crossChainSignatureDataOffset = crossChainSignatureOffset + 32;
+        if (crossChainSignatureDataOffset > erc7964Signature.length) {
             return (false, 0, 0, address(0), new bytes32[](0), new bytes(0));
         }
         uint256 crossChainSignatureLength = uint256(
-            bytes32(erc7964Signature.asSlice().load(crossChainSignatureLengthOffset))
+            erc7964Signature.asSlice().slice(crossChainSignatureOffset).load(0)
         );
-        uint256 crossChainSignatureOffset = crossChainSignatureLengthOffset + 32;
-
-        if (erc7964Signature.length < crossChainSignatureOffset + crossChainSignatureLength) {
+        if (crossChainSignatureDataOffset + crossChainSignatureLength > erc7964Signature.length) {
             return (false, 0, 0, address(0), new bytes32[](0), new bytes(0));
         }
-
-        // structsArray and crossChainSignature are ABI-encoded, so we can point directly to them
         assembly ("memory-safe") {
-            structsArray := add(erc7964Signature, 0x40)
-            crossChainSignature := add(erc7964Signature, crossChainSignatureOffset)
+            structsArray := add(erc7964Signature, structsArrayDataOffset)
+            crossChainSignature := add(erc7964Signature, crossChainSignatureDataOffset)
         }
-
         return (true, fields, structIndex, application, structsArray, crossChainSignature);
     }
 
@@ -177,32 +178,35 @@ library CrossChainSignatureChecker {
             bytes calldata crossChainSignature
         )
     {
-        // magic (9 bytes) + fields (1 byte) + structIndex (2 bytes) + application (20 bytes) + structsArrayLength (32 bytes)
-        if (erc7964Signature.length < 64 || bytes9(erc7964Signature[0:9]) != ERC7964_MAGIC) {
+        // magic (9 bytes) + fields (1 byte) + structIndex (2 bytes) + application (20 bytes) + structsArrayOffset (32 bytes) +
+        // structsArrayLength (32 bytes) + crossChainSignatureOffset (32 bytes) + crossChainSignatureLength (32 bytes)
+        if (erc7964Signature.length < 0x9f || bytes9(erc7964Signature[0:9]) != ERC7964_MAGIC) {
             return (false, 0, 0, address(0), _empty32BytesArrayCalldata(), Calldata.emptyBytes());
         }
         fields = erc7964Signature[9];
-        structIndex = uint16(bytes2(erc7964Signature[10:12]));
-        application = address(bytes20(erc7964Signature[12:32]));
-        uint256 structsArrayLength = uint256(bytes32(erc7964Signature[32:64]));
-        uint256 crossChainSignatureLengthOffset = 64 + structsArrayLength * 32;
-        if (erc7964Signature.length < crossChainSignatureLengthOffset + 32) {
+        structIndex = uint16(bytes2(erc7964Signature[10:]));
+        application = address(bytes20(erc7964Signature[12:]));
+        uint256 structsArrayOffset = uint256(bytes32(erc7964Signature[0x20:]));
+        uint256 structsArrayDataOffset = structsArrayOffset + 32;
+        if (structsArrayOffset < 0x60 || structsArrayDataOffset > erc7964Signature.length) {
             return (false, 0, 0, address(0), _empty32BytesArrayCalldata(), Calldata.emptyBytes());
         }
-        uint256 crossChainSignatureLength = uint256(
-            bytes32(erc7964Signature[crossChainSignatureLengthOffset:crossChainSignatureLengthOffset + 32])
-        );
-        uint256 crossChainSignatureOffset = crossChainSignatureLengthOffset + 32;
-        if (erc7964Signature.length < crossChainSignatureOffset + crossChainSignatureLength) {
+        uint256 structsArrayLength = uint256(bytes32(erc7964Signature[structsArrayOffset:]));
+        uint256 crossChainSignatureOffset = structsArrayDataOffset + structsArrayLength * 32;
+        uint256 crossChainSignatureDataOffset = crossChainSignatureOffset + 32;
+        if (crossChainSignatureDataOffset > erc7964Signature.length) {
             return (false, 0, 0, address(0), _empty32BytesArrayCalldata(), Calldata.emptyBytes());
         }
-
+        uint256 crossChainSignatureLength = uint256(bytes32(erc7964Signature[crossChainSignatureOffset:]));
+        if (crossChainSignatureDataOffset + crossChainSignatureLength > erc7964Signature.length) {
+            return (false, 0, 0, address(0), _empty32BytesArrayCalldata(), Calldata.emptyBytes());
+        }
         assembly ("memory-safe") {
-            structsArray.offset := 64
+            structsArray.offset := add(erc7964Signature.offset, structsArrayDataOffset)
             structsArray.length := structsArrayLength
         }
         crossChainSignature = erc7964Signature[
-            crossChainSignatureOffset:crossChainSignatureOffset + crossChainSignatureLength
+            crossChainSignatureDataOffset:crossChainSignatureDataOffset + crossChainSignatureLength
         ];
         return (true, fields, structIndex, application, structsArray, crossChainSignature);
     }
