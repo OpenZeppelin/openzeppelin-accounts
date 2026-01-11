@@ -5,7 +5,7 @@ import {ERC7579Validator} from "./ERC7579Validator.sol";
 import {IDKIMRegistry} from "@zk-email/contracts/DKIMRegistry.sol";
 import {IGroth16Verifier} from "@zk-email/email-tx-builder/src/interfaces/IGroth16Verifier.sol";
 import {ZKEmailUtils} from "@openzeppelin/community-contracts/utils/cryptography/ZKEmailUtils.sol";
-import {EmailProof} from "@zk-email/email-tx-builder/src/interfaces/IEmailTypes.sol";
+import {EmailProof} from "@zk-email/email-tx-builder/src/interfaces/IVerifier.sol";
 
 contract ERC7579ECDSAValidator is ERC7579Validator {
     using ZKEmailUtils for EmailProof;
@@ -85,7 +85,11 @@ contract ERC7579ECDSAValidator is ERC7579Validator {
     ) internal pure virtual returns (IDKIMRegistry registry_, IGroth16Verifier verifier_, bytes32 accountSalt_) {
         // Minimun length: registry(32 bytes) + verifier(32 bytes) + accountSalt(32 bytes) = 96 bytes
         require(data.length >= 96, ERC7579ZKEmailValidatorInvalidInitData());
-        return (IDKIMRegistry(bytes20(data[:20])), IGroth16Verifier(bytes20(data[20:40])), bytes32(data[40:]));
+        return (
+            IDKIMRegistry(address(bytes20(data[:20]))),
+            IGroth16Verifier(address(bytes20(data[20:40]))),
+            bytes32(data[40:])
+        );
     }
 
     function _rawERC7579Validation(
