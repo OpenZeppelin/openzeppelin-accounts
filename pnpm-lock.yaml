@@ -53,12 +53,18 @@ importers:
       '@nomicfoundation/hardhat-network-helpers':
         specifier: ^1.1.0
         version: 1.1.0(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.10.1)(typescript@5.9.3))(typescript@5.9.3))
+      '@openzeppelin/community-contracts':
+        specifier: file:../../lib/@openzeppelin-community-contracts
+        version: file:lib/@openzeppelin-community-contracts
       '@openzeppelin/contracts':
         specifier: file:../../lib/@openzeppelin-contracts
         version: openzeppelin-solidity@file:lib/@openzeppelin-contracts
       '@openzeppelin/contracts-upgradeable':
         specifier: file:../../lib/@openzeppelin-contracts-upgradeable
         version: openzeppelin-solidity@file:lib/@openzeppelin-contracts-upgradeable
+      email-tx-builder:
+        specifier: file:../../lib/email-tx-builder
+        version: '@zk-email/ether-email-auth@file:lib/email-tx-builder'
       hardhat:
         specifier: ^2.26.3
         version: 2.26.3(ts-node@10.9.2(@types/node@24.10.1)(typescript@5.9.3))(typescript@5.9.3)
@@ -74,6 +80,9 @@ importers:
       solidity-coverage:
         specifier: ^0.8.16
         version: 0.8.16(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.10.1)(typescript@5.9.3))(typescript@5.9.3))
+      zk-email-verify:
+        specifier: file:../../lib/zk-email-verify/packages/contracts
+        version: '@zk-email/contracts@file:lib/zk-email-verify/packages/contracts'
 
   packages/docs:
     dependencies:
@@ -999,6 +1008,17 @@ packages:
     resolution: {integrity: sha512-q4n32/FNKIhQ3zQGGw5CvPF6GTvDCpYwIf7bEY/dZTZbgfDsHyjJwURxUJf3VQuuJj+fDIFl4+KkBVbw4Ef6jA==}
     engines: {node: '>= 12'}
 
+  '@openzeppelin/community-contracts@file:lib/@openzeppelin-community-contracts':
+    resolution: {directory: lib/@openzeppelin-community-contracts, type: directory}
+
+  '@openzeppelin/contracts-upgradeable@5.4.0':
+    resolution: {integrity: sha512-STJKyDzUcYuB35Zub1JpWW58JxvrFFVgQ+Ykdr8A9PGXgtq/obF5uoh07k2XmFyPxfnZdPdBdhkJ/n2YxJ87HQ==}
+    peerDependencies:
+      '@openzeppelin/contracts': 5.4.0
+
+  '@openzeppelin/contracts@5.4.0':
+    resolution: {integrity: sha512-eCYgWnLg6WO+X52I16TZt8uEjbtdkgLC0SUX/xnAksjjrQI4Xfn4iBRoI5j55dmlOhDv1Y7BoR3cU7e3WWhC6A==}
+
   '@orama/orama@3.1.16':
     resolution: {integrity: sha512-scSmQBD8eANlMUOglxHrN1JdSW8tDghsPuS83otqealBiIeMukCQMOf/wc0JJjDXomqwNdEQFLXLGHrU6PGxuA==}
     engines: {node: '>= 20.0.0'}
@@ -1916,6 +1936,13 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
+  '@zk-email/contracts@file:lib/zk-email-verify/packages/contracts':
+    resolution: {directory: lib/zk-email-verify/packages/contracts, type: directory}
+
+  '@zk-email/ether-email-auth@file:lib/email-tx-builder':
+    resolution: {directory: lib/email-tx-builder, type: directory}
+    engines: {node: '>=18'}
+
   abbrev@1.0.9:
     resolution: {integrity: sha512-LEyx4aLEC3x6T0UguF6YILf+ntvmOaWsVfENmIW0E9H09vKlLDGelMjjSm0jkDHALj8A8quZ/HapKNigzwge+Q==}
 
@@ -2705,6 +2732,10 @@ packages:
 
   dompurify@3.3.1:
     resolution: {integrity: sha512-qkdCKzLNtrgPFP1Vo+98FRzJnBRGe4ffyCea9IwHB1fyxPOeNTHpLKYGd4Uk9xvNoH0ZoOjwZxNptyMwqrId1Q==}
+
+  dotenv@16.6.1:
+    resolution: {integrity: sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==}
+    engines: {node: '>=12'}
 
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
@@ -6377,6 +6408,14 @@ snapshots:
       '@nomicfoundation/solidity-analyzer-linux-x64-musl': 0.1.2
       '@nomicfoundation/solidity-analyzer-win32-x64-msvc': 0.1.2
 
+  '@openzeppelin/community-contracts@file:lib/@openzeppelin-community-contracts': {}
+
+  '@openzeppelin/contracts-upgradeable@5.4.0(@openzeppelin/contracts@5.4.0)':
+    dependencies:
+      '@openzeppelin/contracts': 5.4.0
+
+  '@openzeppelin/contracts@5.4.0': {}
+
   '@orama/orama@3.1.16': {}
 
   '@pkgjs/parseargs@0.11.0':
@@ -7346,6 +7385,14 @@ snapshots:
       - rollup
       - supports-color
 
+  '@zk-email/contracts@file:lib/zk-email-verify/packages/contracts':
+    dependencies:
+      '@openzeppelin/contracts': 5.4.0
+      '@openzeppelin/contracts-upgradeable': 5.4.0(@openzeppelin/contracts@5.4.0)
+      dotenv: 16.6.1
+
+  '@zk-email/ether-email-auth@file:lib/email-tx-builder': {}
+
   abbrev@1.0.9: {}
 
   abbrev@3.0.1: {}
@@ -8199,6 +8246,8 @@ snapshots:
   dompurify@3.3.1:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
+
+  dotenv@16.6.1: {}
 
   dunder-proto@1.0.1:
     dependencies:

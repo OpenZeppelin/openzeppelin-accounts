@@ -1,14 +1,32 @@
 {
+  "lib/@openzeppelin-community-contracts": {
+    "branch": {
+      "name": "master",
+      "rev": "813f155945b36c94fdb2938f58f8bed28c9af45c"
+    }
+  },
   "lib/@openzeppelin-contracts": {
     "rev": "353f564d1db53c1d30cfa8a631771c205e41107b"
   },
   "lib/@openzeppelin-contracts-upgradeable": {
     "rev": "527c1bd3a6e242cff240bec79475252b3e011829"
   },
+  "lib/email-tx-builder": {
+    "tag": {
+      "name": "v1.0.0",
+      "rev": "984b5919a9be715b743b08863ab6471c2b5356a6"
+    }
+  },
   "lib/forge-std": {
     "tag": {
       "name": "v1.11.0",
       "rev": "8e40513d678f392f398620b3ef2b418648b33e89"
+    }
+  },
+  "lib/zk-email-verify": {
+    "tag": {
+      "name": "v6.4.2",
+      "rev": "b193cf0c760456b837b2bbcf7b2c72d5bb3f43c3"
     }
   }
 }
