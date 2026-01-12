@@ -61,7 +61,7 @@ library CrossChainSignatureChecker {
             address application,
             bytes32[] memory structsArray,
             bytes memory crossChainSignature
-        ) = parseCrossChainSignature(erc7964Signature);
+        ) = tryParseCrossChainSignature(erc7964Signature);
         if (!success || structsArray[structIndex] != hash) return false;
 
         string memory name;
@@ -91,7 +91,7 @@ library CrossChainSignatureChecker {
             address application,
             bytes32[] calldata structsArray,
             bytes calldata crossChainSignature
-        ) = parseCrossChainSignatureCalldata(erc7964Signature);
+        ) = tryParseCrossChainSignatureCalldata(erc7964Signature);
         if (!success || structsArray[structIndex] != hash) return false;
 
         string memory name;
@@ -117,7 +117,7 @@ library CrossChainSignatureChecker {
      * * `structsArray` The array of struct hashes for all chains
      * * `crossChainSignature` The actual signature bytes
      */
-    function parseCrossChainSignature(
+    function tryParseCrossChainSignature(
         bytes memory erc7964Signature
     )
         internal
@@ -170,7 +170,7 @@ library CrossChainSignatureChecker {
     }
 
     /// @dev Variant of {parseCrossChainSignature} that takes the signature in calldata.
-    function parseCrossChainSignatureCalldata(
+    function tryParseCrossChainSignatureCalldata(
         bytes calldata erc7964Signature
     )
         internal

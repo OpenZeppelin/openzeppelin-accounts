@@ -10,6 +10,104 @@ import {IERC5267} from "@openzeppelin/contracts/interfaces/IERC5267.sol";
 contract CrossChainSignatureCheckerTest is Test {
     using MessageHashUtils for *;
 
+    /// @dev External function to construct the calldata for the tryParseCrossChainSignature function.
+    function tryParseCrossChainSignature(
+        bytes memory erc7964Signature
+    )
+        external
+        pure
+        returns (
+            bool success,
+            bytes1 fields,
+            uint16 structIndex,
+            address application,
+            bytes32[] memory structsArray,
+            bytes memory crossChainSignature
+        )
+    {
+        return CrossChainSignatureChecker.tryParseCrossChainSignature(erc7964Signature);
+    }
+
+    /// @dev External function to decode the crosschain signature data in memory with try-catch.
+    function decodeCrossChainSignature(
+        bytes memory erc7964Signature
+    )
+        external
+        pure
+        returns (
+            bytes1 fields,
+            uint16 structIndex,
+            address application,
+            bytes32[] memory structsArray,
+            bytes memory crossChainSignature
+        )
+    {
+        return abi.decode(erc7964Signature, (bytes1, uint16, address, bytes32[], bytes));
+    }
+
+    function testParseCrossChainSignature(
+        bytes1 fields,
+        uint16 structIndex,
+        address application,
+        bytes32[] memory structsArray,
+        bytes memory crossChainSignature
+    ) public view {
+        (
+            bool success,
+            bytes1 decodedFields,
+            uint16 decodedStructIndex,
+            address decodedApplication,
+            bytes32[] memory decodedStructsArray,
+            bytes memory decodedCrossChainSignature
+        ) = this.tryParseCrossChainSignature(
+                abi.encode(
+                    bytes32(
+                        abi.encodePacked(CrossChainSignatureChecker.ERC7964_MAGIC, fields, structIndex, application)
+                    ),
+                    structsArray,
+                    crossChainSignature
+                )
+            );
+        assertTrue(success);
+        assertEq(fields, decodedFields);
+        assertEq(structIndex, decodedStructIndex);
+        assertEq(application, decodedApplication);
+        assertEq(structsArray, decodedStructsArray);
+        assertEq(crossChainSignature, decodedCrossChainSignature);
+    }
+
+    function testParseCrossChainSignatureArbitraryData(bytes memory data) public view {
+        (
+            bool success,
+            bytes1 fields,
+            uint16 structIndex,
+            address application,
+            bytes32[] memory structsArray,
+            bytes memory crossChainSignature
+        ) = this.tryParseCrossChainSignature(data);
+        try this.decodeCrossChainSignature(data) returns (
+            bytes1 decodedFields,
+            uint16 decodedStructIndex,
+            address decodedApplication,
+            bytes32[] memory decodedStructsArray,
+            bytes memory decodedCrossChainSignature
+        ) {
+            assertTrue(success);
+            assertEq(fields, decodedFields);
+            assertEq(structIndex, decodedStructIndex);
+            assertEq(application, decodedApplication);
+            assertEq(structsArray, decodedStructsArray);
+            assertEq(crossChainSignature, decodedCrossChainSignature);
+        } catch {
+            assertFalse(success);
+            assertEq(fields, 0);
+            assertEq(structIndex, 0);
+            assertEq(application, address(0));
+            assertEq(structsArray.length, 0);
+            assertEq(crossChainSignature, bytes(""));
+        }
+    }
+
     function testSetValueWithCrossChainSignatureCalldata(
         uint256 signerPrivateKey,
         uint256 value,

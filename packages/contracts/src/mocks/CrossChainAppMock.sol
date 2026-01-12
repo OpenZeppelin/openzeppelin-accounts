@@ -11,11 +11,15 @@ contract CrossChainAppMock is EIP712 {
 
     mapping(address account => uint256) private _values;
 
-    bytes32 public constant EIP712_CHAIN_DOMAIN_TYPEHASH =
-        keccak256("EIP712ChainDomain(uint256 chainId,address verifyingContract)");
+    bytes private constant _EIP712_CHAIN_DOMAIN_TYPE = "EIP712ChainDomain(uint256 chainId,address verifyingContract)";
+    bytes private constant _CHAIN_OPERATION_TYPE = "ChainOperation(EIP712ChainDomain domain,uint256 value)";
+    bytes private constant _CROSS_CHAIN_SET_VALUE_TYPE = "SetValue(ChainOperation[] operations)";
+
+    bytes32 public constant EIP712_CHAIN_DOMAIN_TYPEHASH = keccak256(_EIP712_CHAIN_DOMAIN_TYPE);
     bytes32 public constant CHAIN_OPERATION_TYPEHASH =
-        keccak256("ChainOperation(EIP712ChainDomain domain,uint256 value)");
-    bytes32 public constant CROSS_CHAIN_SET_VALUE_TYPEHASH = keccak256("SetValue(bytes32 operations)");
+        keccak256(abi.encodePacked(_CHAIN_OPERATION_TYPE, _EIP712_CHAIN_DOMAIN_TYPE));
+    bytes32 public constant CROSS_CHAIN_SET_VALUE_TYPEHASH =
+        keccak256(abi.encodePacked(_CROSS_CHAIN_SET_VALUE_TYPE, _CHAIN_OPERATION_TYPE, _EIP712_CHAIN_DOMAIN_TYPE));
 
     constructor(string memory name, string memory version) EIP712(name, version) {}
 
