@@ -1,3 +1,7 @@
+## 12-01-2026
+
+- Add `CrossChainSignatureChecker` utility library to verify cross-chain signatures following ERC-7964.
+
 ## 09-01-2026
 
 - Add `ERC7579SocialRecoveryExecutor` contract module, combining weighted multisignatures with time-delayed execution to provide a secure social recovery mechanism. Trusted guardians can collectively schedule recovery operations, which execute after a security delay, giving the account owner time to detect and cancel malicious recovery attempts.
