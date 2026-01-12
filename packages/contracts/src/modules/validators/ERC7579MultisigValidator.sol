@@ -8,7 +8,7 @@ import {Multisig} from "../../utils/Multisig.sol";
 /**
  * @dev Implementation of {ERC7579Validator} that uses {ERC7579Multisig} for multisignature validation.
  */
-abstract contract ERC7579MultisigValidator is ERC7579Multisig, ERC7579Validator {
+contract ERC7579MultisigValidator is ERC7579Multisig, ERC7579Validator {
     /**
      * @dev Returns whether the number of valid signatures meets or exceeds the
      * threshold set for the target account.
