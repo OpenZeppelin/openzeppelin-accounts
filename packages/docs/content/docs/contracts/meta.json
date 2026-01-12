@@ -5,6 +5,7 @@
   "pages": [
     "index",
     "erc7579",
+    "cross-chain-signatures",
     "---Modules---",
     "multisig",
     "validators",
