@@ -128,7 +128,7 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
      *
      * Requirements:
      *
-     * * The `initData` must be at least 96 bytes long to contain the minimum ABI-encoded structure.
+     * * The `initData` must be at least 160 bytes long to contain the minimum ABI-encoded structure.
      * * The signers array offset must be properly aligned and within bounds.
      * * The weights array offset must be properly aligned and within bounds.
      * * The array length fields must be accessible within the provided data.
