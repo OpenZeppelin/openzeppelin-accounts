@@ -173,6 +173,13 @@ abstract contract ERC7579Multisig is IERC7579Module {
      *
      * * Each of `newSigners` must be at least 20 bytes long. Reverts with {ERC7579MultisigInvalidSigner} if not.
      * * Each of `newSigners` must not be authorized. Reverts with {ERC7579MultisigAlreadyExists} if it already exists.
+     *
+     * NOTE: This function does not validate that signers are controlled or represent appropriate entities. Integrators
+     * must ensure signers are properly validated before adding them. Problematic signers can compromise
+     * the multisig's security or functionality. Examples include uncontrolled addresses (e.g., `address(0)`),
+     * the account's own address (which may cause recursive validation loops), or contracts that may unintentionally
+     * allow arbitrary validation (e.g. using the identity precompile at `address(0x04)`, which would return the
+     * ERC-1271 magic value for any `isValidSignature` call).
      */
     function _addSigners(address account, bytes[] memory newSigners) internal virtual {
         for (uint256 i = 0; i < newSigners.length; ++i) {
@@ -254,22 +261,18 @@ abstract contract ERC7579Multisig is IERC7579Module {
 
     /**
      * @dev Validates the signatures using the signers and their corresponding signatures.
-     * Returns whether the signers are authorized and the signatures are valid for the given hash.
+     * Returns whether the signers are authorized, are not duplicated and the signatures
+     * are valid for the given hash.
      *
-     * The signers must be ordered by their `keccak256` hash to prevent duplications and to optimize
-     * the verification process. The function will return `false` if any signer is not authorized or
-     * if the signatures are invalid for the given hash.
-     *
-     * Requirements:
-     *
-     * * The `signatures` array must be at least the `signers` array's length.
+     * IMPORTANT: Sorting the signers by their `keccak256` hash will improve the gas
+     * efficiency of this function.
      */
     function _validateSignatures(
         address account,
         bytes32 hash,
         bytes[] calldata signingSigners,
         bytes[] calldata signatures
-    ) internal view virtual returns (bool valid) {
+    ) internal view virtual returns (bool) {
         for (uint256 i = 0; i < signingSigners.length; ++i) {
             if (!isSigner(account, signingSigners[i])) {
                 return false;

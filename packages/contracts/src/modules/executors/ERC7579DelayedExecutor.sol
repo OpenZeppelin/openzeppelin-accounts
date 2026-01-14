@@ -2,6 +2,7 @@
 pragma solidity ^0.8.27;
 
 import {Time} from "@openzeppelin/contracts/utils/types/Time.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ERC7579Executor} from "./ERC7579Executor.sol";
 
 /**
@@ -38,12 +39,20 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  *
  * TIP: Use {_scheduleAt} to schedule operations at specific points in time. This is
  * useful to pre-schedule operations for non-deployed accounts (e.g. subscriptions).
+ *
+ * NOTE: Scheduling, executing and cancelling doesn't have any access control by default
+ * and should be validated accordingly while extending this contract.
+ *
+ * NOTE: Target addresses of an operation may return an arbitrary large amount of data, which
+ * may cause the operation to fail due to insufficient gas. Consider that a target could return
+ * more data than initially expected (e.g. after being upgraded, or when their return data
+ * depends on state), potentially blocking the operation's execution until they expire.
  */
 abstract contract ERC7579DelayedExecutor is ERC7579Executor {
     using Time for *;
 
     struct Schedule {
-        // 1 slot = 48 + 32 + 32 + 1 + 1 = 114 bits ~ 14 bytes
+        // 1 slot = 48 + 32 + 32 + 8 + 8 = 114 bits = 16 bytes
         uint48 scheduledAt; // The time when the operation was scheduled
         uint32 executableAfter; // Time after the operation becomes executable
         uint32 expiresAfter; // Time after the operation expires
@@ -52,7 +61,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
     }
 
     struct ExecutionConfig {
-        // 1 slot = 112 + 32 + 1 = 145 bits ~ 18 bytes
+        // 1 slot = 112 + 32 + 8 = 152 bits = 19 bytes
         Time.Delay delay;
         uint32 expiration; // Time after operation is OperationState.Ready to expire
         bool installed;
@@ -92,8 +101,6 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
     /**
      * @dev The current state of an operation is not the expected. The `allowedStates` is a bitmap with the
      * bits enabled for each OperationState enum position counting from right to left. See {_encodeStateBitmap}.
-     *
-     * NOTE: If `allowedStates` is `bytes32(0)`, the operation is expected to not be in any state (i.e. not exist).
      */
     error ERC7579ExecutorUnexpectedOperationState(
         bytes32 operationId,
@@ -144,7 +151,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
     }
 
     /// @dev Expiration delay for account operations.
-    function getExpiration(address account) public view virtual returns (uint32 expiration) {
+    function getExpiration(address account) public view virtual returns (uint32) {
         return _configs[account].expiration;
     }
 
@@ -190,8 +197,6 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      * The delay will be set to the maximum of this value and the minimum delay if provided.
      * Otherwise, the delay will be set to {minSetback} and {defaultExpiration} respectively.
      *
-     * Behaves as a no-op if the module is already installed.
-     *
      * Requirements:
      *
      * * The module must not be already installed on the account. Reverts with {ERC7579DelayedExecutorAlreadyInstalled} if not.
@@ -201,9 +206,8 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
         require(!_configs[msg.sender].installed, ERC7579DelayedExecutorAlreadyInstalled());
         _configs[msg.sender].installed = true;
         (uint32 initialDelay, uint32 initialExpiration) = _decodeDelayedExecutorInitData(initData);
-        // An old delay might be still present
-        // So we set 0 for the minimum setback relying on any old value as the minimum delay
-        _setDelay(msg.sender, initialDelay, 0);
+        (uint32 currentDelay, , ) = getDelay(msg.sender); // An old delay might be still present after uninstallation
+        _setDelay(msg.sender, initialDelay, uint32(Math.ternary(currentDelay > 0, minSetback(), 0)));
         _setExpiration(msg.sender, initialExpiration);
     }
 
@@ -232,9 +236,10 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      * design choice for efficiency, but module implementations may want to override this behavior
      * to clear scheduled operations during uninstallation for their specific use cases.
      *
-     * NOTE: Calling this function directly will remove the expiration ({getExpiration}) value and
-     * will schedule a reset of the delay ({getDelay}) to `0` for the account. Reinstalling the
-     * module will not immediately reset the delay if the delay reset hasn't taken effect yet.
+     * NOTE: Uninstalling the module schedules the delay to reset to `0` after {minSetback}, and
+     * immediately removes the expiration. If the module is reinstalled before the delay reset
+     * completes, the new delay will be subject to {minSetback} protection to prevent bypassing
+     * the minimum security window for delay reductions.
      */
     function onUninstall(bytes calldata) public virtual {
         _configs[msg.sender].installed = false;
@@ -300,7 +305,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
         bytes calldata executionCalldata,
         uint48 timepoint,
         uint32 delay
-    ) internal virtual returns (bytes32 operationId, Schedule memory schedule_) {
+    ) internal virtual returns (bytes32) {
         bytes32 id = hashOperation(account, salt, mode, executionCalldata);
         _validateStateBitmap(id, _encodeStateBitmap(OperationState.Unknown));
 
@@ -309,7 +314,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
         _schedules[id].expiresAfter = getExpiration(account);
 
         emit ERC7579ExecutorOperationScheduled(account, id, salt, mode, executionCalldata, timepoint + delay);
-        return (id, schedule_);
+        return id;
     }
 
     /**
@@ -318,13 +323,15 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      * Requirements:
      *
      * * The operation must be `Ready`.
+     *
+     * NOTE: This function does not have any access control validation.
      */
     function _execute(
         address account,
         bytes32 salt,
         bytes32 mode,
         bytes memory executionCalldata
-    ) internal virtual override returns (bytes[] memory returnData) {
+    ) internal virtual override returns (bytes[] memory) {
         bytes32 id = hashOperation(account, salt, mode, executionCalldata);
         _validateStateBitmap(id, _encodeStateBitmap(OperationState.Ready));
 
@@ -366,10 +373,12 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
     }
 
     /**
-     * @dev Check that the current state of a operation matches the requirements described by the `allowedStates` bitmap.
+     * @dev Check that the current state of an operation matches the requirements described by the `allowedStates` bitmap.
      * This bitmap should be built using {_encodeStateBitmap}.
      *
      * If requirements are not met, reverts with a {ERC7579ExecutorUnexpectedOperationState} error.
+     *
+     * NOTE: Passing a `bytes32(0)` for `allowedStates` will always revert.
      */
     function _validateStateBitmap(bytes32 operationId, bytes32 allowedStates) internal view returns (OperationState) {
         OperationState currentState = state(operationId);

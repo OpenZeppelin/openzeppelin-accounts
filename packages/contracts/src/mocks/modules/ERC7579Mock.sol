@@ -122,7 +122,7 @@ contract ERC7579ExecutorMock is ERC7579Executor {
         bytes32 salt,
         bytes32 mode,
         bytes calldata data
-    ) public virtual returns (bytes[] memory returnData) {
+    ) public payable virtual returns (bytes[] memory returnData) {
         return _execute(account, salt, mode, data);
     }
 }

@@ -32,17 +32,17 @@ function shouldBehaveLikeERC7579Validator() {
     describe('validateUserOp', function () {
       it('returns SIG_VALIDATION_SUCCESS when signature is valid', async function () {
         const userOp = await this.mockAccount.createUserOp(this.userOp).then(op => this.signUserOp(op));
-        await expect(this.mockFromAccount.validateUserOp(userOp.packed, userOp.hash())).to.eventually.equal(
-          SIG_VALIDATION_SUCCESS,
-        );
+        await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+          .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+          .withArgs(SIG_VALIDATION_SUCCESS);
       });
 
       it('returns SIG_VALIDATION_FAILURE when signature is invalid', async function () {
         const userOp = await this.mockAccount.createUserOp(this.userOp);
         userOp.signature = this.invalidSignature || '0x00';
-        await expect(this.mockFromAccount.validateUserOp(userOp.packed, userOp.hash())).to.eventually.equal(
-          SIG_VALIDATION_FAILURE,
-        );
+        await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+          .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+          .withArgs(SIG_VALIDATION_FAILURE);
       });
     });
 

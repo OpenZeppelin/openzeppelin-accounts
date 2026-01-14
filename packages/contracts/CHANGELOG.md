@@ -1,3 +1,19 @@
+## 09-01-2026
+
+- Add `ERC7579SocialRecoveryExecutor` contract module, combining weighted multisignatures with time-delayed execution to provide a secure social recovery mechanism. Trusted guardians can collectively schedule recovery operations, which execute after a security delay, giving the account owner time to detect and cancel malicious recovery attempts.
+- Add `Multisig` utility library to decode multisignatures.
+
+## 07-01-2026
+
+- `OpenAccountEnableMode`: Correctly validates UserOp signatures after successful module installation in enable mode. Previously, the contract would return success without validating the UserOp signature, allowing an attacker with a valid installation signature to execute arbitrary operations.
+- The `execute` function of `ERC7579Executor` is now `payable` and forwards the payment to the account.
+- The `validateUserOp` function of `ERC7579Validator` is not `view` anymore.
+
+## 06-01-2026
+
+- `ERC7579DelayedExecutor`: The `onInstall` function now enforces `minSetback()` when reinstalling the module with a prior delay configuration still present. This ensures consistent delay transition behavior whether updating via `setDelay` or through module reinstallation.
+- `ERC7579DelayedExecutor`: The `_scheduleAt` internal function does not return an `Schedule` struct anymore. Previously, the returned struct was empty.
+
 ## 30-12-2025
 
 - Add `ERC7579ERC20Spender` and `ERC7579NativeSpender` contract modules extending `ERC7579Executor` with spending limits and automatic renewal periods for ERC20 tokens and native tokens (ETH) respectively.

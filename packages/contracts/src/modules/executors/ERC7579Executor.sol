@@ -56,6 +56,10 @@ abstract contract ERC7579Executor is IERC7579Module {
      *
      * Emits {ERC7579ExecutorOperationExecuted} event.
      *
+     * NOTE: Target addresses included in the `executionCalldata` may return a large amount of data,
+     * which may cause the operation to fail due to insufficient gas given `executeFromExecutor` copies
+     * all return datas to memory.
+     *
      * Requirements:
      *
      * * The `account` must implement the {IERC7579Execution-executeFromExecutor} function.
@@ -67,8 +71,8 @@ abstract contract ERC7579Executor is IERC7579Module {
         bytes32 salt,
         bytes32 mode,
         bytes memory executionCalldata
-    ) internal virtual returns (bytes[] memory returnData) {
+    ) internal virtual returns (bytes[] memory) {
         emit ERC7579ExecutorOperationExecuted(account, salt, mode, executionCalldata);
-        return IERC7579Execution(account).executeFromExecutor(mode, executionCalldata);
+        return IERC7579Execution(account).executeFromExecutor{value: msg.value}(mode, executionCalldata);
     }
 }

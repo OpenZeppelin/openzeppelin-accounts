@@ -4,7 +4,11 @@ const { expect } = require('chai');
 
 const { impersonate } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/account');
 const { getDomain, PackedUserOperation } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/eip712');
-const { ERC4337Helper } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
+const {
+  ERC4337Helper,
+  SIG_VALIDATION_SUCCESS,
+  SIG_VALIDATION_FAILURE,
+} = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
 const { MODULE_TYPE_VALIDATOR } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc7579');
 const { NonNativeSigner, P256SigningKey } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/signers');
 
@@ -328,7 +332,9 @@ describe('ERC7579P256Validator', function () {
       it('validates user operation with correct P256 signature', async function () {
         const userOp = await this.mockAccount.createUserOp(this.userOp).then(op => this.signUserOp(op));
 
-        await expect(this.mockFromAccount.validateUserOp(userOp.packed, userOp.hash())).to.eventually.equal(0);
+        await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+          .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+          .withArgs(SIG_VALIDATION_SUCCESS);
       });
 
       it('rejects user operation with invalid P256 signature', async function () {
@@ -337,7 +343,9 @@ describe('ERC7579P256Validator', function () {
           signature: this.invalidSignature,
         });
 
-        await expect(this.mockFromAccount.validateUserOp(userOp.packed, userOp.hash())).to.eventually.equal(1);
+        await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+          .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+          .withArgs(SIG_VALIDATION_FAILURE);
       });
 
       it('rejects user operation with signature from wrong P256 key', async function () {
@@ -350,7 +358,9 @@ describe('ERC7579P256Validator', function () {
         );
         userOp.signature = wrongSignature;
 
-        await expect(this.mockFromAccount.validateUserOp(userOp.packed, userOp.hash())).to.eventually.equal(1);
+        await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+          .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+          .withArgs(SIG_VALIDATION_FAILURE);
       });
     });
 
