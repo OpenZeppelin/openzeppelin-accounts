@@ -9,16 +9,23 @@ const { MODULE_TYPE_VALIDATOR } = require('../../../../lib/@openzeppelin-contrac
 const {
   NonNativeSigner,
   MultiERC7913SigningKey,
+  P256SigningKey,
 } = require('../../../../lib/@openzeppelin-contracts/test/helpers/signers');
 
 const { shouldBehaveLikeERC7579Module } = require('../../test/modules/ERC7579Module.behavior');
 const { allowHandle } = require('../helpers/fhe');
 const { MAX_UINT32 } = require('../../../../lib/@openzeppelin-contracts/test/helpers/constants');
 
+const TEST_MESSAGE = ethers.id('OpenZeppelin');
+const TEST_MESSAGE_HASH = ethers.hashMessage(TEST_MESSAGE);
+
 // Prepare signers in advance
 const signerECDSA1 = ethers.Wallet.createRandom();
 const signerECDSA2 = ethers.Wallet.createRandom();
-const signerECDSA3 = ethers.Wallet.createRandom();
+
+// Prepare P256 signers for ERC-7913 tests
+const aliceP256 = new NonNativeSigner(P256SigningKey.random());
+const bobP256 = new NonNativeSigner(P256SigningKey.random());
 
 describe('ERC7579MultisigWeightedConfidential', function () {
   beforeEach(async function () {
@@ -39,21 +46,34 @@ describe('ERC7579MultisigWeightedConfidential', function () {
 
     await mockAccount.deploy();
 
-    // Prepare plaintext signers, weights, and threshold
-    const signers = [signerECDSA1.address, signerECDSA2.address];
-    const weights = [1, 2]; // Signer 1 has weight 1, signer 2 has weight 2
+    // Deploy ERC-7913 verifier
+    const verifier = await ethers.deployContract('ERC7913P256Verifier');
+
+    // Prepare mixed signers: one EOA and one ERC-7913 (P256)
+    aliceP256.bytes = ethers.concat([
+      verifier.target,
+      aliceP256.signingKey.publicKey.qx,
+      aliceP256.signingKey.publicKey.qy,
+    ]);
+    bobP256.bytes = ethers.concat([verifier.target, bobP256.signingKey.publicKey.qx, bobP256.signingKey.publicKey.qy]);
+
+    // Prepare signer bytes for encryption and multi-signer
+    const signerBytes = [signerECDSA1.address, aliceP256.bytes];
+    const weights = [1, 2]; // Signer 1 (EOA) has weight 1, signer 2 (P256) has weight 2
     const threshold = 2; // Require total weight of 2
-    const multiSigner = new NonNativeSigner(new MultiERC7913SigningKey([signerECDSA1, signerECDSA2]));
+    const multiSigner = new NonNativeSigner(new MultiERC7913SigningKey([signerECDSA1, aliceP256]));
 
     // Encrypt signers, weights, and threshold using fhevm
+    // EOA: cast to uint256, ERC-7913: hash with keccak256 then cast to uint256
     const input = fhevm.createEncryptedInput(mock.target, mockAccount.address);
     input.add32(threshold);
-    signers.forEach(signer => input.addAddress(signer));
+    input.add256(signerECDSA1.address); // EOA: cast to uint256
+    input.add256(ethers.keccak256(aliceP256.bytes)); // ERC-7913: hash then cast
     weights.forEach(weight => input.add16(weight));
     const encrypted = await input.encrypt();
     const encryptedThreshold = encrypted.handles.at(0);
-    const signerHandles = encrypted.handles.slice(1, 1 + signers.length);
-    const weightHandles = encrypted.handles.slice(1 + signers.length);
+    const signerHandles = encrypted.handles.slice(1, 1 + signerBytes.length);
+    const weightHandles = encrypted.handles.slice(1 + signerBytes.length);
     const inputProof = encrypted.inputProof;
 
     Object.assign(this, {
@@ -72,13 +92,14 @@ describe('ERC7579MultisigWeightedConfidential', function () {
           weightHandles.map(handle => ethers.hexlify(handle)),
         ],
       ),
-      signers,
+      signers: signerBytes,
       signerHandles,
       weights,
       weightHandles,
       threshold,
       encryptedThreshold,
       multiSigner,
+      verifier,
     });
   });
 
@@ -95,7 +116,9 @@ describe('ERC7579MultisigWeightedConfidential', function () {
       .to.emit(this.mock, 'ERC7579MultisigThresholdSet')
       .withArgs(this.mockAccount.address, anyValue);
 
-    await expect(this.mock.getSignerCount(this.mockAccount.address)).to.eventually.equal(this.signers.length);
+    await expect(this.mock.getSignerCount(this.mockAccount.address)).to.eventually.equal(
+      this.multiSigner.signingKey.signers.length,
+    );
 
     const threshold = await this.mockFromAccount.threshold(this.mockAccount.address);
     await allowHandle(this.accountAsSigner, signerECDSA1.address, threshold);
@@ -177,11 +200,11 @@ describe('ERC7579MultisigWeightedConfidential', function () {
       await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
     });
 
-    it('can add signers with default weight of 1', async function () {
+    it('can add EOA signers with default weight of 1', async function () {
       const signersBefore = await this.mock.getSignerCount(this.mockAccount.address);
 
       const newSignerInput = fhevm.createEncryptedInput(this.mock.target, this.mockAccount.address);
-      newSignerInput.addAddress(signerECDSA3.address);
+      newSignerInput.add256(signerECDSA2.address);
       const encryptedNewSigner = await newSignerInput.encrypt();
       const newSigner = ethers.hexlify(encryptedNewSigner.handles[0]);
 
@@ -192,9 +215,45 @@ describe('ERC7579MultisigWeightedConfidential', function () {
       await expect(this.mock.getSignerCount(this.mockAccount.address)).to.eventually.equal(signersBefore + 1n);
       await expect(this.mock.isSigner(this.mockAccount.address, newSigner)).to.eventually.be.true;
       await allowHandle(this.accountAsSigner, signerECDSA1.address, newSigner);
-      await expect(fhevm.userDecryptEaddress(newSigner, this.mockAccount.address, signerECDSA1)).to.eventually.eq(
-        signerECDSA3.address,
+      const decryptedId = await fhevm.userDecryptEuint(
+        FhevmType.euint256,
+        newSigner,
+        this.mockAccount.address,
+        signerECDSA1,
       );
+      expect(ethers.getAddress(ethers.hexlify(ethers.toBeHex(decryptedId), 20))).to.eq(signerECDSA2.address);
+
+      const receipt = await this.mockFromAccount
+        .$_signerWeight(this.mockAccount.address, newSigner)
+        .then(tx => tx.wait());
+      const [[weight]] = receipt.logs
+        .map(log => this.mock.interface.parseLog(log))
+        .filter(log => log?.name === 'return$_signerWeight')
+        .map(log => log.args.map(arg => ethers.hexlify(arg)));
+      await allowHandle(this.accountAsSigner, signerECDSA1.address, weight);
+      await expect(
+        fhevm.userDecryptEuint(FhevmType.euint16, weight, this.mockAccount.address, signerECDSA1),
+      ).to.eventually.eq(1);
+    });
+
+    it('can add ERC-7913 signers with default weight of 1', async function () {
+      const signersBefore = await this.mock.getSignerCount(this.mockAccount.address);
+
+      const newSignerInput = fhevm.createEncryptedInput(this.mock.target, this.mockAccount.address);
+      newSignerInput.add256(ethers.keccak256(aliceP256.bytes));
+      const encryptedNewSigner = await newSignerInput.encrypt();
+      const newSigner = ethers.hexlify(encryptedNewSigner.handles[0]);
+
+      await expect(this.mockFromAccount.addSigners([newSigner], encryptedNewSigner.inputProof))
+        .to.emit(this.mock, 'ERC7579MultisigSignerAdded')
+        .withArgs(this.mockAccount.address, newSigner);
+
+      await expect(this.mock.getSignerCount(this.mockAccount.address)).to.eventually.equal(signersBefore + 1n);
+      await expect(this.mock.isSigner(this.mockAccount.address, newSigner)).to.eventually.be.true;
+      await allowHandle(this.accountAsSigner, signerECDSA1.address, newSigner);
+      await expect(
+        fhevm.userDecryptEuint(FhevmType.euint256, newSigner, this.mockAccount.address, signerECDSA1),
+      ).to.eventually.eq(ethers.keccak256(aliceP256.bytes));
 
       const receipt = await this.mockFromAccount
         .$_signerWeight(this.mockAccount.address, newSigner)
@@ -282,7 +341,7 @@ describe('ERC7579MultisigWeightedConfidential', function () {
     });
 
     it('reverts when setting weight for non-existent signer', async function () {
-      const fakeSigner = ethers.keccak256(ethers.toUtf8Bytes('fake signer'));
+      const fakeSigner = ethers.id('fake signer');
       const newWeights = [3];
 
       const weightInput = fhevm.createEncryptedInput(this.mock.target, this.mockAccount.address);
@@ -385,9 +444,10 @@ describe('ERC7579MultisigWeightedConfidential', function () {
     });
 
     it('reverts when removing a signer that does not exist', async function () {
-      await expect(
-        this.mockFromAccount.removeSigners([ethers.keccak256(ethers.toUtf8Bytes('random handle'))]),
-      ).to.be.revertedWithCustomError(this.mock, 'ERC7579MultisigNonexistentSigner');
+      await expect(this.mockFromAccount.removeSigners([ethers.id('random handle')])).to.be.revertedWithCustomError(
+        this.mock,
+        'ERC7579MultisigNonexistentSigner',
+      );
     });
 
     it('reverts when there are no signers left', async function () {
@@ -461,22 +521,32 @@ describe('ERC7579MultisigWeightedConfidential', function () {
     it('validates signatures with weights meeting threshold', async function () {
       const signerHandles = await this.mock.getSigners(this.mockAccount.address, 0, MAX_UINT32);
       await Promise.all(signerHandles.map(handle => allowHandle(this.accountAsSigner, signerECDSA1.address, handle)));
-      const signers = [];
+
+      // Get signer IDs for matching
+      const signerIds = [];
       for (const handle of signerHandles) {
-        signers.push(await fhevm.userDecryptEaddress(handle, this.mockAccount.address, signerECDSA1));
+        const decryptedId = await fhevm.userDecryptEuint(
+          FhevmType.euint256,
+          handle,
+          this.mockAccount.address,
+          signerECDSA1,
+        );
+        signerIds.push(decryptedId);
       }
 
-      const testMessage = 'test';
-      const messageHash = ethers.hashMessage(testMessage);
-      // Sign with signer 2 (weight 2) which should meet threshold of 2
-      const signature = await signerECDSA2.signMessage(testMessage);
+      // Sign with aliceP256 (weight 2) which should meet threshold of 2
+      const signature = await aliceP256.signMessage(TEST_MESSAGE);
+
+      // Find the handle for aliceP256 (ERC-7913 signer)
+      const aliceP256Id = ethers.keccak256(aliceP256.bytes);
+      const aliceP256Index = signerIds.findIndex(id => id === BigInt(aliceP256Id));
 
       const receipt = await this.mock
         .$_validateMultisig(
           this.mockAccount.address,
-          messageHash,
-          [signerECDSA2.address],
-          [ethers.hexlify(signerHandles[signers.findIndex(s => ethers.getAddress(s) === signerECDSA2.address)])],
+          TEST_MESSAGE_HASH,
+          [aliceP256.bytes],
+          [ethers.hexlify(signerHandles[aliceP256Index])],
           [signature],
         )
         .then(tx => tx.wait());
@@ -493,31 +563,41 @@ describe('ERC7579MultisigWeightedConfidential', function () {
     it('validates multiple signatures with combined weights meeting threshold', async function () {
       const signerHandles = await this.mock.getSigners(this.mockAccount.address, 0, MAX_UINT32);
       await Promise.all(signerHandles.map(handle => allowHandle(this.accountAsSigner, signerECDSA1.address, handle)));
-      const signers = [];
+
+      // Get signer IDs for matching
+      const signerIds = [];
       for (const handle of signerHandles) {
-        signers.push(await fhevm.userDecryptEaddress(handle, this.mockAccount.address, signerECDSA1));
+        const decryptedId = await fhevm.userDecryptEuint(
+          FhevmType.euint256,
+          handle,
+          this.mockAccount.address,
+          signerECDSA1,
+        );
+        signerIds.push(decryptedId);
       }
 
-      const testMessage = 'test';
-      const messageHash = ethers.hashMessage(testMessage);
-      const multiSignature = await this.multiSigner.signMessage(testMessage);
+      const multiSignature = await this.multiSigner.signMessage(TEST_MESSAGE);
 
       const [signingSigners, signatures] = ethers.AbiCoder.defaultAbiCoder().decode(
         ['bytes[]', 'bytes[]'],
         multiSignature,
       );
 
-      // Combined weight: signer1 (1) + signer2 (2) = 3, threshold is 2
+      // Combined weight: signer1 (EOA, weight 1) + signer2 (P256, weight 2) = 3, threshold is 2
       const receipt = await this.mock
         .$_validateMultisig(
           this.mockAccount.address,
-          messageHash,
-          signingSigners.map(signer => ethers.getAddress(ethers.hexlify(signer.slice(0, 42)))),
-          signingSigners.map(signer =>
-            ethers.hexlify(
-              signerHandles[signers.findIndex(handle => ethers.getAddress(signer) === ethers.getAddress(handle))],
-            ),
-          ),
+          TEST_MESSAGE_HASH,
+          signingSigners.map(signer => ethers.hexlify(signer)),
+          signingSigners.map(signer => {
+            // For EOA: signer is address bytes, convert to uint256
+            // For ERC-7913: signer is verifier||key bytes, hash then convert to uint256
+            const signerId = ethers.isAddress(ethers.hexlify(signer))
+              ? ethers.getAddress(ethers.hexlify(signer))
+              : ethers.keccak256(signer);
+            const signerIndex = signerIds.findIndex(id => id === BigInt(signerId));
+            return ethers.hexlify(signerHandles[signerIndex]);
+          }),
           signatures.map(signature => ethers.hexlify(signature)),
         )
         .then(tx => tx.wait());
@@ -534,22 +614,32 @@ describe('ERC7579MultisigWeightedConfidential', function () {
     it('does not validate when combined weights do not meet threshold', async function () {
       const signerHandles = await this.mock.getSigners(this.mockAccount.address, 0, MAX_UINT32);
       await Promise.all(signerHandles.map(handle => allowHandle(this.accountAsSigner, signerECDSA1.address, handle)));
-      const signers = [];
+
+      // Get signer IDs for matching
+      const signerIds = [];
       for (const handle of signerHandles) {
-        signers.push(await fhevm.userDecryptEaddress(handle, this.mockAccount.address, signerECDSA1));
+        const decryptedId = await fhevm.userDecryptEuint(
+          FhevmType.euint256,
+          handle,
+          this.mockAccount.address,
+          signerECDSA1,
+        );
+        signerIds.push(decryptedId);
       }
 
-      const testMessage = 'test';
-      const messageHash = ethers.hashMessage(testMessage);
-      // Sign with signer 1 (weight 1), threshold is 2
-      const signature = await signerECDSA1.signMessage(testMessage);
+      // Sign with signerECDSA1 (EOA, weight 1), threshold is 2
+      const signature = await signerECDSA1.signMessage(TEST_MESSAGE);
+
+      // Find the handle for signerECDSA1 (EOA)
+      const signerECDSA1Id = signerECDSA1.address;
+      const signerECDSA1Index = signerIds.findIndex(id => id === BigInt(signerECDSA1Id));
 
       const receipt = await this.mock
         .$_validateMultisig(
           this.mockAccount.address,
-          messageHash,
+          TEST_MESSAGE_HASH,
           [signerECDSA1.address],
-          [ethers.hexlify(signerHandles[signers.findIndex(s => ethers.getAddress(s) === signerECDSA1.address)])],
+          [ethers.hexlify(signerHandles[signerECDSA1Index])],
           [signature],
         )
         .then(tx => tx.wait());
@@ -567,9 +657,17 @@ describe('ERC7579MultisigWeightedConfidential', function () {
     it('does not validate invalid signatures', async function () {
       const signerHandles = await this.mock.getSigners(this.mockAccount.address, 0, MAX_UINT32);
       await Promise.all(signerHandles.map(handle => allowHandle(this.accountAsSigner, signerECDSA1.address, handle)));
-      const signers = [];
+
+      // Get signer IDs for matching
+      const signerIds = [];
       for (const handle of signerHandles) {
-        signers.push(await fhevm.userDecryptEaddress(handle, this.mockAccount.address, signerECDSA1));
+        const decryptedId = await fhevm.userDecryptEuint(
+          FhevmType.euint256,
+          handle,
+          this.mockAccount.address,
+          signerECDSA1,
+        );
+        signerIds.push(decryptedId);
       }
 
       const testMessage = 'test';
@@ -584,12 +682,16 @@ describe('ERC7579MultisigWeightedConfidential', function () {
         .$_validateMultisig(
           this.mockAccount.address,
           ethers.hashMessage('different message'),
-          signingSigners.map(signer => ethers.getAddress(ethers.hexlify(signer.slice(0, 42)))),
-          signingSigners.map(signer =>
-            ethers.hexlify(
-              signerHandles[signers.findIndex(handle => ethers.getAddress(signer) === ethers.getAddress(handle))],
-            ),
-          ),
+          signingSigners.map(signer => ethers.hexlify(signer)),
+          signingSigners.map(signer => {
+            // For EOA: signer is address bytes, convert to uint256
+            // For ERC-7913: signer is verifier||key bytes, hash then convert to uint256
+            const signerId = ethers.isAddress(ethers.hexlify(signer))
+              ? ethers.getAddress(ethers.hexlify(signer))
+              : ethers.keccak256(signer);
+            const signerIndex = signerIds.findIndex(id => id === BigInt(signerId));
+            return ethers.hexlify(signerHandles[signerIndex]);
+          }),
           signatures.map(signature => ethers.hexlify(signature)),
         )
         .then(tx => tx.wait());

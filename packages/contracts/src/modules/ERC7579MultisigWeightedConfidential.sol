@@ -6,10 +6,10 @@ import {
     FHE,
     euint16,
     euint32,
+    euint256,
     externalEuint16,
     externalEuint32,
-    externalEaddress,
-    eaddress
+    externalEuint256
 } from "@fhevm/solidity/lib/FHE.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
@@ -21,9 +21,10 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
  * could have higher weight than others, allowing for weighted voting or prioritized authorization.
  *
  * Unlike the standard {ERC7579MultisigWeighted} module, this confidential version uses Fully
- * Homomorphic Encryption (FHE) to keep signer addresses, weights, and the threshold value
- * encrypted on-chain. This provides privacy benefits by hiding the identity of authorized signers,
- * their individual weights, and the number of signatures required to approve operations.
+ * Homomorphic Encryption (FHE) to keep signer identities (as uint256), weights, and the threshold
+ * value encrypted on-chain. This provides privacy benefits by hiding the identity of authorized
+ * signers (whether addresses or ERC-7913 keys), their individual weights, and the number of
+ * signatures required to approve operations.
  *
  * A smart account with this module installed can schedule social recovery operations
  * after obtaining approval from guardians with sufficient total weight (e.g., requiring
@@ -41,10 +42,10 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
     // Given _addSigners caps signers to 65335, the max uint32 must never be reached
     // as long as weights are encrypted uint16
     mapping(address account => euint32) private _totalExtraWeight;
-    mapping(address account => mapping(eaddress signer => euint16)) private _extraWeights;
+    mapping(address account => mapping(euint256 signer => euint16)) private _extraWeights;
 
     /// @dev Emitted when an encrypted signer's weight is changed.
-    event ERC7579MultisigWeightChanged(address indexed account, eaddress signer, euint16 weight);
+    event ERC7579MultisigWeightChanged(address indexed account, euint256 signer, euint16 weight);
 
     /// @dev The `signers` and `weights` arrays have mismatched lengths.
     error ERC7579MultisigMismatchedSignerWeights();
@@ -71,7 +72,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
         require(getSignerCount(msg.sender) == 0, ERC7579MultisigAlreadyInstalled());
         (
             bytes calldata inputProof,
-            externalEaddress[] calldata externalSigners,
+            externalEuint256[] calldata externalSigners,
             externalEuint32 externalThreshold,
             externalEuint16[] calldata externalWeights
         ) = _decodeMultisigWeightedInitData(initData);
@@ -88,7 +89,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
      * See {ERC7579MultisigConfidential-onUninstall}.
      */
     function onUninstall(bytes calldata data) public virtual override {
-        eaddress[] memory allSigners = getSigners(msg.sender, 0, type(uint32).max);
+        euint256[] memory allSigners = getSigners(msg.sender, 0, type(uint32).max);
         for (uint256 i = 0; i < allSigners.length; ++i) {
             _extraWeights[msg.sender][allSigners[i]] = euint16.wrap(0);
         }
@@ -97,7 +98,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
     }
 
     /// @dev Returns the encrypted extra weight of an encrypted signer for the specified account.
-    function extraWeight(address account, eaddress signer) public view virtual returns (euint16) {
+    function extraWeight(address account, euint256 signer) public view virtual returns (euint16) {
         return _extraWeights[account][signer];
     }
 
@@ -107,7 +108,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
     }
 
     /// @dev Returns the encrypted weight of an encrypted signer for the specified account.
-    function signerWeight(address account, eaddress signer) public virtual returns (euint16) {
+    function signerWeight(address account, euint256 signer) public virtual returns (euint16) {
         return _signerWeight(account, signer);
     }
 
@@ -125,7 +126,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
      * * Those of {_setSignerWeights} for additional requirements.
      */
     function setSignerWeights(
-        eaddress[] memory signers,
+        euint256[] memory signers,
         externalEuint16[] calldata externalWeights,
         bytes calldata inputProof
     ) public virtual {
@@ -142,7 +143,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
      * @dev Decodes weighted multisig initialization data from calldata without memory allocation.
      *
      * The initData should be encoded as:
-     * `abi.encode(bytes inputProof, externalEaddress[] signers, externalEuint32 threshold, externalEuint16[] weights)`
+     * `abi.encode(bytes inputProof, externalEuint256[] signers, externalEuint32 threshold, externalEuint16[] weights)`
      *
      * Requirements:
      *
@@ -159,7 +160,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
         virtual
         returns (
             bytes calldata inputProof,
-            externalEaddress[] calldata signers,
+            externalEuint256[] calldata signers,
             externalEuint32 threshold_,
             externalEuint16[] calldata weights
         )
@@ -193,7 +194,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
      *
      * * The number of signers must not exceed `type(uint16).max`. Reverts with {ERC7579MultisigTooManySigners} if exceeded.
      */
-    function _addSigners(address account, eaddress[] memory newSigners) internal virtual override {
+    function _addSigners(address account, euint256[] memory newSigners) internal virtual override {
         super._addSigners(account, newSigners);
         // Restrict to uint16 to allow each signer to have as much as `type(uint16).max` weight
         // without overflowing the total weight.
@@ -213,13 +214,13 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
      *
      * Emits {ERC7579MultisigWeightChanged} for each signer.
      */
-    function _setSignerWeights(address account, eaddress[] memory signers, euint16[] memory weights) internal virtual {
+    function _setSignerWeights(address account, euint256[] memory signers, euint16[] memory weights) internal virtual {
         require(signers.length == weights.length, ERC7579MultisigMismatchedSignerWeights());
 
         euint32 extraWeightAdded = FHE.asEuint32(0);
         euint32 extraWeightRemoved = FHE.asEuint32(0);
         for (uint256 i = 0; i < signers.length; ++i) {
-            eaddress signer = signers[i];
+            euint256 signer = signers[i];
             require(isSigner(account, signer), ERC7579MultisigNonexistentSigner(signer));
 
             euint16 weight = weights[i];
@@ -260,10 +261,10 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
      *
      * Cleans up weights for removed signers and updates the total extra weight accordingly.
      */
-    function _removeSigners(address account, eaddress[] calldata oldSigners) internal virtual override {
+    function _removeSigners(address account, euint256[] calldata oldSigners) internal virtual override {
         euint32 extraWeightRemoved = FHE.asEuint32(0);
         for (uint256 i = 0; i < oldSigners.length; ++i) {
-            eaddress signer = oldSigners[i];
+            euint256 signer = oldSigners[i];
             // extraWeightRemoved can't overflow because there are at most `type(uint16).max` signers
             extraWeightRemoved = FHE.add(extraWeightRemoved, extraWeight(account, signer));
             _setExtraWeight(account, signer, FHE.asEuint16(0));
@@ -283,7 +284,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
     }
 
     /// @dev Sets the extra weight for a signer for the specified account.
-    function _setExtraWeight(address account, eaddress signer, euint16 newExtraWeight) internal virtual {
+    function _setExtraWeight(address account, euint256 signer, euint16 newExtraWeight) internal virtual {
         _extraWeights[account][signer] = newExtraWeight;
         FHE.allowThis(newExtraWeight);
         FHE.allow(newExtraWeight, account);
@@ -303,7 +304,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
      *
      * Returns 0 if the signer is not authorized, otherwise returns 1 plus the signer's extra weight.
      */
-    function _signerWeight(address account, eaddress signer) internal virtual override returns (euint16) {
+    function _signerWeight(address account, euint256 signer) internal virtual override returns (euint16) {
         euint16 weight = FHE.select(
             FHE.asEbool(isSigner(account, signer)),
             FHE.add(FHE.asEuint16(1), extraWeight(account, signer)),

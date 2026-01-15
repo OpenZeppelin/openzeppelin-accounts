@@ -3,7 +3,7 @@ pragma solidity ^0.8.27;
 
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import {FHE, euint16, euint32, externalEuint32, externalEaddress, eaddress, ebool} from "@fhevm/solidity/lib/FHE.sol";
+import {FHE, ebool, euint16, euint32, euint256, externalEuint32, externalEuint256} from "@fhevm/solidity/lib/FHE.sol";
 import {IERC7579Module} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 
 /**
@@ -13,7 +13,7 @@ import {IERC7579Module} from "@openzeppelin/contracts/interfaces/draft-IERC7579.
  * This module provides a base implementation for multisignature validation that can be
  * attached to any function through the {_validateMultisig} internal function. Unlike
  * the standard {ERC7579Multisig} module, this confidential version uses Fully Homomorphic
- * Encryption (FHE) to keep signer addresses and the threshold value encrypted on-chain.
+ * Encryption (FHE) to keep signer identities and the threshold value encrypted on-chain.
  * This provides privacy benefits by hiding the identity of authorized signers and the
  * number of signatures required to approve operations.
  *
@@ -23,14 +23,20 @@ import {IERC7579Module} from "@openzeppelin/contracts/interfaces/draft-IERC7579.
  * confidential.
  *
  * IMPORTANT: Due to the probabilistic nature of FHE encryption, encrypting the same plaintext
- * address multiple times produces different ciphertexts. This means the same underlying signer
+ * uint256 value multiple times produces different ciphertexts. This means the same underlying signer
  * can be added multiple times with different encrypted handles, and duplicate detection by
  * comparing encrypted handles is not possible. Consider duplicate signers may cause the
  * threshold to become unreachable since {_validateSignatures} checks for duplicates.
+ *
+ * NOTE: This module supports both address-based signers (EOAs and ERC-1271 contracts) and
+ * ERC-7913 signers (arbitrary keys with verifiers). Addresses are cast to uint256 and
+ * encrypted, while ERC-7913 keys are hashed with `keccak256(verifier || key)` before
+ * encryption. This hybrid approach allows addresses to be recognizable after decryption,
+ * while ERC-7913 keys require an off-chain mapping from hash to preimage.
  */
 abstract contract ERC7579MultisigConfidential is IERC7579Module {
     using EnumerableSet for EnumerableSet.Bytes32Set;
-    using SignatureChecker for bytes32;
+    using SignatureChecker for bytes;
 
     /// @dev The `initData` is invalid or improperly formatted.
     error ERC7579MultisigInvalidInitData();
@@ -38,7 +44,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     /// @dev The validation arrays have mismatched lengths.
     error ERC7579MultisigMismatchedValidationLength(
         uint256 signingSignersLength,
-        uint256 signerHandlesLength,
+        uint256 signerIdHandlesLength,
         uint256 signaturesLength
     );
 
@@ -48,17 +54,17 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     /// @dev The `signers` array is empty.
     error ERC7579MultisigEmptySigners();
 
-    /// @dev The encrypted `signer` does not exist in the authorized set.
-    error ERC7579MultisigNonexistentSigner(eaddress signer);
+    /// @dev The encrypted `signerId` does not exist in the authorized set.
+    error ERC7579MultisigNonexistentSigner(euint256 signerId);
 
     /// @dev The `account` has already installed the module.
     error ERC7579MultisigAlreadyInstalled();
 
-    /// @dev Emitted when an encrypted signer is added to the authorized set.
-    event ERC7579MultisigSignerAdded(address indexed account, eaddress signer);
+    /// @dev Emitted when an encrypted signerId is added to the authorized set.
+    event ERC7579MultisigSignerAdded(address indexed account, euint256 signerId);
 
-    /// @dev Emitted when an encrypted signer is removed from the authorized set.
-    event ERC7579MultisigSignerRemoved(address indexed account, eaddress signer);
+    /// @dev Emitted when an encrypted signerId is removed from the authorized set.
+    event ERC7579MultisigSignerRemoved(address indexed account, euint256 signerId);
 
     /// @dev Emitted when the encrypted threshold is updated.
     event ERC7579MultisigThresholdSet(address indexed account, euint32 threshold);
@@ -69,16 +75,16 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     /**
      * @dev Sets up the module's initial configuration when installed by an account.
      * See {IERC7579Module-onInstall}. The `initData` encodes externally encrypted
-     * `signers` and `threshold`. See {_decodeMultisigInitData} for the encoding details.
+     * `signerIds` and `threshold`. See {_decodeMultisigInitData} for the encoding details.
      *
      * NOTE: An account can only call `onInstall` once. If called directly by the account,
-     * the signers will be set to the provided data. Future installations will revert with
+     * the signerIds will be set to the provided data. Future installations will revert with
      * {ERC7579MultisigAlreadyInstalled}.
      *
      * Requirements:
      *
      * * The `account` must have no signers installed. Reverts with {ERC7579MultisigAlreadyInstalled} if not.
-     * * The `signers` array must be non-empty. Reverts with {ERC7579MultisigEmptySigners} if not.
+     * * The `signerIds` array must be non-empty. Reverts with {ERC7579MultisigEmptySigners} if not.
      * * Those of {_decodeMultisigInitData} for the decoding requirements.
      * * Those of {addSigners} for encrypted signers configuration requirements.
      */
@@ -86,17 +92,17 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         require(getSignerCount(msg.sender) == 0, ERC7579MultisigAlreadyInstalled());
         (
             bytes calldata inputProof,
-            externalEaddress[] calldata externalSigners,
+            externalEuint256[] calldata externalSignersIds,
             externalEuint32 externalThreshold
         ) = _decodeMultisigInitData(initData);
-        require(externalSigners.length > 0, ERC7579MultisigEmptySigners());
-        addSigners(externalSigners, inputProof);
+        require(externalSignersIds.length > 0, ERC7579MultisigEmptySigners());
+        addSigners(externalSignersIds, inputProof);
         setThreshold(externalThreshold, inputProof);
     }
 
     /**
      * @dev Cleans up module's configuration when uninstalled from an account.
-     * Clears all signers and resets the threshold.
+     * Clears all signerIds and resets the threshold.
      *
      * See {IERC7579Module-onUninstall}.
      *
@@ -111,20 +117,20 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     /**
      * @dev Returns a slice of the set of authorized encrypted signers for the specified account.
      *
-     * The returned signers are encrypted addresses (eaddress). Using `start = 0` and
-     * `end = type(uint32).max` will return the entire set of signers.
+     * The returned signers are encrypted uint256 values (euint256). Using `start = 0` and
+     * `end = type(uint32).max` will return the entire set of signerIds.
      *
      * WARNING: Depending on the `start` and `end`, this operation can copy a large amount of data to memory, which
      * can be expensive. This is designed for view accessors queried without gas fees. Using it in state-changing
      * functions may become uncallable if the slice grows too large.
      */
-    function getSigners(address account, uint32 start, uint32 end) public view virtual returns (eaddress[] memory) {
+    function getSigners(address account, uint32 start, uint32 end) public view virtual returns (euint256[] memory) {
         bytes32[] memory signerHandles = _signersSetByAccount[account].values(start, end);
-        eaddress[] memory signers;
+        euint256[] memory signerIds;
         assembly ("memory-safe") {
-            signers := signerHandles
+            signerIds := signerHandles
         }
-        return signers;
+        return signerIds;
     }
 
     /// @dev Returns the number of authorized encrypted signers for the specified account.
@@ -132,9 +138,9 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         return _signersSetByAccount[account].length();
     }
 
-    /// @dev Returns whether the encrypted `signer` is an authorized signer for the specified account.
-    function isSigner(address account, eaddress signer) public view virtual returns (bool) {
-        return _signersSetByAccount[account].contains(FHE.toBytes32(signer));
+    /// @dev Returns whether the encrypted `signerId` is an authorized signer for the specified account.
+    function isSigner(address account, euint256 signerId) public view virtual returns (bool) {
+        return _signersSetByAccount[account].contains(FHE.toBytes32(signerId));
     }
 
     /**
@@ -146,29 +152,33 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     }
 
     /**
-     * @dev Adds new encrypted signers to the authorized set for the calling account.
+     * @dev Adds new encrypted signerIds to the authorized set for the calling account.
      * Can only be called by the account itself. See {_addSigners}.
+     *
+     * The signerIds are provided as externally encrypted uint256 values. Each signerId represents
+     * either an address (cast to uint256) or an ERC-7913 key (hashed with `keccak256(verifier || key)`
+     * and cast to uint256). The caller must encrypt the signerId off-chain before calling this function.
      *
      * Requirements:
      *
      * * Those of {_addSigners} for additional requirements.
      */
-    function addSigners(externalEaddress[] calldata newSigners, bytes calldata inputProof) public virtual {
-        eaddress[] memory signers = new eaddress[](newSigners.length);
-        for (uint256 i = 0; i < newSigners.length; ++i) {
-            signers[i] = FHE.fromExternal(newSigners[i], inputProof);
-            FHE.allowThis(signers[i]);
-            FHE.allow(signers[i], msg.sender);
+    function addSigners(externalEuint256[] calldata newSignersIds, bytes calldata inputProof) public virtual {
+        euint256[] memory signersIds = new euint256[](newSignersIds.length);
+        for (uint256 i = 0; i < newSignersIds.length; ++i) {
+            signersIds[i] = FHE.fromExternal(newSignersIds[i], inputProof);
+            FHE.allowThis(signersIds[i]);
+            FHE.allow(signersIds[i], msg.sender);
         }
-        _addSigners(msg.sender, signers);
+        _addSigners(msg.sender, signersIds);
     }
 
     /**
-     * @dev Removes encrypted signers from the authorized set for the calling account.
+     * @dev Removes encrypted signerIds from the authorized set for the calling account.
      * Can only be called by the account itself. See {_removeSigners}.
      */
-    function removeSigners(eaddress[] calldata oldSigners) public virtual {
-        _removeSigners(msg.sender, oldSigners);
+    function removeSigners(euint256[] calldata oldSignersIds) public virtual {
+        _removeSigners(msg.sender, oldSignersIds);
     }
 
     /**
@@ -180,38 +190,38 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     }
 
     /**
-     * @dev Adds the encrypted `newSigners` to those allowed to sign on behalf of the `account`.
+     * @dev Adds the encrypted `newSignerIds` to those allowed to sign on behalf of the `account`.
      *
      * Requirements:
      *
      * * The number of signers must not exceed `type(uint32).max`. Reverts with {ERC7579MultisigTooManySigners} if exceeded.
      *
-     * NOTE: FHE encryption is probabilistic. Encrypting the same plaintext address multiple times
+     * NOTE: FHE encryption is probabilistic. Encrypting the same plaintext uint256 value multiple times
      * produces different ciphertexts and thus different handles. This allows the same underlying
      * signer to be added multiple times, so duplicate detection by comparing encrypted handles
      * is not possible.
      *
      * Emits {ERC7579MultisigSignerAdded} for each new signer.
      */
-    function _addSigners(address account, eaddress[] memory newSigners) internal virtual {
-        for (uint256 i = 0; i < newSigners.length; ++i) {
-            eaddress encryptedSigner = newSigners[i];
-            // FHE encryption is probabilistic. Encrypting the same plaintext address multiple times
+    function _addSigners(address account, euint256[] memory newSignerIds) internal virtual {
+        for (uint256 i = 0; i < newSignerIds.length; ++i) {
+            euint256 encryptedSignerId = newSignerIds[i];
+            // FHE encryption is probabilistic. Encrypting the same plaintext uint256 value multiple times
             // produces different ciphertexts and thus different handles. This allows the same
             // underlying signer to be added multiple times so it doesn't make sense to check for duplicates
             // by checking the return value of add.
-            _signersSetByAccount[account].add(FHE.toBytes32(encryptedSigner));
-            emit ERC7579MultisigSignerAdded(account, encryptedSigner);
+            _signersSetByAccount[account].add(FHE.toBytes32(encryptedSignerId));
+            emit ERC7579MultisigSignerAdded(account, encryptedSignerId);
         }
         require(getSignerCount(account) <= type(uint32).max, ERC7579MultisigTooManySigners());
     }
 
     /**
-     * @dev Removes the encrypted `oldSigners` from the authorized signers for the account.
+     * @dev Removes the encrypted `oldSignerIds` from the authorized signerIds for the account.
      *
      * Requirements:
      *
-     * * Each of `oldSigners` must be authorized. Reverts with {ERC7579MultisigNonexistentSigner} if not.
+     * * Each of `oldSignerIds` must be authorized. Reverts with {ERC7579MultisigNonexistentSigner} if not.
      * * After removal, at least one signer must remain. Reverts with {ERC7579MultisigEmptySigners} if not.
      *
      * NOTE: The threshold will be automatically capped at the number of remaining signers to ensure it's
@@ -219,14 +229,14 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
      *
      * Emits {ERC7579MultisigSignerRemoved} for each removed signer.
      */
-    function _removeSigners(address account, eaddress[] calldata oldSigners) internal virtual {
-        for (uint256 i = 0; i < oldSigners.length; ++i) {
-            eaddress encryptedSigner = oldSigners[i];
+    function _removeSigners(address account, euint256[] calldata oldSignerIds) internal virtual {
+        for (uint256 i = 0; i < oldSignerIds.length; ++i) {
+            euint256 encryptedSignerId = oldSignerIds[i];
             require(
-                _signersSetByAccount[account].remove(FHE.toBytes32(encryptedSigner)),
-                ERC7579MultisigNonexistentSigner(encryptedSigner)
+                _signersSetByAccount[account].remove(FHE.toBytes32(encryptedSignerId)),
+                ERC7579MultisigNonexistentSigner(encryptedSignerId)
             );
-            emit ERC7579MultisigSignerRemoved(account, encryptedSigner);
+            emit ERC7579MultisigSignerRemoved(account, encryptedSignerId);
         }
         require(getSignerCount(account) > 0, ERC7579MultisigEmptySigners());
         _setThreshold(account, threshold(account)); // Caps the threshold at the number of signers
@@ -259,8 +269,9 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
      * The validation is performed using encrypted values to maintain confidentiality. The function
      * verifies that the number of valid signatures meets or exceeds the encrypted threshold.
      *
-     * Where `signingSigners` are the plaintext addresses of signers, `signerHandles` are their
-     * corresponding encrypted handles, and `signatures` are their signatures of the operation `hash`.
+     * Where `signingSigners` are the plaintext signers (addresses or ERC-7913 keys as bytes),
+     * `signerIdHandles` are their corresponding encrypted id handles, and `signatures` are their
+     * signatures of the operation `hash`.
      *
      * TIP: Given that both the threshold and signers are encrypted, it's possible to pass-in
      * valid signatures that don't count towards the threshold.
@@ -268,13 +279,13 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     function _validateMultisig(
         address account,
         bytes32 hash,
-        address[] calldata signingSigners,
-        eaddress[] calldata signerHandles,
+        bytes[] calldata signingSigners,
+        euint256[] calldata signerIdHandles,
         bytes[] calldata signatures
     ) internal virtual returns (ebool) {
         ebool valid = _validateThreshold(
             account,
-            _validateSignatures(account, hash, signingSigners, signerHandles, signatures)
+            _validateSignatures(account, hash, signingSigners, signerIdHandles, signatures)
         );
         FHE.allowThis(valid);
         FHE.allow(valid, account);
@@ -288,71 +299,63 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
      * To count towards the threshold, for each signer:
      *
      * 1. The handle must exist in the authorized set
-     * 2. The handle must match the corresponding plaintext address
+     * 2. The handle must match the corresponding plaintext signer
+     *    (address cast to uint256 or keccak256 hash for ERC-7913 keys)
      * 3. The signature must be valid for the given hash
-     * 4. The must not be a duplicate of a previous signer in the array
+     * 4. The signer must not be a duplicate of a previous signer in the array
      *
-     * The signers should be ordered by their address value to ensure efficient duplication check.
+     * The signers should be ordered by their uint256 representation to ensure efficient duplication check.
      * Unordered signers are supported, but the uniqueness check will be more expensive.
      *
      * Requirements:
      *
-     * * The `signingSigners`, `signerHandles`, and `signatures` arrays must have the same length.
+     * * The `signingSigners`, `signerIdHandles`, and `signatures` arrays must have the same length.
      *   Reverts with {ERC7579MultisigMismatchedValidationLength} if not.
      */
     function _validateSignatures(
         address account,
         bytes32 hash,
-        address[] calldata signingSigners,
-        eaddress[] calldata signerHandles,
+        bytes[] calldata signingSigners,
+        euint256[] calldata signerIdHandles,
         bytes[] calldata signatures
     ) internal virtual returns (euint32) {
         require(
-            signingSigners.length == signerHandles.length && signingSigners.length == signatures.length,
-            ERC7579MultisigMismatchedValidationLength(signingSigners.length, signerHandles.length, signatures.length)
+            signingSigners.length == signerIdHandles.length && signingSigners.length == signatures.length,
+            ERC7579MultisigMismatchedValidationLength(signingSigners.length, signerIdHandles.length, signatures.length)
         );
 
         euint32 reachedThreshold = FHE.asEuint32(0);
-        address lastSigner = address(0);
+        uint256 lastId = uint256(0);
 
         for (uint256 i = 0; i < signingSigners.length; ++i) {
-            address signer = signingSigners[i];
-            eaddress signerHandle = signerHandles[i];
-
+            bytes calldata signer = signingSigners[i];
+            euint256 signerIdHandle = signerIdHandles[i];
+            uint256 signerId = _toEncryptedId(signer);
             bool isDuplicate = false;
 
-            // If the current signer is greater than all previous signers, then this is a new signer.
-            if (lastSigner < signer) {
-                lastSigner = signer;
-            } else {
+            // If the current signer id is greater than all previous signer ids, then this is a new signer.
+            if (lastId < signerId) lastId = signerId;
+            else {
                 // If this signer is not greater than all the previous ones, verify that it is not a duplicate
-                // This loop is never executed if the signers are ordered by address.
+                // This loop is never executed if the signers are ordered by their uint256 representation.
                 for (uint256 j = 0; j < i && !isDuplicate; ++j) {
-                    isDuplicate = signer == signingSigners[j];
+                    isDuplicate = signerId == _toEncryptedId(signingSigners[j]);
                 }
             }
 
-            bool isValidSignature = SignatureChecker.isValidSignatureNow(signer, hash, signatures[i]);
-            // Can't overflow because the amount of signers is bounded to type(uint32).max
-            reachedThreshold = FHE.add(
-                reachedThreshold,
-                FHE.select(
-                    FHE.and(
-                        FHE.asEbool(!isDuplicate),
-                        FHE.and(FHE.eq(signerHandle, FHE.asEaddress(signer)), FHE.asEbool(isValidSignature))
-                    ),
-                    _signerWeight(account, signerHandle), // 0 if not a signer
-                    FHE.asEuint16(0)
-                )
-            );
+            ebool equalIds = FHE.eq(signerIdHandle, FHE.asEuint256(signerId));
+            ebool isValid = FHE.and(equalIds, FHE.asEbool(signer.isValidSignatureNow(hash, signatures[i])));
+            ebool isUniqueAndValid = FHE.and(FHE.asEbool(!isDuplicate), isValid);
+            euint16 weight = FHE.select(isUniqueAndValid, _signerWeight(account, signerIdHandle), FHE.asEuint16(0));
+            reachedThreshold = FHE.add(reachedThreshold, weight); // Can't overflow because the amount of signers is bounded to type(uint32).max
         }
 
         return reachedThreshold;
     }
 
-    /// @dev Returns the encrypted weight of an encrypted signer towards the threshold of the account.
-    function _signerWeight(address account, eaddress signer) internal virtual returns (euint16) {
-        return FHE.select(FHE.asEbool(isSigner(account, signer)), FHE.asEuint16(1), FHE.asEuint16(0));
+    /// @dev Returns the encrypted weight of an encrypted signerId towards the threshold of the account (0 or 1).
+    function _signerWeight(address account, euint256 signerId) internal virtual returns (euint16) {
+        return FHE.select(FHE.asEbool(isSigner(account, signerId)), FHE.asEuint16(1), FHE.asEuint16(0));
     }
 
     /**
@@ -367,7 +370,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
      * @dev Decodes multisig initialization data from calldata without memory allocation.
      *
      * The initData should be encoded as:
-     * `abi.encode(bytes inputProof, externalEaddress[] signers, externalEuint32 threshold)`
+     * `abi.encode(bytes inputProof, externalEuint256[] signerIds, externalEuint32 threshold)`
      *
      * Requirements:
      *
@@ -382,11 +385,11 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         internal
         pure
         virtual
-        returns (bytes calldata inputProof, externalEaddress[] calldata signers, externalEuint32 threshold_)
+        returns (bytes calldata inputProof, externalEuint256[] calldata signerIds, externalEuint32 threshold_)
     {
         // Minimum length:
-        // inputProofOffset(32) + signersOffset(32) + threshold(32) +
-        // inputProofLength(32) + signersArrayLength(32) = 160 bytes
+        // inputProofOffset(32) + signerIdsOffset(32) + threshold(32) +
+        // inputProofLength(32) + signerIdsArrayLength(32) = 160 bytes
         require(initData.length > 0x9f, ERC7579MultisigInvalidInitData());
 
         // Get the externally encrypted threshold handle
@@ -407,21 +410,26 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
             inputProof.length := proofLength
         }
 
-        // Get offset to the signers array
-        uint256 signersOffset = uint256(bytes32(initData[0x20:0x40]));
-        uint256 signersDataOffset = signersOffset + 0x20;
+        // Get offset to the signerIds array
+        uint256 signerIdsOffset = uint256(bytes32(initData[0x20:0x40]));
+        uint256 signerIdsDataOffset = signerIdsOffset + 0x20;
 
         // Validate signers offset is within bounds and has space for array length
-        require(signersOffset > 0x7f && signersDataOffset <= initData.length, ERC7579MultisigInvalidInitData());
-        uint256 signersLength = uint256(bytes32(initData[signersOffset:signersDataOffset]));
-        require(signersDataOffset + signersLength * 0x20 <= initData.length, ERC7579MultisigInvalidInitData());
+        require(signerIdsOffset > 0x7f && signerIdsDataOffset <= initData.length, ERC7579MultisigInvalidInitData());
+        uint256 signerIdsLength = uint256(bytes32(initData[signerIdsOffset:signerIdsDataOffset]));
+        require(signerIdsDataOffset + signerIdsLength * 0x20 <= initData.length, ERC7579MultisigInvalidInitData());
 
         // Set up the calldata slice for the signers array
         assembly ("memory-safe") {
-            signers.offset := add(initData.offset, signersDataOffset)
-            signers.length := signersLength
+            signerIds.offset := add(initData.offset, signerIdsDataOffset)
+            signerIds.length := signerIdsLength
         }
 
-        return (inputProof, signers, threshold_);
+        return (inputProof, signerIds, threshold_);
+    }
+
+    /// @dev Converts a signer (address or ERC-7913 key) to uint256 for encryption.
+    function _toEncryptedId(bytes calldata signer) private pure returns (uint256) {
+        return signer.length > 20 ? uint256(keccak256(signer)) : uint256(uint160(bytes20(signer)));
     }
 }
