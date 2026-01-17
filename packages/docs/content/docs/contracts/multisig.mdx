@@ -44,7 +44,7 @@ The framework also provides confidential versions of the multisig modules that u
 <Callout>The confidential module variants don't support ERC-7913 signers, only addresses.</Callout>
 
 <Callout>
-  Due to FHE's probabilistic nature, encrypting the same address multiple times produces different ciphertexts. This
+  Due to FHE's non-deterministic nature, encrypting the same address multiple times produces different ciphertexts. This
   means the same signer can be added multiple times with different encrypted handles. The validation logic handles
   duplicates by checking plaintext addresses.
 </Callout>

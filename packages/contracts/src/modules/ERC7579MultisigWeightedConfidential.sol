@@ -320,7 +320,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
         // total can't overflow because there are at most `type(uint16).max` signers
         // with at most `type(uint16).max - 1` extra weight each, so the total extra weight is at most
         // `type(uint16).max * (type(uint16).max - 1) = type(uint16).max**2 - type(uint16).max`.
-        euint32 total = FHE.add(FHE.asEuint32(uint32(getSignerCount(account))), totalExtraWeight(account));
+        euint32 total = FHE.add(uint32(getSignerCount(account)), totalExtraWeight(account));
         FHE.allowThis(total);
         FHE.allow(total, account);
         return total;

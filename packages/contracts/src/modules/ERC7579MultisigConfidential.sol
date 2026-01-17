@@ -22,7 +22,7 @@ import {IERC7579Module} from "@openzeppelin/contracts/interfaces/draft-IERC7579.
  * a social recovery operation, while keeping both the signer identities and threshold
  * confidential.
  *
- * IMPORTANT: Due to the probabilistic nature of FHE encryption, encrypting the same plaintext
+ * IMPORTANT: Due to the non-deterministic nature of FHE encryption, encrypting the same plaintext
  * uint256 value multiple times produces different ciphertexts. This means the same underlying signer
  * can be added multiple times with different encrypted handles, and duplicate detection by
  * comparing encrypted handles is not possible. Consider duplicate signers may cause the
@@ -196,7 +196,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
      *
      * * The number of signers must not exceed `type(uint32).max`. Reverts with {ERC7579MultisigTooManySigners} if exceeded.
      *
-     * NOTE: FHE encryption is probabilistic. Encrypting the same plaintext uint256 value multiple times
+     * NOTE: FHE encryption is non-deterministic. Encrypting the same plaintext uint256 value multiple times
      * produces different ciphertexts and thus different handles. This allows the same underlying
      * signer to be added multiple times, so duplicate detection by comparing encrypted handles
      * is not possible.
@@ -206,7 +206,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     function _addSigners(address account, euint256[] memory newSignerIds) internal virtual {
         for (uint256 i = 0; i < newSignerIds.length; ++i) {
             euint256 encryptedSignerId = newSignerIds[i];
-            // FHE encryption is probabilistic. Encrypting the same plaintext uint256 value multiple times
+            // FHE encryption is non-deterministic. Encrypting the same plaintext uint256 value multiple times
             // produces different ciphertexts and thus different handles. This allows the same
             // underlying signer to be added multiple times so it doesn't make sense to check for duplicates
             // by checking the return value of add.
@@ -343,9 +343,8 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
                 }
             }
 
-            ebool equalIds = FHE.eq(signerIdHandle, FHE.asEuint256(signerId));
-            ebool isValid = FHE.and(equalIds, FHE.asEbool(signer.isValidSignatureNow(hash, signatures[i])));
-            ebool isUniqueAndValid = FHE.and(FHE.asEbool(!isDuplicate), isValid);
+            ebool isValid = FHE.and(FHE.eq(signerIdHandle, signerId), signer.isValidSignatureNow(hash, signatures[i]));
+            ebool isUniqueAndValid = FHE.and(!isDuplicate, isValid);
             euint16 weight = FHE.select(isUniqueAndValid, _signerWeight(account, signerIdHandle), FHE.asEuint16(0));
             reachedThreshold = FHE.add(reachedThreshold, weight); // Can't overflow because the amount of signers is bounded to type(uint32).max
         }
