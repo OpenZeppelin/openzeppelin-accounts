@@ -60,6 +60,9 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     /// @dev The `account` has already installed the module.
     error ERC7579MultisigAlreadyInstalled();
 
+    /// @dev The encrypted `signerId` is a duplicate handle.
+    error ERC7579MultisigDuplicateHandle(euint256 signerId);
+
     /// @dev Emitted when an encrypted signerId is added to the authorized set.
     event ERC7579MultisigSignerAdded(address indexed account, euint256 signerId);
 
@@ -206,11 +209,11 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     function _addSigners(address account, euint256[] memory newSignerIds) internal virtual {
         for (uint256 i = 0; i < newSignerIds.length; ++i) {
             euint256 encryptedSignerId = newSignerIds[i];
-            // FHE encryption is non-deterministic. Encrypting the same plaintext uint256 value multiple times
-            // produces different ciphertexts and thus different handles. This allows the same
-            // underlying signer to be added multiple times so it doesn't make sense to check for duplicates
-            // by checking the return value of add.
-            _signersSetByAccount[account].add(FHE.toBytes32(encryptedSignerId));
+            // We only check that the handle is not duplicate, though, it doesn't guarantee that the signer is not a duplicate.
+            require(
+                _signersSetByAccount[account].add(FHE.toBytes32(encryptedSignerId)),
+                ERC7579MultisigDuplicateHandle(encryptedSignerId)
+            );
             emit ERC7579MultisigSignerAdded(account, encryptedSignerId);
         }
         require(getSignerCount(account) <= type(uint32).max, ERC7579MultisigTooManySigners());

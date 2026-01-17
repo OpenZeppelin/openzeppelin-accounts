@@ -196,6 +196,19 @@ describe('ERC7579MultisigConfidential', function () {
         fhevm.userDecryptEuint(FhevmType.euint256, newSigner, this.mockAccount.address, signerECDSA1),
       ).to.eventually.eq(signerId);
     });
+
+    it('reverts when adding a duplicate handle', async function () {
+      const newSignerInput = fhevm.createEncryptedInput(this.mock.target, this.mockAccount.address);
+      newSignerInput.add256(signerECDSA2.address);
+      const encryptedNewSigner = await newSignerInput.encrypt();
+      const newSigner = ethers.hexlify(encryptedNewSigner.handles[0]);
+
+      await this.mockFromAccount.addSigners([newSigner], encryptedNewSigner.inputProof);
+
+      await expect(
+        this.mockFromAccount.addSigners([newSigner], encryptedNewSigner.inputProof),
+      ).to.be.revertedWithCustomError(this.mock, 'ERC7579MultisigDuplicateHandle');
+    });
   });
 
   describe('removeSigners', function () {
