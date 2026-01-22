@@ -346,9 +346,9 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
                 }
             }
 
+            if (isDuplicate) continue;
             ebool isValid = FHE.and(FHE.eq(signerIdHandle, signerId), signer.isValidSignatureNow(hash, signatures[i]));
-            ebool isUniqueAndValid = FHE.and(!isDuplicate, isValid);
-            euint16 weight = FHE.select(isUniqueAndValid, _signerWeight(account, signerIdHandle), FHE.asEuint16(0));
+            euint16 weight = FHE.select(isValid, _signerWeight(account, signerIdHandle), FHE.asEuint16(0));
             reachedThreshold = FHE.add(reachedThreshold, weight); // Can't overflow because the amount of signers is bounded to type(uint32).max
         }
 

@@ -12,9 +12,7 @@ import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/Signa
 import {ERC7579Validator} from "../../modules/validators/ERC7579Validator.sol";
 import {ERC7579Executor} from "../../modules/executors/ERC7579Executor.sol";
 import {ERC7579MultisigConfidentialValidator} from "../../modules/validators/ERC7579MultisigConfidentialValidator.sol";
-import {
-    ERC7579MultisigWeightedConfidentialValidator
-} from "../../modules/validators/ERC7579MultisigWeightedConfidentialValidator.sol";
+import {ERC7579MultisigWeightedConfidentialValidator} from "../../modules/validators/ERC7579MultisigWeightedConfidentialValidator.sol";
 
 abstract contract ERC7579ModuleMock is IERC7579Module {
     uint256 private _moduleTypeId;
