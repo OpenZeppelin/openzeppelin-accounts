@@ -3,18 +3,18 @@ const { expect } = require('chai');
 const { FhevmType } = require('@fhevm/hardhat-plugin');
 const { anyValue } = require('@nomicfoundation/hardhat-chai-matchers/withArgs');
 
-const { impersonate } = require('../../../../lib/@openzeppelin-contracts/test/helpers/account');
-const { ERC4337Helper } = require('../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
-const { MODULE_TYPE_VALIDATOR } = require('../../../../lib/@openzeppelin-contracts/test/helpers/erc7579');
+const { impersonate } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/account');
+const { ERC4337Helper } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
+const { MODULE_TYPE_VALIDATOR } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc7579');
 const {
   NonNativeSigner,
   MultiERC7913SigningKey,
   P256SigningKey,
-} = require('../../../../lib/@openzeppelin-contracts/test/helpers/signers');
+} = require('../../../../../lib/@openzeppelin-contracts/test/helpers/signers');
 
-const { shouldBehaveLikeERC7579Module } = require('../../test/modules/ERC7579Module.behavior');
-const { allowHandle } = require('../helpers/fhe');
-const { MAX_UINT32 } = require('../../../../lib/@openzeppelin-contracts/test/helpers/constants');
+const { shouldBehaveLikeERC7579Module } = require('../../../test/modules/ERC7579Module.behavior');
+const { allowHandle } = require('../../helpers/fhe');
+const { MAX_UINT32 } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/constants');
 
 const TEST_MESSAGE = ethers.id('OpenZeppelin');
 const TEST_MESSAGE_HASH = ethers.hashMessage(TEST_MESSAGE);
@@ -27,10 +27,10 @@ const signerECDSA2 = ethers.Wallet.createRandom();
 const aliceP256 = new NonNativeSigner(P256SigningKey.random());
 const bobP256 = new NonNativeSigner(P256SigningKey.random());
 
-describe('ERC7579MultisigWeightedConfidential', function () {
+describe('ERC7579MultisigWeightedConfidentialValidator', function () {
   beforeEach(async function () {
-    // Deploy ERC-7579 multisig weighted confidential module
-    const mock = await ethers.deployContract('$ERC7579MultisigWeightedConfidentialMock');
+    // Deploy ERC-7579 multisig weighted confidential validator
+    const mock = await ethers.deployContract('$ERC7579MultisigWeightedConfidentialValidatorMock');
 
     // ERC-4337 env
     const helper = new ERC4337Helper();

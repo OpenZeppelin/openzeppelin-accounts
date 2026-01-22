@@ -15,8 +15,9 @@ const {
   NonNativeSigner,
   MultiERC7913SigningKey,
 } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/signers');
+const { getDomain, PackedUserOperation } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/eip712');
 
-const { shouldBehaveLikeERC7579Module } = require('../ERC7579Module.behavior');
+const { shouldBehaveLikeERC7579Module, shouldBehaveLikeERC7579Validator } = require('../ERC7579Module.behavior');
 const { shouldBehaveLikeERC7579Multisig } = require('../ERC7579Multisig.behavior');
 
 // Prepare signers in advance
@@ -25,6 +26,8 @@ const signerECDSA2 = ethers.Wallet.createRandom();
 const signerECDSA3 = ethers.Wallet.createRandom();
 
 async function fixture() {
+  const [other] = await ethers.getSigners();
+
   // Deploy ERC-7579 multisig module
   const mock = await ethers.deployContract('$ERC7579MultisigValidator');
   const target = await ethers.deployContract('CallReceiverMock');
@@ -32,11 +35,16 @@ async function fixture() {
   // ERC-4337 env
   const helper = new ERC4337Helper();
   await helper.wait();
+  const entrypointDomain = await getDomain(predeploy.entrypoint.v09);
 
   // Prepare signers
   const signers = [signerECDSA1.address, signerECDSA2.address];
   const threshold = 1;
-  const multiSigner = new NonNativeSigner(new MultiERC7913SigningKey([signerECDSA1, signerECDSA2]));
+  const signer = new NonNativeSigner(new MultiERC7913SigningKey([signerECDSA1, signerECDSA2]));
+  const signUserOp = userOp =>
+    signer
+      .signTypedData(entrypointDomain, { PackedUserOperation }, userOp.packed)
+      .then(signature => Object.assign(userOp, { signature }));
 
   // Prepare module installation data
   const installData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes[]', 'uint256'], [signers, threshold]);
@@ -72,7 +80,9 @@ async function fixture() {
     signers,
     nonSigner: signerECDSA3.address,
     threshold,
-    multiSigner,
+    signer,
+    signUserOp,
+    other,
   };
 }
 
@@ -83,6 +93,7 @@ describe('ERC7579Multisig', function () {
 
   shouldBehaveLikeERC7579Module();
   shouldBehaveLikeERC7579Multisig();
+  shouldBehaveLikeERC7579Validator();
 
   describe('signature validation', function () {
     beforeEach(async function () {
@@ -96,7 +107,7 @@ describe('ERC7579Multisig', function () {
       // Create hash and sign it
       const testMessage = 'test';
       const messageHash = ethers.hashMessage(testMessage);
-      const multiSignature = await this.multiSigner.signMessage(testMessage);
+      const multiSignature = await this.signer.signMessage(testMessage);
       // Should succeed with valid signatures meeting threshold
       await expect(this.mock.$_rawERC7579Validation(this.mockAccount.address, messageHash, multiSignature)).to
         .eventually.be.true;
@@ -107,12 +118,12 @@ describe('ERC7579Multisig', function () {
       await this.mockFromAccount.setThreshold(2);
 
       // Create MultiERC7913SigningKey with one authorized signer
-      const multiSigner = new NonNativeSigner(new MultiERC7913SigningKey([signerECDSA1]));
+      const signer = new NonNativeSigner(new MultiERC7913SigningKey([signerECDSA1]));
 
       // Create hash and sign it
       const testMessage = 'test';
       const messageHash = ethers.hashMessage(testMessage);
-      const multiSignature = await multiSigner.signMessage(testMessage);
+      const multiSignature = await signer.signMessage(testMessage);
 
       // Should fail because threshold is 2 but only 1 signature provided
       await expect(this.mock.$_rawERC7579Validation(this.mockAccount.address, messageHash, multiSignature)).to
@@ -121,12 +132,12 @@ describe('ERC7579Multisig', function () {
 
     it('validates valid signatures meeting threshold', async function () {
       // Create MultiERC7913SigningKey with one authorized signer
-      const multiSigner = new NonNativeSigner(new MultiERC7913SigningKey([signerECDSA1]));
+      const signer = new NonNativeSigner(new MultiERC7913SigningKey([signerECDSA1]));
 
       // Create hash and sign it
       const testMessage = 'test';
       const messageHash = ethers.hashMessage(testMessage);
-      const multiSignature = await multiSigner.signMessage(testMessage);
+      const multiSignature = await signer.signMessage(testMessage);
 
       // Should succeed with valid signature meeting threshold
       await expect(this.mock.$_rawERC7579Validation(this.mockAccount.address, messageHash, multiSignature)).to
@@ -135,12 +146,12 @@ describe('ERC7579Multisig', function () {
 
     it('rejects signatures from unauthorized signers', async function () {
       // Create MultiERC7913SigningKey with unauthorized signer
-      const multiSigner = new NonNativeSigner(new MultiERC7913SigningKey([ethers.Wallet.createRandom()]));
+      const signer = new NonNativeSigner(new MultiERC7913SigningKey([ethers.Wallet.createRandom()]));
 
       // Create hash and sign it
       const testMessage = 'test';
       const messageHash = ethers.hashMessage(testMessage);
-      const multiSignature = await multiSigner.signMessage(testMessage);
+      const multiSignature = await signer.signMessage(testMessage);
 
       // Should fail because signer is not authorized
       await expect(this.mock.$_rawERC7579Validation(this.mockAccount.address, messageHash, multiSignature)).to
@@ -152,7 +163,7 @@ describe('ERC7579Multisig', function () {
       const testMessage = 'test';
       const differentMessage = 'different test';
       const messageHash = ethers.hashMessage(testMessage);
-      const multiSignature = await this.multiSigner.signMessage(differentMessage);
+      const multiSignature = await this.signer.signMessage(differentMessage);
 
       // Should fail because signature is for a different hash
       await expect(this.mock.$_rawERC7579Validation(this.mockAccount.address, messageHash, multiSignature)).to

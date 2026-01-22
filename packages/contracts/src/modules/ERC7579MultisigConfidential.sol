@@ -432,6 +432,9 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
 
     /// @dev Converts a signer (address or ERC-7913 key) to uint256 for encryption.
     function _toEncryptedId(bytes calldata signer) private pure returns (uint256) {
-        return signer.length > 20 ? uint256(keccak256(signer)) : uint256(uint160(bytes20(signer)));
+        return
+            signer.length > 20
+                ? uint256(keccak256(signer)) // forge-lint: disable-next-line(unsafe-typecast)
+                : uint256(uint160(bytes20(signer)));
     }
 }
