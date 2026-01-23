@@ -40,7 +40,6 @@ module.exports = {
   },
   exposed: {
     imports: true,
-    initializers: true,
   },
   paths: {
     sources: 'src',

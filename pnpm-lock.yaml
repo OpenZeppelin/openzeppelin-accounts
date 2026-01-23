@@ -56,6 +56,9 @@ importers:
       '@openzeppelin/contracts':
         specifier: file:../../lib/@openzeppelin-contracts
         version: openzeppelin-solidity@file:lib/@openzeppelin-contracts
+      '@openzeppelin/contracts-upgradeable':
+        specifier: file:../../lib/@openzeppelin-contracts-upgradeable
+        version: openzeppelin-solidity@file:lib/@openzeppelin-contracts-upgradeable
       hardhat:
         specifier: ^2.26.3
         version: 2.26.3(ts-node@10.9.2(@types/node@24.10.1)(typescript@5.9.3))(typescript@5.9.3)
@@ -4372,6 +4375,9 @@ packages:
 
   openzeppelin-solidity@file:lib/@openzeppelin-contracts:
     resolution: {directory: lib/@openzeppelin-contracts, type: directory}
+
+  openzeppelin-solidity@file:lib/@openzeppelin-contracts-upgradeable:
+    resolution: {directory: lib/@openzeppelin-contracts-upgradeable, type: directory}
 
   optionator@0.8.3:
     resolution: {integrity: sha512-+IW9pACdk3XWmmTXG8m3upGUJst5XRGzxMRjXzAuJ1XnIFNvfhjjIuYkDvysnPQ7qzqVzLt78BCruntqRhWQbA==}
@@ -10442,6 +10448,8 @@ snapshots:
       regex-recursion: 6.0.2
 
   openzeppelin-solidity@file:lib/@openzeppelin-contracts: {}
+
+  openzeppelin-solidity@file:lib/@openzeppelin-contracts-upgradeable: {}
 
   optionator@0.8.3:
     dependencies:

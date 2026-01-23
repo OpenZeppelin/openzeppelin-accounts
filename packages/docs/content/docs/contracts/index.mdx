@@ -37,24 +37,24 @@ Given the framework's is designed to provide compatibility with major ERC-7579 a
 - EIP-712 signature support
 - NFT holder capabilities (ERC721 and ERC1155)
 
-#### Using OpenAccount
+#### Using OpenAccountFactory
 
-If you don't already have an ERC-7579 compatible account, you can deploy `OpenAccount` as your base account. Simply extend it and provide EIP-712 domain parameters:
+The `OpenAccountFactory` is deployed across all major EVM chains at the same deterministic address:
 
-```solidity
-import { OpenAccount } from '@open-accounts-framework/contracts/OpenAccount.sol';
-import { EIP712 } from '@openzeppelin/contracts/utils/cryptography/EIP712.sol';
-
-contract MyAccount is OpenAccount {
-  constructor() EIP712('MyAccount', '1') {}
-}
+```
+0x9045eF209067701bE7b78AaC216C04Ffa6543330
 ```
 
-#### Deploying with a Factory
+This factory creates minimal ERC-1967 proxy clones of the `OpenAccount` implementation, providing deterministic addresses and efficient ERC-1967 proxy deployment. By design, the OpenAccount is upgradeable allowing the account itself (or the entrypoint) to upgrade the implementation contract.
 
-The recommended approach for deploying accounts is using a factory pattern. When you send your first user operation, the account will be created deterministically (its address can be predicted) using the `initCode` field in the UserOperation. This field contains both the address of a factory contract and the data required to call it and create your smart account.
+<Callout type="info">
+  ZKSync has a different CREATE2 derivation scheme making it impossible to deploy deterministically in chains using the
+  ZKStack.
+</Callout>
 
-You can create your own account factory using OpenZeppelin's [Clones library](https://docs.openzeppelin.com/contracts/5.x/api/proxy#Clones), which takes advantage of decreased deployment costs and account address predictability:
+#### Creating a Custom Factory
+
+If you need custom account logic or want to extend `OpenAccount`, you can create your own account factory using OpenZeppelin's [Clones library](https://docs.openzeppelin.com/contracts/5.x/api/proxy#Clones):
 
 ```solidity
 // contracts/MyFactoryAccount.sol
@@ -96,6 +96,12 @@ contract MyFactoryAccount {
 }
 ```
 
+<Callout type="info">
+  Most developers are fine using deployed `OpenAccountFactory` at `0x9045eF209067701bE7b78AaC216C04Ffa6543330`. Only
+  create a custom factory if you need to extend `OpenAccount` with custom logic or implement a different account
+  contract.
+</Callout>
+
 <Callout type="warning">
   Account factories should be carefully implemented to ensure the account address is deterministically tied to the
   initial owners or signers. This prevents frontrunning attacks where a malicious actor could deploy the account with
@@ -105,17 +111,42 @@ contract MyFactoryAccount {
 
 #### Handling Initialization
 
-Since `OpenAccount` implements `Initializable`, it's designed to work with factories. The account can be initialized with a validator or executor module right after deployment:
+Since `OpenAccount` implements `Initializable`, it's designed to work with factories. The account must be initialized with at least one validator or executor module right after deployment:
 
 ```solidity
-// Initialize with a validator during deployment
-bytes memory initData = abi.encodePacked(signerAddress);
-account.initialize(MODULE_TYPE_VALIDATOR, validatorAddress, initData);
+function initialize(
+    uint256[] calldata moduleTypeIds,
+    address[] calldata modules,
+    bytes[] calldata initDatas,
+    Mode configMode,
+    bytes calldata configCalldata
+) public
 ```
 
+In case an extra configuration call is needed from the account, the `configMode` and `configCalldata` arguments following ERC-7579 `Mode` and `executionCalldata` definitions, which allow to execute arbitrary calls during initialization and after module installation:
+
+```solidity
+// Single configuration call during initialization
+Mode configMode = CALLTYPE_SINGLE.encodeMode(EXECTYPE_DEFAULT, ...);
+bytes memory configCalldata = abi.encodePacked(
+    targetAddress,
+    uint256(0), // value
+    abi.encodeCall(target.someFunction, (arg1, arg2))
+);
+
+account.initialize(moduleTypeIds, modules, initDatas, configMode, configCalldata);
+```
+
+<Callout>
+  Factories will normally include the initialization call as part of the address derivation to ensure that each address
+  is specific to the owners and configuration set. For this reason, accounts who want to support `value` during a
+  configuration call must receive it first to an address that includes the transfer and native value in the calldata;
+  any change to the `configCalldata` will change the address of the account.
+</Callout>
+
 <Callout type="warning">
-  Leaving an account uninitialized will leave it unusable since no validator module will be installed to authorize
-  operations.
+  Accounts must be initialized with at least one validator or executor module. Leaving an account uninitialized or
+  without these modules will make it unusable since no module will be installed to authorize operations.
 </Callout>
 
 ## Installing Modules
