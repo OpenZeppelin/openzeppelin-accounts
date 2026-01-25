@@ -7,7 +7,7 @@
   "scripts": {
     "compile": "tsc",
     "compile:watch": "tsc -w",
-    "test": "npm run compile && ava",
+    "test": "ava",
     "test:watch": "ava -w"
   },
   "repository": {
@@ -18,14 +18,18 @@
   "license": "MIT",
   "dependencies": {
     "@noble/curves": "^1.9.0",
-    "viem": "^2.42.0"
+    "viem": "^2.44.4"
   },
   "devDependencies": {
     "@ava/typescript": "^5.0.0",
     "@fast-check/ava": "^2.0.2",
+    "@pimlico/alto": "^0.0.20",
+    "@types/node": "^25.0.10",
     "ava": "^6.2.0",
     "fast-check": "^4.1.1",
+    "hardhat-predeploy": "^0.4.1",
     "prettier": "^3.5.3",
+    "prool": "^0.2.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   },

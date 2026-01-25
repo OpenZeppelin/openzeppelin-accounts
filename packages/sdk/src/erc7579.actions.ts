@@ -78,10 +78,9 @@ async function accountId<TSmartAccount extends SmartAccount | undefined>(
  * @property {Hex} modules[].initData The initialization data for the module
  * @property {ExecType} [execType] Optional execution type for the user operation
  */
-type InstallModulesParameters<TSmartAccount extends SmartAccount | undefined> = SendUserOperationParameters<
-  TSmartAccount,
-  TSmartAccount,
-  readonly Call[]
+type InstallModulesParameters<TSmartAccount extends SmartAccount | undefined> = Omit<
+  SendUserOperationParameters<TSmartAccount, TSmartAccount, readonly Call[]>,
+  'calls' | 'callData'
 > & {
   modules: {
     type: ModuleType;
@@ -89,6 +88,8 @@ type InstallModulesParameters<TSmartAccount extends SmartAccount | undefined> = 
     initData: Hex;
   }[];
   execType?: ExecType;
+  calls?: readonly Call[];
+  callData?: Hex;
 };
 
 /**
@@ -298,10 +299,9 @@ async function supportsModule<TSmartAccount extends SmartAccount | undefined>(
  * @property {Hex} modules[].deInitData The deinitialization data for the module
  * @property {ExecType} [execType] Optional execution type for the user operation
  */
-type UninstallModulesParameters<TSmartAccount extends SmartAccount | undefined> = SendUserOperationParameters<
-  TSmartAccount,
-  TSmartAccount,
-  readonly Call[]
+type UninstallModulesParameters<TSmartAccount extends SmartAccount | undefined> = Omit<
+  SendUserOperationParameters<TSmartAccount, TSmartAccount, readonly Call[]>,
+  'calls' | 'callData'
 > & {
   modules: {
     type: ModuleType;
@@ -309,6 +309,8 @@ type UninstallModulesParameters<TSmartAccount extends SmartAccount | undefined> 
     deInitData: Hex;
   }[];
   execType?: ExecType;
+  calls?: readonly Call[];
+  callData?: Hex;
 };
 
 /**

@@ -2,15 +2,15 @@ import {
   entryPoint09Abi,
   entryPoint09Address,
   EntryPointVersion,
-  getUserOperationHash,
   toSmartAccount,
   ToSmartAccountParameters,
   ToSmartAccountReturnType,
   UserOperationRequest,
   SmartAccountImplementation,
+  getUserOperationTypedData,
 } from 'viem/account-abstraction';
-import { Address, type Client, getContract, Hex, LocalAccount } from 'viem';
-import { encodeCalls, decodeCalls } from './erc7579.utils.js';
+import { type Account, Address, Chain, type Client, getContract, Hex, LocalAccount, RpcSchema, Transport } from 'viem';
+import { encodeCalls, decodeCalls } from '../erc7579.utils.js';
 
 /**
  * Parameters required to create an ERC-7579 account.
@@ -21,8 +21,13 @@ import { encodeCalls, decodeCalls } from './erc7579.utils.js';
  * @property {function(): Promise<{factory?: Address, factoryData?: Hex}>} getFactoryArgs Function that returns the factory address and data for account deployment
  * @property {function(UserOperationRequest?): Promise<Hex>} getStubSignature Function that returns a stub signature for gas estimation
  */
-type ToERC7579AccountParameters = {
-  client: Client;
+type ToERC7579AccountParameters<
+  transport extends Transport = Transport,
+  chain extends Chain | undefined = Chain | undefined,
+  account extends Account | undefined = Account | undefined,
+  rpcSchema extends RpcSchema | undefined = undefined,
+> = {
+  client: Client<transport, chain, account, rpcSchema>;
   signer: LocalAccount;
   getAddress: () => Promise<Address>;
   getFactoryArgs: () => Promise<{
@@ -58,16 +63,16 @@ const toERC7579Account = async (parameters: ToERC7579AccountParameters): Promise
     signMessage: signer.signMessage,
     signTypedData: signer.signTypedData,
     async signUserOperation(userOperation: Parameters<SmartAccountImplementation['signUserOperation']>[0]) {
-      const userOpHash = getUserOperationHash({
-        entryPointAddress: entryPointV09.address,
-        entryPointVersion: entryPointV09.version,
-        userOperation: {
-          ...userOperation,
-          sender: userOperation.sender ?? (await getAddress()),
-        },
-        chainId: userOperation.chainId!,
-      });
-      return signer.signMessage({ message: { raw: userOpHash } });
+      return signer.signTypedData(
+        getUserOperationTypedData({
+          entryPointAddress: entryPointV09.address,
+          userOperation: {
+            ...userOperation,
+            sender: userOperation.sender ?? (await getAddress()),
+          },
+          chainId: client.chain?.id ?? 1,
+        }),
+      );
     },
     ...override,
   });

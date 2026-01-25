@@ -22,7 +22,7 @@ import {
   CallType,
   ExecType,
   ModuleType,
-} from './erc7579.utils.js';
+} from '../erc7579.utils.js';
 
 function hexa(): fc.Arbitrary<string> {
   const items = '0123456789abcdef';
