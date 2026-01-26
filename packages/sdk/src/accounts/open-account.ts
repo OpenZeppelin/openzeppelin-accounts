@@ -24,9 +24,15 @@ import { erc1967ProxyCode } from '../erc1967.utils.js';
 /**
  * Parameters required to create an OpenAccount.
  *
+ * This type supports two modes of operation:
+ * 1. Creating a new account via factory (requires factory, moduleTypeIds, modules, initDatas)
+ * 2. Using an existing deployed account (requires address)
+ *
  * @property {Client} client The viem client to use for blockchain interactions
  * @property {LocalAccount} signer The local account signer to use for signing messages and operations
  * @property {function(UserOperationRequest?): Promise<Hex>} getStubSignature Function that returns a stub signature for gas estimation
+ *
+ * Mode 1 - Create new account:
  * @property {GetContractReturnType} factory The OpenAccountFactory contract instance used to create and deploy accounts
  * @property {ModuleType[]} moduleTypeIds Array of module type identifiers (validator, executor, etc.) to install during initialization
  * @property {Address[]} modules Array of module contract addresses corresponding to each module type
@@ -34,6 +40,9 @@ import { erc1967ProxyCode } from '../erc1967.utils.js';
  * @property {EncodeMode} [configMode] Optional execution mode for the configuration calldata
  * @property {Hex} [configCalldata] Optional calldata to execute after initialization for account configuration
  * @property {Hex} [salt] Optional salt for deterministic address generation via CREATE2
+ *
+ * Mode 2 - Use existing account:
+ * @property {Address} address The address of an already deployed OpenAccount
  */
 type ToOpenAccountParameters<
   transport extends Transport = Transport,
