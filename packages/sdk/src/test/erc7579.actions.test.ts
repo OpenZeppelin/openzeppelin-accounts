@@ -162,7 +162,7 @@ test('accountId', async t => {
 
   await t.context.deployAccount();
 
-  t.is(await client.accountId(), '@openzeppelin/contracts.AccountERC7579.v1.0.0');
+  await client.accountId().then(id => t.is(id, '@openzeppelin/contracts.AccountERC7579.v1.0.0'));
 });
 
 test('isModuleInstalled', async t => {
@@ -308,10 +308,10 @@ test('supportsModule', async t => {
 
   await t.context.deployAccount();
 
-  t.is(await client.supportsModule({ type: 'validator' }), true);
-  t.is(await client.supportsModule({ type: 'executor' }), true);
-  t.is(await client.supportsModule({ type: 'hook' }), false);
-  t.is(await client.supportsModule({ type: 'fallback' }), true);
+  await client.supportsModule({ type: 'validator' }).then(supports => t.is(supports, true));
+  await client.supportsModule({ type: 'executor' }).then(supports => t.is(supports, true));
+  await client.supportsModule({ type: 'hook' }).then(supports => t.is(supports, false));
+  await client.supportsModule({ type: 'fallback' }).then(supports => t.is(supports, true));
 });
 
 test('installModules and uninstallModules', async t => {
@@ -500,7 +500,7 @@ test('execute', async t => {
     })
     .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
 
-  t.is(await testClient.getBalance({ address: receiver.address }), parseEther('1'));
+  await testClient.getBalance({ address: receiver.address }).then(balance => t.is(balance, parseEther('1')));
 
   await bundlerClient
     .execute({
@@ -515,5 +515,5 @@ test('execute', async t => {
     })
     .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
 
-  t.is(await testClient.getBalance({ address: receiver.address }), parseEther('7'));
+  await testClient.getBalance({ address: receiver.address }).then(balance => t.is(balance, parseEther('7')));
 });
