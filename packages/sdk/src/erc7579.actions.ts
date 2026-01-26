@@ -33,7 +33,7 @@ function hoistAccount<TSmartAccount extends SmartAccount | undefined>(
   let account = client.account;
 
   if (parameters) {
-    account = parameters.account as TSmartAccount;
+    account = (parameters.account || account) as TSmartAccount;
   }
 
   if (!account) {
@@ -78,19 +78,18 @@ async function accountId<TSmartAccount extends SmartAccount | undefined>(
  * @property {Hex} modules[].initData The initialization data for the module
  * @property {ExecType} [execType] Optional execution type for the user operation
  */
-type InstallModulesParameters<TSmartAccount extends SmartAccount | undefined> = Omit<
-  SendUserOperationParameters<TSmartAccount, TSmartAccount, readonly Call[]>,
-  'calls' | 'callData'
-> & {
-  modules: {
-    type: ModuleType;
-    address: Address;
-    initData: Hex;
-  }[];
-  execType?: ExecType;
-  calls?: readonly Call[];
-  callData?: Hex;
-};
+type InstallModulesParameters<TSmartAccount extends SmartAccount | undefined> =
+  GetSmartAccountParameter<TSmartAccount> &
+    Omit<SendUserOperationParameters<TSmartAccount, TSmartAccount, readonly Call[]>, 'calls' | 'callData'> & {
+      modules: {
+        type: ModuleType;
+        address: Address;
+        initData: Hex;
+      }[];
+      execType?: ExecType;
+      calls?: readonly Call[];
+      callData?: Hex;
+    };
 
 /**
  * Installs one or more modules on an ERC-7579 account via a user operation.
@@ -105,11 +104,11 @@ async function installModules<TSmartAccount extends SmartAccount | undefined>(
   client: Client<Transport, Chain | undefined, TSmartAccount>,
   parameters: InstallModulesParameters<TSmartAccount>,
 ): Promise<Hex> {
+  const account = await hoistAccount(client, parameters);
+
   if (!parameters.modules.length) {
     throw new Error('No modules to install');
   }
-
-  const account = await hoistAccount(client, parameters);
 
   const actionArgs = { ...parameters, account: parseAccount(account) as SmartAccount };
 
@@ -176,7 +175,7 @@ type IsModuleInstalledParameters<TSmartAccount extends SmartAccount | undefined>
   GetSmartAccountParameter<TSmartAccount> & {
     type: ModuleType;
     address: Address;
-    additionalContext: Hex;
+    additionalContext?: Hex;
   };
 
 /**
@@ -202,7 +201,7 @@ async function isModuleInstalled<TSmartAccount extends SmartAccount | undefined>
   )({
     abi: IERC7579ModuleConfigABI,
     functionName: 'isModuleInstalled',
-    args: [parseModuleTypeId(type), getAddress(address), additionalContext],
+    args: [parseModuleTypeId(type), getAddress(address), additionalContext ?? '0x'],
     address: account.address,
   });
 }
@@ -306,7 +305,7 @@ type UninstallModulesParameters<TSmartAccount extends SmartAccount | undefined> 
   modules: {
     type: ModuleType;
     address: Address;
-    deInitData: Hex;
+    deInitData?: Hex;
   }[];
   execType?: ExecType;
   calls?: readonly Call[];
@@ -326,11 +325,11 @@ async function uninstallModules<TSmartAccount extends SmartAccount | undefined>(
   client: Client<Transport, Chain | undefined, TSmartAccount>,
   parameters: UninstallModulesParameters<TSmartAccount>,
 ): Promise<Hex> {
+  const account = await hoistAccount(client, parameters);
+
   if (!parameters.modules.length) {
     throw new Error('No modules to uninstall');
   }
-
-  const account = await hoistAccount(client, parameters);
 
   const actionArgs = { ...parameters, account: parseAccount(account) as SmartAccount };
 
@@ -347,7 +346,7 @@ async function uninstallModules<TSmartAccount extends SmartAccount | undefined>(
               args: [
                 parseModuleTypeId(parameters.modules[0]!.type),
                 parameters.modules[0]!.address,
-                parameters.modules[0]!.deInitData,
+                parameters.modules[0]!.deInitData ?? ('0x' as `0x${string}`),
               ],
             }),
           },
@@ -358,7 +357,7 @@ async function uninstallModules<TSmartAccount extends SmartAccount | undefined>(
           data: encodeFunctionData({
             abi: IERC7579ModuleConfigABI,
             functionName: 'uninstallModule',
-            args: [parseModuleTypeId(type), address, deInitData],
+            args: [parseModuleTypeId(type), address, deInitData ?? ('0x' as `0x${string}`)],
           }),
         }));
 
@@ -391,13 +390,10 @@ async function uninstallModules<TSmartAccount extends SmartAccount | undefined>(
  *
  * @property {ExecType} [execType] Optional execution type for the user operation
  */
-type ExecuteParameters<TSmartAccount extends SmartAccount | undefined> = SendUserOperationParameters<
-  TSmartAccount,
-  TSmartAccount,
-  readonly Call[]
-> & {
-  execType?: ExecType;
-};
+type ExecuteParameters<TSmartAccount extends SmartAccount | undefined> = GetSmartAccountParameter<TSmartAccount> &
+  SendUserOperationParameters<TSmartAccount, TSmartAccount, readonly Call[]> & {
+    execType?: ExecType;
+  };
 
 /**
  * Executes calls on an ERC-7579 account via a user operation.
