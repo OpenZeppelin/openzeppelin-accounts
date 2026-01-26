@@ -166,136 +166,113 @@ test('accountId', async t => {
 });
 
 test('isModuleInstalled', async t => {
-  await t.throwsAsync(
-    async () =>
-      createTestClient(testClientArgs)
-        .extend(erc7579Actions())
-        .isModuleInstalled({
-          type: MODULE_TYPE_VALIDATOR,
-          address: t.context.ECDSAValidator.address,
-
-          account: undefined as unknown as ToSmartAccountReturnType,
-        }),
-    {
-      message: /Account not found/,
-    },
-  );
+  const isModuleInstalledWithoutAccount = async () =>
+    createTestClient(testClientArgs)
+      .extend(erc7579Actions())
+      .isModuleInstalled({
+        type: MODULE_TYPE_VALIDATOR,
+        address: t.context.ECDSAValidator.address,
+        account: undefined as unknown as ToSmartAccountReturnType,
+      });
+  await t.throwsAsync(isModuleInstalledWithoutAccount, {
+    message: /Account not found/,
+  });
 
   const client = createTestClient({
     account: t.context.account,
     ...testClientArgs,
   }).extend(erc7579Actions());
 
-  await t.throwsAsync(
-    async () =>
-      client.isModuleInstalled({
-        type: MODULE_TYPE_VALIDATOR,
-        address: t.context.ECDSAValidator.address,
-      }),
-    {
-      instanceOf: ContractFunctionExecutionError,
-    },
-  );
+  const isModuleInstalledWithAccount = async () =>
+    client.isModuleInstalled({
+      type: MODULE_TYPE_VALIDATOR,
+      address: t.context.ECDSAValidator.address,
+    });
+  await t.throwsAsync(isModuleInstalledWithAccount, {
+    instanceOf: ContractFunctionExecutionError,
+  });
 
   await t.context.deployAccount();
 
-  t.is(
-    await client.isModuleInstalled({
-      type: MODULE_TYPE_VALIDATOR,
-      address: t.context.ECDSAValidator.address,
-    }),
-    true,
-  );
+  await isModuleInstalledWithAccount().then(installed => t.is(installed, true));
 });
 
 test('supportsExecutionMode', async t => {
   const clientWithoutAccount = createTestClient(testClientArgs).extend(erc7579Actions());
-  await t.throwsAsync(
-    async () =>
-      clientWithoutAccount.supportsExecutionMode({
-        callType: 'call',
-        execType: 'default',
-        account: undefined as unknown as ToSmartAccountReturnType,
-      }),
-    {
-      message: /Account not found/,
-    },
-  );
-  await t.throwsAsync(
-    async () =>
-      clientWithoutAccount.supportsExecutionMode({
-        account: t.context.account,
-        callType: 'call',
-        execType: 'default',
-      }),
-    {
-      instanceOf: ContractFunctionExecutionError,
-    },
-  );
+  const supportsExecutionModeWithoutAccount = async () =>
+    clientWithoutAccount.supportsExecutionMode({
+      callType: 'call',
+      execType: 'default',
+      account: undefined as unknown as ToSmartAccountReturnType,
+    });
+  await t.throwsAsync(supportsExecutionModeWithoutAccount, {
+    message: /Account not found/,
+  });
+  const supportsExecutionModeWithAccount = async () =>
+    clientWithoutAccount.supportsExecutionMode({
+      account: t.context.account,
+      callType: 'call',
+      execType: 'default',
+    });
+  await t.throwsAsync(supportsExecutionModeWithAccount, {
+    instanceOf: ContractFunctionExecutionError,
+  });
 
   const client = createTestClient({
     account: t.context.account,
     ...testClientArgs,
   }).extend(erc7579Actions());
 
-  await t.throwsAsync(
-    async () =>
-      client.supportsExecutionMode({
-        callType: 'call',
-        execType: 'default',
-      }),
-    {
-      instanceOf: ContractFunctionExecutionError,
-    },
-  );
+  const supportsExecutionMode = async () =>
+    client.supportsExecutionMode({
+      callType: 'call',
+      execType: 'default',
+    });
+  await t.throwsAsync(supportsExecutionMode, {
+    instanceOf: ContractFunctionExecutionError,
+  });
 
   await t.context.deployAccount();
 
-  t.is(
-    await client.supportsExecutionMode({
+  await client
+    .supportsExecutionMode({
       callType: 'call',
       execType: 'default',
-    }),
-    true,
-  );
+    })
+    .then(supports => t.is(supports, true));
 
-  t.is(
-    await client.supportsExecutionMode({
+  await client
+    .supportsExecutionMode({
       callType: 'batchcall',
       execType: 'try',
-    }),
-    true,
-  );
+    })
+    .then(supports => t.is(supports, true));
 
-  t.is(
-    await client.supportsExecutionMode({
+  await client
+    .supportsExecutionMode({
       callType: 'batchcall',
       execType: 'try',
       selector: '0x12345678',
       payload: '0x00000000000000000000000000000000000000000000',
-    }),
-    true,
-  );
+    })
+    .then(supports => t.is(supports, true));
 });
 
 test('supportsModule', async t => {
   const clientWithoutAccount = createTestClient(testClientArgs).extend(erc7579Actions());
-  await t.throwsAsync(
-    async () =>
-      clientWithoutAccount.supportsModule({
-        account: undefined as unknown as ToSmartAccountReturnType,
-        type: 'validator',
-      }),
-    {
-      message: /Account not found/,
-    },
-  );
-  await t.throwsAsync(
-    async () => clientWithoutAccount.supportsModule({ account: t.context.account, type: 'validator' }),
-    {
-      instanceOf: ContractFunctionExecutionError,
-    },
-  );
+  const supportsModuleWithoutAccount = async () =>
+    clientWithoutAccount.supportsModule({
+      account: undefined as unknown as ToSmartAccountReturnType,
+      type: 'validator',
+    });
+  await t.throwsAsync(supportsModuleWithoutAccount, {
+    message: /Account not found/,
+  });
+  const supportsModuleWithAccount = async () =>
+    clientWithoutAccount.supportsModule({ account: t.context.account, type: 'validator' });
+  await t.throwsAsync(supportsModuleWithAccount, {
+    instanceOf: ContractFunctionExecutionError,
+  });
 
   const client = createTestClient({
     account: t.context.account,
@@ -316,28 +293,20 @@ test('supportsModule', async t => {
 
 test('installModules and uninstallModules', async t => {
   const testClient = createTestClient(testClientArgs).extend(erc7579Actions());
-  await t.throwsAsync(
-    async () =>
-      testClient.installModules({
-        account: undefined as unknown as ToSmartAccountReturnType,
-        entryPointAddress: entryPoint09Address,
-        modules: [],
-      }),
-    {
-      message: /Account not found/,
-    },
-  );
-  await t.throwsAsync(
-    async () =>
-      testClient.installModules({
-        account: t.context.account,
-        entryPointAddress: entryPoint09Address,
-        modules: [],
-      }),
-    {
-      message: /No modules to install/,
-    },
-  );
+  const installModulesWithoutAccount = async () =>
+    testClient.installModules({
+      account: undefined as unknown as ToSmartAccountReturnType,
+      entryPointAddress: entryPoint09Address,
+      modules: [],
+    });
+  await t.throwsAsync(installModulesWithoutAccount, {
+    message: /Account not found/,
+  });
+  const installModulesWithAccount = async () =>
+    testClient.installModules({ account: t.context.account, entryPointAddress: entryPoint09Address, modules: [] });
+  await t.throwsAsync(installModulesWithAccount, {
+    message: /No modules to install/,
+  });
 
   const bundlerClient = createBundlerClient({
     account: t.context.account,
@@ -373,14 +342,17 @@ test('installModules and uninstallModules', async t => {
     },
   ];
 
+  const getValidatorNonce = async () =>
+    t.context.account.getNonce({
+      key: BigInt(padHex(t.context.ECDSAValidator.address, { dir: 'right', size: 24 })),
+    });
+
   // Install 1
   // First user op deploys the account
   await bundlerClient
     .installModules({
       modules: validators.slice(0, 1),
-      nonce: await t.context.account.getNonce({
-        key: BigInt(padHex(t.context.ECDSAValidator.address, { dir: 'right', size: 24 })),
-      }),
+      nonce: await getValidatorNonce(),
     })
     .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
 
@@ -388,9 +360,7 @@ test('installModules and uninstallModules', async t => {
   await bundlerClient
     .installModules({
       modules: validators.slice(1, 3),
-      nonce: await t.context.account.getNonce({
-        key: BigInt(padHex(t.context.ECDSAValidator.address, { dir: 'right', size: 24 })),
-      }),
+      nonce: await getValidatorNonce(),
     })
     .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
 
@@ -404,29 +374,21 @@ test('installModules and uninstallModules', async t => {
     );
   }
 
-  await t.throwsAsync(
-    async () =>
-      testClient.uninstallModules({
-        account: undefined as unknown as ToSmartAccountReturnType,
-        entryPointAddress: entryPoint09Address,
-        modules: [],
-      }),
-    {
-      message: /Account not found/,
-    },
-  );
+  const uninstallModulesWithoutAccount = async () =>
+    testClient.uninstallModules({
+      account: undefined as unknown as ToSmartAccountReturnType,
+      entryPointAddress: entryPoint09Address,
+      modules: [],
+    });
+  await t.throwsAsync(uninstallModulesWithoutAccount, {
+    message: /Account not found/,
+  });
 
-  await t.throwsAsync(
-    async () =>
-      testClient.uninstallModules({
-        account: t.context.account,
-        entryPointAddress: entryPoint09Address,
-        modules: [],
-      }),
-    {
-      message: /No modules to uninstall/,
-    },
-  );
+  const uninstallModulesWithAccount = async () =>
+    testClient.uninstallModules({ account: t.context.account, entryPointAddress: entryPoint09Address, modules: [] });
+  await t.throwsAsync(uninstallModulesWithAccount, {
+    message: /No modules to uninstall/,
+  });
 
   await t.throwsAsync(
     async () =>
@@ -442,9 +404,7 @@ test('installModules and uninstallModules', async t => {
   await bundlerClient
     .uninstallModules({
       modules: validators.slice(2, 3),
-      nonce: await t.context.account.getNonce({
-        key: BigInt(padHex(t.context.ECDSAValidator.address, { dir: 'right', size: 24 })),
-      }),
+      nonce: await getValidatorNonce(),
     })
     .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
 
@@ -452,36 +412,31 @@ test('installModules and uninstallModules', async t => {
   await bundlerClient
     .uninstallModules({
       modules: validators.slice(0, 2),
-      nonce: await t.context.account.getNonce({
-        key: BigInt(padHex(t.context.ECDSAValidator.address, { dir: 'right', size: 24 })),
-      }),
+      nonce: await getValidatorNonce(),
     })
     .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
 
   for (const validator of validators) {
-    t.is(
-      await bundlerClient.isModuleInstalled({
+    await bundlerClient
+      .isModuleInstalled({
         type: 'validator',
         address: validator.address,
-      }),
-      false,
-    );
+      })
+      .then(installed => t.is(installed, false));
   }
 });
 
 test('execute', async t => {
   const testClient = createTestClient(testClientArgs).extend(erc7579Actions()).extend(publicActions);
-  await t.throwsAsync(
-    async () =>
-      testClient.execute({
-        account: undefined as unknown as ToSmartAccountReturnType,
-        entryPointAddress: entryPoint09Address,
-        calls: [],
-      }),
-    {
-      message: /Account not found/,
-    },
-  );
+  const executeWithoutAccount = async () =>
+    testClient.execute({
+      account: undefined as unknown as ToSmartAccountReturnType,
+      entryPointAddress: entryPoint09Address,
+      calls: [],
+    });
+  await t.throwsAsync(executeWithoutAccount, {
+    message: /Account not found/,
+  });
 
   const bundlerClient = createBundlerClient({
     account: t.context.account,
@@ -491,12 +446,15 @@ test('execute', async t => {
 
   const receiver = privateKeyToAccount(generatePrivateKey());
 
+  const getValidatorNonce = async () =>
+    t.context.account.getNonce({
+      key: BigInt(padHex(t.context.ECDSAValidator.address, { dir: 'right', size: 24 })),
+    });
+
   await bundlerClient
     .execute({
       calls: [{ to: receiver.address, data: '0x', value: parseEther('1') }],
-      nonce: await t.context.account.getNonce({
-        key: BigInt(padHex(t.context.ECDSAValidator.address, { dir: 'right', size: 24 })),
-      }),
+      nonce: await getValidatorNonce(),
     })
     .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
 
@@ -509,9 +467,7 @@ test('execute', async t => {
         { to: receiver.address, data: '0x', value: parseEther('2') },
         { to: receiver.address, data: '0x', value: parseEther('3') },
       ],
-      nonce: await t.context.account.getNonce({
-        key: BigInt(padHex(t.context.ECDSAValidator.address, { dir: 'right', size: 24 })),
-      }),
+      nonce: await getValidatorNonce(),
     })
     .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
 
