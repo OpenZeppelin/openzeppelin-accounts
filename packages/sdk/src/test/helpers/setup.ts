@@ -34,8 +34,7 @@ const senderCreatorV09Bytecode = fs.readFileSync(
 ) as Hex;
 
 const setup = async (t: ExecutionContext<Context>) => {
-  t.context.anvilPort = await getPort();
-  t.context.bundlerPort = await getPort();
+  [t.context.anvilPort, t.context.bundlerPort] = await Promise.all([getPort(), getPort()]);
   t.context.testClient = createTestClient({
     chain: foundry,
     mode: 'anvil',
