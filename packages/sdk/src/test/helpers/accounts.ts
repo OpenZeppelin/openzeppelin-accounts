@@ -47,13 +47,14 @@ const createAndFundEOA = async <
   account extends Account | undefined = Account | undefined,
   rpcSchema extends RpcSchema | undefined = undefined,
 >(
+  anvilPort: number,
   client: TestClient<'anvil', transport, chain, account, true, rpcSchema>,
   value: bigint = parseEther('100'),
 ): Promise<Client<Transport, Chain, LocalAccount, RpcSchema, PublicActions & WalletActions<Chain, LocalAccount>>> => {
   const eoa = createWalletClient({
     account: privateKeyToAccount(generatePrivateKey()),
     chain: foundry,
-    transport: http(),
+    transport: http(`http://localhost:${anvilPort}/`),
   }).extend(publicActions);
   await client.setBalance({ address: eoa.account.address, value });
   return eoa;
@@ -63,7 +64,7 @@ const createAndFundOpenAccount = async (
   t: ExecutionContext<OpenAccountContext>,
   { validator, signerKey, salt }: { validator: Address; signerKey: LocalAccount; salt: Hex },
 ) => {
-  const deployer = await createAndFundEOA(t.context.testClient);
+  const deployer = await createAndFundEOA(t.context.anvilPort, t.context.testClient);
   t.context.factory = await deployer
     .deployContract({
       abi: OpenAccountFactoryArtifact.abi,
@@ -89,7 +90,8 @@ const createAndFundOpenAccount = async (
     salt,
     getStubSignature: async () => bytesToHex(crypto.getRandomValues(new Uint8Array(65))),
     userOperation: {
-      estimateGas: userOp => estimateGasOverride(userOp)(t.context.account, t.context.testClient),
+      estimateGas: userOp =>
+        estimateGasOverride(userOp)(t.context.bundlerPort, t.context.account, t.context.testClient),
     },
   });
   await t.context.testClient.setBalance({ address: t.context.account.address, value: parseEther('100') });
@@ -108,6 +110,7 @@ const createAndFundOpenAccount = async (
 const estimateGasOverride =
   (userOp: UserOperationRequest) =>
   async (
+    bundlerPort: number,
     account: SmartAccount,
     client: TestClient<'anvil'>,
   ): Promise<ExactPartial<EstimateUserOperationGasReturnType>> => {
@@ -115,7 +118,7 @@ const estimateGasOverride =
       createBundlerClient({
         account,
         client,
-        transport: http('http://localhost:3000/'),
+        transport: http(`http://localhost:${bundlerPort}/`),
       }),
       {
         calls: [{ to: account.address, data: userOp.callData }],

@@ -32,6 +32,9 @@ importers:
       eslint-plugin-prettier:
         specifier: ^5.2.6
         version: 5.5.4(eslint-config-prettier@10.1.8(eslint@9.39.1(jiti@2.6.1)))(eslint@9.39.1(jiti@2.6.1))(prettier@3.6.2)
+      get-port:
+        specifier: ^7.1.0
+        version: 7.1.0
       globals:
         specifier: ^16.0.0
         version: 16.4.0

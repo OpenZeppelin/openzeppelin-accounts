@@ -34,7 +34,7 @@ test.before(setup);
 test.after.always(cleanup);
 
 test.beforeEach(async t => {
-  const deployer = await createAndFundEOA(t.context.testClient);
+  const deployer = await createAndFundEOA(t.context.anvilPort, t.context.testClient);
   t.context.ECDSAValidator = await deployECDSAValidator(deployer);
   await createAndFundOpenAccount(t, {
     validator: t.context.ECDSAValidator.address,
@@ -44,7 +44,7 @@ test.beforeEach(async t => {
   t.context.bundlerClient = createBundlerClient({
     account: t.context.account,
     client: t.context.testClient,
-    transport: http('http://localhost:3000/'),
+    transport: http(`http://localhost:${t.context.bundlerPort}/`),
   }).extend(erc7579Actions());
 });
 
@@ -284,7 +284,7 @@ test('uninstallModules throws with no modules', async t => {
 
 test('installModules and uninstallModules', async t => {
   const bundlerClient = t.context.bundlerClient;
-  const deployer = await createAndFundEOA(t.context.testClient);
+  const deployer = await createAndFundEOA(t.context.anvilPort, t.context.testClient);
 
   const validators: InstallModulesParameters<typeof t.context.account>['modules'] = [
     {

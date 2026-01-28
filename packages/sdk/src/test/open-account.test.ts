@@ -42,7 +42,7 @@ test.before(setup);
 test.after.always(cleanup);
 
 test.beforeEach(async t => {
-  const deployer = await createAndFundEOA(t.context.testClient);
+  const deployer = await createAndFundEOA(t.context.anvilPort, t.context.testClient);
   t.context.ECDSAValidator = await deployECDSAValidator(deployer);
   await createAndFundOpenAccount(t, {
     validator: t.context.ECDSAValidator.address,
@@ -52,12 +52,12 @@ test.beforeEach(async t => {
   t.context.bundlerClient = createBundlerClient({
     account: t.context.account,
     client: t.context.testClient,
-    transport: http('http://localhost:3000/'),
+    transport: http(`http://localhost:${t.context.bundlerPort}/`),
   }).extend(erc7579Actions());
 });
 
 test('installs, uses, and uninstalls ECDSAValidator module', async t => {
-  const deployer = await createAndFundEOA(t.context.testClient);
+  const deployer = await createAndFundEOA(t.context.anvilPort, t.context.testClient);
   const validator = await deployECDSAValidator(deployer);
   const signer = privateKeyToAccount(generatePrivateKey());
   const client = t.context.bundlerClient;
@@ -92,13 +92,14 @@ test('installs, uses, and uninstalls ECDSAValidator module', async t => {
     client: t.context.testClient as Client<Transport, Chain, LocalAccount, RpcSchema>,
     getStubSignature: async () => bytesToHex(crypto.getRandomValues(new Uint8Array(65))),
     userOperation: {
-      estimateGas: userOp => estimateGasOverride(userOp)(t.context.account, t.context.testClient),
+      estimateGas: userOp =>
+        estimateGasOverride(userOp)(t.context.bundlerPort, t.context.account, t.context.testClient),
     },
   });
   const clientWithNewSigner = createBundlerClient({
     account: accountWithNewSigner,
     client: t.context.testClient,
-    transport: http('http://localhost:3000/'),
+    transport: http(`http://localhost:${t.context.bundlerPort}/`),
   }).extend(erc7579Actions());
 
   // Use module
