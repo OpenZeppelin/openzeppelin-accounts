@@ -112,33 +112,15 @@ async function installModules<TSmartAccount extends SmartAccount | undefined>(
 
   const actionArgs = { ...parameters, account: parseAccount(account) as SmartAccount };
 
-  // Can't be 0. If there's more than 1 module installation, installations are executed in a batch.
-  const installations: readonly Call[] =
-    parameters.modules.length == 1
-      ? [
-          {
-            to: account.address,
-            value: 0n,
-            data: encodeFunctionData({
-              abi: IERC7579ModuleConfigABI,
-              functionName: 'installModule',
-              args: [
-                parseModuleTypeId(parameters.modules[0]!.type),
-                parameters.modules[0]!.address,
-                parameters.modules[0]!.initData,
-              ],
-            }),
-          },
-        ]
-      : parameters.modules.map(({ type, address, initData }) => ({
-          to: account.address,
-          value: 0n,
-          data: encodeFunctionData({
-            abi: IERC7579ModuleConfigABI,
-            functionName: 'installModule',
-            args: [parseModuleTypeId(type), address, initData],
-          }),
-        }));
+  const installations: readonly Call[] = parameters.modules.map(({ type, address, initData }) => ({
+    to: account.address,
+    value: 0n,
+    data: encodeFunctionData({
+      abi: IERC7579ModuleConfigABI,
+      functionName: 'installModule',
+      args: [parseModuleTypeId(type), address, initData],
+    }),
+  }));
 
   if ('calls' in actionArgs) {
     actionArgs.calls = [
@@ -333,33 +315,15 @@ async function uninstallModules<TSmartAccount extends SmartAccount | undefined>(
 
   const actionArgs = { ...parameters, account: parseAccount(account) as SmartAccount };
 
-  // Can't be 0. If there's more than 1 module uninstallation, uninstallations are executed in a batch.
-  const uninstallations: readonly Call[] =
-    parameters.modules.length == 1
-      ? [
-          {
-            to: account.address,
-            value: 0n,
-            data: encodeFunctionData({
-              abi: IERC7579ModuleConfigABI,
-              functionName: 'uninstallModule',
-              args: [
-                parseModuleTypeId(parameters.modules[0]!.type),
-                parameters.modules[0]!.address,
-                parameters.modules[0]!.deInitData ?? ('0x' as `0x${string}`),
-              ],
-            }),
-          },
-        ]
-      : parameters.modules.map(({ type, address, deInitData }) => ({
-          to: account.address,
-          value: 0n,
-          data: encodeFunctionData({
-            abi: IERC7579ModuleConfigABI,
-            functionName: 'uninstallModule',
-            args: [parseModuleTypeId(type), address, deInitData ?? ('0x' as `0x${string}`)],
-          }),
-        }));
+  const uninstallations: readonly Call[] = parameters.modules.map(({ type, address, deInitData }) => ({
+    to: account.address,
+    value: 0n,
+    data: encodeFunctionData({
+      abi: IERC7579ModuleConfigABI,
+      functionName: 'uninstallModule',
+      args: [parseModuleTypeId(type), address, deInitData ?? ('0x' as `0x${string}`)],
+    }),
+  }));
 
   if ('calls' in actionArgs) {
     actionArgs.calls = [

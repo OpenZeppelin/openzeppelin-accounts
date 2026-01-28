@@ -15,8 +15,9 @@ import { erc7579Actions, ERC7579Actions, InstallModulesParameters } from '../erc
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import ECDSAValidatorArtifact from '@open-accounts-framework/contracts/out/ERC7579ECDSAValidator.sol/ERC7579ECDSAValidator.json' with { type: 'json' };
 import { MODULE_TYPE_VALIDATOR } from '../erc7579.utils.js';
-import { OpenAccountContext, setup, setupOpenAccount, createAndFundEOA, cleanup } from './helpers/setup.js';
+import { setup, cleanup } from './helpers/setup.js';
 import { deployECDSAValidator, validatorNonceKey } from './helpers/erc7579.modules.js';
+import { OpenAccountContext, createAndFundOpenAccount, createAndFundEOA } from './helpers/accounts.js';
 
 interface ERC7579ActionsTestContext extends OpenAccountContext {
   ECDSAValidator: GetContractReturnType<typeof ECDSAValidatorArtifact.abi>;
@@ -30,11 +31,12 @@ interface ERC7579ActionsTestContext extends OpenAccountContext {
 const test = _test as TestFn<ERC7579ActionsTestContext>;
 
 test.before(setup);
+test.after.always(cleanup);
 
 test.beforeEach(async t => {
   const deployer = await createAndFundEOA(t.context.testClient);
   t.context.ECDSAValidator = await deployECDSAValidator(deployer);
-  await setupOpenAccount(t, {
+  await createAndFundOpenAccount(t, {
     validator: t.context.ECDSAValidator.address,
     signerKey: privateKeyToAccount(generatePrivateKey()),
     salt: bytesToHex(crypto.getRandomValues(new Uint8Array(32))),
@@ -45,8 +47,6 @@ test.beforeEach(async t => {
     transport: http('http://localhost:3000/'),
   }).extend(erc7579Actions());
 });
-
-test.after.always(cleanup);
 
 test('erc7579Actions returns action functions', t => {
   const client = t.context.bundlerClient;

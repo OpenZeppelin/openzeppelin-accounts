@@ -16,33 +16,69 @@ import {
   publicActions,
 } from 'viem';
 import { toERC7579Account, ToERC7579AccountParameters } from './erc7579-account.js';
-import { ToSmartAccountParameters, SmartAccount } from 'viem/account-abstraction';
+import { ToSmartAccountParameters, SmartAccount, SmartAccountImplementation } from 'viem/account-abstraction';
 import OpenAccountFactoryArtifact from '@open-accounts-framework/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' with { type: 'json' };
-import { encodeMode, EncodeMode, ModuleType, parseModuleTypeId } from '../erc7579.utils.js';
-import { erc1967ProxyCode } from '../erc1967.utils.js';
+import { encodeMode, EncodeMode, ModuleType, parseModuleTypeId } from './erc7579.utils.js';
+import { erc1967ProxyCode } from './erc1967.utils.js';
 
 /**
- * Parameters required to create an OpenAccount.
+ * Parameters for using an existing deployed OpenAccount.
  *
- * This type supports two modes of operation:
- * 1. Creating a new account via factory (requires factory, moduleTypeIds, modules, initDatas)
- * 2. Using an existing deployed account (requires address)
+ * @property {Address} address The address of the already deployed OpenAccount contract
+ */
+type OpenAccountExistingParameters = {
+  address: Address;
+};
+
+/**
+ * Parameters for creating a new OpenAccount via the factory.
  *
- * @property {Client} client The viem client to use for blockchain interactions
- * @property {LocalAccount} signer The local account signer to use for signing messages and operations
- * @property {function(UserOperationRequest?): Promise<Hex>} getStubSignature Function that returns a stub signature for gas estimation
- *
- * Mode 1 - Create new account:
  * @property {GetContractReturnType} factory The OpenAccountFactory contract instance used to create and deploy accounts
- * @property {ModuleType[]} moduleTypeIds Array of module type identifiers (validator, executor, etc.) to install during initialization
+ * @property {ModuleType[]} moduleTypeIds Array of module type identifiers (validator, executor, hook, fallback) to install during initialization
  * @property {Address[]} modules Array of module contract addresses corresponding to each module type
  * @property {Hex[]} initDatas Array of initialization data for each module, passed during module installation
  * @property {EncodeMode} [configMode] Optional execution mode for the configuration calldata
  * @property {Hex} [configCalldata] Optional calldata to execute after initialization for account configuration
  * @property {Hex} [salt] Optional salt for deterministic address generation via CREATE2
+ */
+type OpenAccountFactoryParameters<
+  transport extends Transport = Transport,
+  chain extends Chain | undefined = Chain | undefined,
+  account extends Account | undefined = Account | undefined,
+  rpcSchema extends RpcSchema | undefined = undefined,
+> = {
+  factory: GetContractReturnType<typeof OpenAccountFactoryArtifact.abi, Client<transport, chain, account, rpcSchema>>;
+  moduleTypeIds: ModuleType[];
+  modules: Address[];
+  initDatas: Hex[];
+  configMode?: EncodeMode;
+  configCalldata?: Hex;
+  salt?: Hex;
+};
+
+/**
+ * Union type for OpenAccount parameters.
  *
- * Mode 2 - Use existing account:
- * @property {Address} address The address of an already deployed OpenAccount
+ * Supports two modes:
+ * 1. Using an existing deployed account via `OpenAccountExistingParameters`
+ * 2. Creating a new account via factory using `OpenAccountFactoryParameters`
+ */
+type OpenAccountParameters<
+  transport extends Transport = Transport,
+  chain extends Chain | undefined = Chain | undefined,
+  account extends Account | undefined = Account | undefined,
+  rpcSchema extends RpcSchema | undefined = undefined,
+> = OpenAccountExistingParameters | OpenAccountFactoryParameters<transport, chain, account, rpcSchema>;
+
+/**
+ * Parameters required to create an OpenAccount smart account.
+ *
+ * Combines ERC-7579 account parameters with OpenAccount-specific parameters.
+ * See {@link OpenAccountFactoryParameters} for creating new accounts or {@link OpenAccountExistingParameters} for using existing accounts.
+ *
+ * @property {Client} client The viem client to use for blockchain interactions
+ * @property {LocalAccount} signer The local account signer to use for signing messages and operations
+ * @property {function(UserOperationRequest?): Promise<Hex>} getStubSignature Function that returns a stub signature for gas estimation
  */
 type ToOpenAccountParameters<
   transport extends Transport = Transport,
@@ -51,23 +87,7 @@ type ToOpenAccountParameters<
   rpcSchema extends RpcSchema | undefined = undefined,
 > = Pick<ToERC7579AccountParameters<transport, chain, account, rpcSchema>, 'client' | 'signer' | 'getStubSignature'> &
   Partial<ToSmartAccountParameters> &
-  (
-    | {
-        factory: GetContractReturnType<
-          typeof OpenAccountFactoryArtifact.abi,
-          Client<transport, chain, account, rpcSchema>
-        >;
-        moduleTypeIds: ModuleType[];
-        modules: Address[];
-        initDatas: Hex[];
-        configMode?: EncodeMode;
-        configCalldata?: Hex;
-        salt?: Hex;
-      }
-    | {
-        address: Address;
-      }
-  );
+  OpenAccountParameters<transport, chain, account, rpcSchema>;
 
 /**
  * Creates a smart account client for an OpenAccount.
@@ -90,7 +110,9 @@ const toOpenAccount = async (parameters: ToOpenAccountParameters): Promise<Smart
  * In case the parameters include a factory, it must include the module type ids, modules, init datas, config mode, config calldata and salt
  * to create the account. Otherwise, if an `address` is provided, it the client will assume the account is already deployed at that address.
  */
-const openAccountArgs = async (parameters: ToOpenAccountParameters) => {
+const openAccountArgs = async (
+  parameters: ToOpenAccountParameters,
+): Promise<Pick<SmartAccountImplementation, 'getAddress' | 'getFactoryArgs'>> => {
   const { client } = parameters;
 
   if ('address' in parameters) {
@@ -122,9 +144,7 @@ const openAccountArgs = async (parameters: ToOpenAccountParameters) => {
         factoryData: undefined,
       }),
     };
-  }
-
-  if ('factory' in parameters) {
+  } else if ('factory' in parameters) {
     const { factory, moduleTypeIds, modules, initDatas, configMode, configCalldata, salt } = parameters;
     const implementation = (await factory.read.implementation?.()) as Address;
     if (!implementation) throw new Error('Implementation not found');
@@ -164,4 +184,10 @@ const openAccountArgs = async (parameters: ToOpenAccountParameters) => {
   throw new Error('Invalid parameters');
 };
 
-export { ToOpenAccountParameters, toOpenAccount };
+export {
+  OpenAccountExistingParameters,
+  OpenAccountFactoryParameters,
+  OpenAccountParameters,
+  ToOpenAccountParameters,
+  toOpenAccount,
+};

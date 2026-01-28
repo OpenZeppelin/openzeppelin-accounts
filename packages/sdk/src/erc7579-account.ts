@@ -10,7 +10,7 @@ import {
   getUserOperationTypedData,
 } from 'viem/account-abstraction';
 import { type Account, Address, Chain, type Client, getContract, Hex, LocalAccount, RpcSchema, Transport } from 'viem';
-import { encodeCalls, decodeCalls } from '../erc7579.utils.js';
+import { encodeCalls, decodeCalls } from './erc7579.utils.js';
 
 /**
  * Parameters required to create an ERC-7579 account.

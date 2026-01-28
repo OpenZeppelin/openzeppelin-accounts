@@ -1,34 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ExecutionContext } from 'ava';
-import {
-  createTestClient,
-  TestClient,
-  parseEther,
-  http,
-  Hex,
-  getContract,
-  Client,
-  Transport,
-  Chain,
-  RpcSchema,
-  encodePacked,
-  bytesToHex,
-  type GetContractReturnType,
-} from 'viem';
+import { createTestClient, TestClient, parseEther, http, Hex } from 'viem';
 import { Instance, Server } from 'prool';
-import {
-  createBundlerClient,
-  entryPoint09Address,
-  estimateUserOperationGas,
-  SmartAccount,
-} from 'viem/account-abstraction';
-import { Address, LocalAccount, privateKeyToAccount } from 'viem/accounts';
+import { entryPoint09Address } from 'viem/account-abstraction';
+import { privateKeyToAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
-import OpenAccountFactoryArtifact from '@open-accounts-framework/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' with { type: 'json' };
-import { toOpenAccount } from '../../accounts/open-account.js';
-import { MODULE_TYPE_VALIDATOR } from '../../erc7579.utils.js';
-import { createAndFundEOA } from './eoa.js';
 
 interface Context {
   testClient: TestClient<'anvil'>;
@@ -36,12 +13,6 @@ interface Context {
   bundlerServer: Server.CreateServerReturnType;
   anvil: Instance.Instance;
   alto: Instance.Instance;
-}
-
-interface OpenAccountContext extends Context {
-  factory: GetContractReturnType<typeof OpenAccountFactoryArtifact.abi, Client>;
-  account: SmartAccount;
-  deployAccount: () => Promise<Hex>;
 }
 
 const anvilPrivateKey = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
@@ -69,6 +40,11 @@ const senderCreatorV09Bytecode = fs.readFileSync(
   'hex',
 ) as Hex;
 
+const needsStart = (instance: Instance.Instance) =>
+  instance.status === 'stopped' || instance.status === 'idle' || instance.status === 'stopping';
+const needsStop = (instance: Instance.Instance) =>
+  instance.status === 'started' || instance.status === 'starting' || instance.status === 'restarting';
+
 const setup = async (t: ExecutionContext<Context>) => {
   t.context.testClient = createTestClient(testClientArgs);
   await setupAnvil(t);
@@ -84,7 +60,15 @@ const setupAnvil = async (t: ExecutionContext<Context>) => {
     instance: t.context.anvil,
   });
 
-  await Promise.all([t.context.anvil.start(), t.context.anvilServer.start()]);
+  if (needsStart(t.context.anvil) && t.context.anvil.status) {
+    try {
+      await Promise.all([t.context.anvil.start(), t.context.anvilServer.start()]);
+    } catch (error: unknown) {
+      if (!(error as Error).message.startsWith('Failed to start process "anvil": Error: Address already in use')) {
+        throw error;
+      }
+    }
+  }
 };
 
 const setupEntrypoint = async (t: ExecutionContext<Context>) => {
@@ -109,71 +93,19 @@ const setupBundler = async (t: ExecutionContext<Context>) => {
   t.context.bundlerServer = Server.create({
     instance: t.context.alto,
   });
-  await Promise.all([
-    t.context.alto.start(),
-    t.context.bundlerServer.start(),
-    t.context.testClient.setBalance({ address: anvilAddress, value: parseEther('100') }),
-  ]);
-};
-
-const setupOpenAccount = async (
-  t: ExecutionContext<OpenAccountContext>,
-  { validator, signerKey, salt }: { validator: Address; signerKey: LocalAccount; salt: Hex },
-) => {
-  const deployer = await createAndFundEOA(t.context.testClient);
-  t.context.factory = await deployer
-    .deployContract({
-      abi: OpenAccountFactoryArtifact.abi,
-      bytecode: OpenAccountFactoryArtifact.bytecode.object as Hex,
-      nonce: await deployer.getTransactionCount({ address: deployer.account.address }),
-    })
-    .then(hash => deployer.waitForTransactionReceipt({ hash }))
-    .then(receipt =>
-      getContract({
-        address: receipt.contractAddress as Address,
-        abi: OpenAccountFactoryArtifact.abi,
-        client: t.context.testClient,
-      }),
-    );
-
-  t.context.account = await toOpenAccount({
-    client: t.context.testClient as Client<Transport, Chain, LocalAccount, RpcSchema>,
-    signer: signerKey,
-    factory: t.context.factory,
-    moduleTypeIds: [MODULE_TYPE_VALIDATOR],
-    modules: [validator],
-    initDatas: [encodePacked(['address'], [signerKey.address])],
-    salt,
-    getStubSignature: async () => bytesToHex(crypto.getRandomValues(new Uint8Array(65))),
-    userOperation: {
-      estimateGas: async userOp => {
-        const gas = await estimateUserOperationGas(
-          createBundlerClient({
-            client: t.context.testClient,
-            transport: http('http://localhost:3000/'),
-          }),
-          {
-            account: t.context.account,
-            calls: [{ to: t.context.account.address, data: userOp.callData }],
-          },
-        );
-        const MIN_VERIFICATION_GAS = 150000n;
-        return {
-          verificationGasLimit:
-            gas.verificationGasLimit < MIN_VERIFICATION_GAS ? MIN_VERIFICATION_GAS : gas.verificationGasLimit,
-        };
-      },
-    },
-  });
-  await t.context.testClient.setBalance({ address: t.context.account.address, value: parseEther('100') });
-  t.context.deployAccount = () =>
-    t.context.account.getFactoryArgs().then(async ({ factory, factoryData }) =>
-      deployer.sendTransaction({
-        to: factory as Address,
-        data: factoryData as Hex,
-        nonce: await deployer.getTransactionCount({ address: deployer.account.address }),
-      }),
-    );
+  if (needsStart(t.context.alto)) {
+    try {
+      await Promise.all([
+        t.context.alto.start(),
+        t.context.bundlerServer.start(),
+        t.context.testClient.setBalance({ address: anvilAddress, value: parseEther('100') }),
+      ]);
+    } catch (error: unknown) {
+      if (!(error as Error).message.startsWith('Failed to start process "anvil": Error: Address already in use')) {
+        throw error;
+      }
+    }
+  }
 };
 
 const cleanup = async (t: ExecutionContext<Context>) => {
@@ -181,23 +113,15 @@ const cleanup = async (t: ExecutionContext<Context>) => {
 };
 
 const cleanupAnvil = async (t: ExecutionContext<Context>) => {
-  await Promise.all([t.context.anvil.stop(), t.context.anvilServer.stop()]);
+  if (needsStop(t.context.anvil)) {
+    await Promise.all([t.context.anvil.stop(), t.context.anvilServer.stop()]);
+  }
 };
 
 const cleanupBundler = async (t: ExecutionContext<Context>) => {
-  await Promise.all([t.context.alto.stop(), t.context.bundlerServer.stop()]);
+  if (needsStop(t.context.alto)) {
+    await Promise.all([t.context.alto.stop(), t.context.bundlerServer.stop()]);
+  }
 };
 
-export {
-  Context,
-  OpenAccountContext,
-  createAndFundEOA,
-  setup,
-  setupAnvil,
-  setupEntrypoint,
-  setupBundler,
-  setupOpenAccount,
-  cleanup,
-  cleanupAnvil,
-  cleanupBundler,
-};
+export { Context, setup, cleanup };
