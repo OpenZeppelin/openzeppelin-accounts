@@ -18,7 +18,7 @@ import ECDSAValidatorArtifact from '@open-accounts-framework/contracts/out/ERC75
 import { deployECDSAValidator, validatorNonceKey } from './helpers/erc7579.modules.js';
 import { setup, cleanup } from './helpers/setup.js';
 import { erc7579Actions, ERC7579Actions } from '../erc7579.actions.js';
-import { MODULE_TYPE_VALIDATOR } from '../erc7579.utils.js';
+import { ModuleTypes } from '../erc7579.utils.js';
 import { toOpenAccount } from '../open-account.js';
 import {
   OpenAccountContext,
@@ -69,7 +69,7 @@ test('installs, uses, and uninstalls ECDSAValidator module', async t => {
       client.installModules({
         modules: [
           {
-            type: MODULE_TYPE_VALIDATOR,
+            type: ModuleTypes.VALIDATOR,
             address: validator.address,
             initData: encodePacked(['address'], [signer.address]),
           },
@@ -80,7 +80,7 @@ test('installs, uses, and uninstalls ECDSAValidator module', async t => {
     .then(hash => client.waitForUserOperationReceipt({ hash }));
   await client
     .isModuleInstalled({
-      type: MODULE_TYPE_VALIDATOR,
+      type: ModuleTypes.VALIDATOR,
       address: validator.address,
     })
     .then(installed => t.is(installed, true));
@@ -123,14 +123,14 @@ test('installs, uses, and uninstalls ECDSAValidator module', async t => {
     .getNonce({ key: validatorNonceKey(validator.address) })
     .then(nonce =>
       clientWithNewSigner.uninstallModules({
-        modules: [{ type: MODULE_TYPE_VALIDATOR, address: validator.address, deInitData: '0x' }],
+        modules: [{ type: ModuleTypes.VALIDATOR, address: validator.address, deInitData: '0x' }],
         nonce,
       }),
     )
     .then(hash => client.waitForUserOperationReceipt({ hash }));
   await client
     .isModuleInstalled({
-      type: MODULE_TYPE_VALIDATOR,
+      type: ModuleTypes.VALIDATOR,
       address: validator.address,
     })
     .then(installed => t.is(installed, false));

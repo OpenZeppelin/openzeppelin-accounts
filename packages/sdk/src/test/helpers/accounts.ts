@@ -30,7 +30,7 @@ import {
   UserOperationRequest,
 } from 'viem/account-abstraction';
 import { foundry } from 'viem/chains';
-import { MODULE_TYPE_VALIDATOR } from '../../erc7579.utils.js';
+import { ModuleTypes } from '../../erc7579.utils.js';
 import { toOpenAccount } from '../../open-account.js';
 import type { Context } from './setup.js';
 import OpenAccountFactoryArtifact from '@open-accounts-framework/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' with { type: 'json' };
@@ -84,7 +84,7 @@ const createAndFundOpenAccount = async (
     client: t.context.testClient as Client<Transport, Chain, LocalAccount, RpcSchema>,
     signer: signerKey,
     factory: t.context.factory,
-    moduleTypeIds: [MODULE_TYPE_VALIDATOR],
+    moduleTypeIds: [ModuleTypes.VALIDATOR],
     modules: [validator],
     initDatas: [encodePacked(['address'], [signerKey.address])],
     salt,

@@ -14,35 +14,67 @@ import {
 } from 'viem';
 import { IERC7579ExecutionABI } from './erc7579.abi.js';
 
-const MODULE_TYPE_VALIDATOR = 1;
-const MODULE_TYPE_EXECUTOR = 2;
-const MODULE_TYPE_FALLBACK = 3;
-const MODULE_TYPE_HOOK = 4;
+/**
+ * Numeric identifiers for ERC-7579 module types.
+ * Each module type represents a different category of smart account functionality.
+ */
+enum ModuleTypes {
+  /** Validator modules for signature validation and authentication */
+  VALIDATOR = 1,
+  /** Executor modules for executing operations on behalf of the account */
+  EXECUTOR = 2,
+  /** Fallback modules for handling calls to undefined functions */
+  FALLBACK = 3,
+  /** Hook modules for pre/post execution checks */
+  HOOK = 4,
+}
 
-const EXEC_TYPE_DEFAULT = '0x00';
-const EXEC_TYPE_TRY = '0x01';
+/**
+ * Hex identifiers for ERC-7579 execution types.
+ * Defines how the execution should behave in case of errors in individual executions.
+ */
+enum ExecutionTypes {
+  /** Reverts on error */
+  DEFAULT = '0x00',
+  /** Continues execution even if individual operations fail */
+  TRY = '0x01',
+}
 
-const CALL_TYPE_CALL = '0x00';
-const CALL_TYPE_BATCH = '0x01';
-const CALL_TYPE_DELEGATE = '0xff';
+/**
+ * Hex identifiers for ERC-7579 call types.
+ * Defines the type of call to be executed by the smart account.
+ */
+enum CallTypes {
+  /** Standard call to another contract */
+  CALL = '0x00',
+  /** Batch call to execute multiple operations */
+  BATCH = '0x01',
+  /** Delegatecall to execute code in the context of the calling contract */
+  DELEGATE = '0xff',
+}
 
 /**
  * Module type identifier for ERC-7579 modules.
  * Can be specified as a number (1-4) or a string ('validator', 'executor', 'fallback', 'hook').
  */
-type ModuleType = 1 | 2 | 3 | 4 | 'validator' | 'executor' | 'fallback' | 'hook';
+type ModuleType =
+  | (`${ModuleTypes}` extends `${infer T extends number}` ? T : never)
+  | 'validator'
+  | 'executor'
+  | 'fallback'
+  | 'hook';
 
 /**
  * Call type for ERC-7579 execution modes.
  * Can be specified as a hex string ('0x00', '0x01', '0xff') or a string ('call', 'batchcall', 'delegatecall').
  */
-type CallType = '0x00' | '0x01' | '0xff' | 'call' | 'batchcall' | 'delegatecall';
+type CallType = `${CallTypes}` | 'call' | 'batchcall' | 'delegatecall';
 
 /**
  * Execution type for ERC-7579 execution modes.
  * Can be specified as a hex string ('0x00', '0x01') or a string ('default', 'try').
  */
-type ExecType = '0x00' | '0x01' | 'default' | 'try';
+type ExecType = `${ExecutionTypes}` | 'default' | 'try';
 
 /**
  * Parameters for encoding execution mode.
@@ -107,11 +139,11 @@ const parseModuleTypeId = (type: ModuleType): bigint => {
 const parseCallType = (type: CallType): Hex => {
   switch (type) {
     case 'call':
-      return CALL_TYPE_CALL;
+      return CallTypes.CALL;
     case 'batchcall':
-      return CALL_TYPE_BATCH;
+      return CallTypes.BATCH;
     case 'delegatecall':
-      return CALL_TYPE_DELEGATE;
+      return CallTypes.DELEGATE;
     default:
       if (type.startsWith('0x')) {
         return type;
@@ -130,9 +162,9 @@ const parseCallType = (type: CallType): Hex => {
 const parseExecType = (type: ExecType): Hex => {
   switch (type) {
     case 'default':
-      return EXEC_TYPE_DEFAULT;
+      return ExecutionTypes.DEFAULT;
     case 'try':
-      return EXEC_TYPE_TRY;
+      return ExecutionTypes.TRY;
     default:
       if (type.startsWith('0x')) {
         return type;
@@ -152,8 +184,8 @@ const parseExecType = (type: ExecType): Hex => {
  * @returns {Hex} The encoded execution mode as a packed hex string
  */
 const encodeMode = ({
-  callType = CALL_TYPE_CALL,
-  execType = EXEC_TYPE_DEFAULT,
+  callType = CallTypes.CALL,
+  execType = ExecutionTypes.DEFAULT,
   selector = '0x00000000',
   payload = '0x00000000000000000000000000000000000000000000',
 }: EncodeMode = {}) =>
@@ -269,7 +301,7 @@ const encodeCalls = (
     functionName: 'execute',
     args: [
       encodeMode({
-        callType: isBatch ? CALL_TYPE_BATCH : CALL_TYPE_CALL,
+        callType: isBatch ? CallTypes.BATCH : CallTypes.CALL,
         execType,
       }),
       isBatch
@@ -301,15 +333,15 @@ const decodeCalls = async (data: Hex): Promise<Call[]> => {
   const [mode, executionCalldata] = args;
   let batch: Execution | Execution[];
   switch (decodeMode(mode).callType) {
-    case CALL_TYPE_DELEGATE: {
+    case CallTypes.DELEGATE: {
       batch = decodeDelegate(executionCalldata);
       break;
     }
-    case CALL_TYPE_BATCH: {
+    case CallTypes.BATCH: {
       batch = decodeBatch(executionCalldata);
       break;
     }
-    case CALL_TYPE_CALL: {
+    case CallTypes.CALL: {
       batch = decodeSingle(executionCalldata);
       break;
     }
@@ -329,15 +361,9 @@ export {
   ExecType,
   EncodeMode,
   Execution,
-  MODULE_TYPE_VALIDATOR,
-  MODULE_TYPE_EXECUTOR,
-  MODULE_TYPE_FALLBACK,
-  MODULE_TYPE_HOOK,
-  EXEC_TYPE_DEFAULT,
-  EXEC_TYPE_TRY,
-  CALL_TYPE_CALL,
-  CALL_TYPE_BATCH,
-  CALL_TYPE_DELEGATE,
+  ModuleTypes,
+  ExecutionTypes,
+  CallTypes,
   parseModuleTypeId,
   parseCallType,
   parseExecType,

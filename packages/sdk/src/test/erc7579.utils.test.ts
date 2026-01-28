@@ -1,11 +1,6 @@
 import { test, testProp, fc } from '@fast-check/ava';
 import { Hex, zeroAddress, toHex, isAddressEqual } from 'viem';
 import {
-  CALL_TYPE_BATCH,
-  CALL_TYPE_CALL,
-  CALL_TYPE_DELEGATE,
-  EXEC_TYPE_DEFAULT,
-  EXEC_TYPE_TRY,
   parseModuleTypeId,
   parseCallType,
   parseExecType,
@@ -22,6 +17,8 @@ import {
   CallType,
   ExecType,
   ModuleType,
+  CallTypes,
+  ExecutionTypes,
 } from '../erc7579.utils.js';
 
 function hexa(): fc.Arbitrary<string> {
@@ -39,8 +36,8 @@ const executionArbitrary = fc.record({
   value: valueArbitrary,
   callData: calldataArbitrary,
 });
-const callTypeArbitrary = fc.constantFrom(CALL_TYPE_CALL, CALL_TYPE_BATCH, CALL_TYPE_DELEGATE);
-const execTypeArbitrary = fc.constantFrom(EXEC_TYPE_DEFAULT, EXEC_TYPE_TRY);
+const callTypeArbitrary = fc.constantFrom(CallTypes.CALL, CallTypes.BATCH, CallTypes.DELEGATE);
+const execTypeArbitrary = fc.constantFrom(ExecutionTypes.DEFAULT, ExecutionTypes.TRY);
 
 test('parseModuleTypeId handles string types correctly', t => {
   t.is(parseModuleTypeId('validator'), 1n);
@@ -63,15 +60,15 @@ test('parseModuleTypeId throws on invalid input', t => {
 });
 
 test('parseCallType handles string types correctly', t => {
-  t.is(parseCallType('call'), CALL_TYPE_CALL);
-  t.is(parseCallType('batchcall'), CALL_TYPE_BATCH);
-  t.is(parseCallType('delegatecall'), CALL_TYPE_DELEGATE);
+  t.is(parseCallType('call'), CallTypes.CALL);
+  t.is(parseCallType('batchcall'), CallTypes.BATCH);
+  t.is(parseCallType('delegatecall'), CallTypes.DELEGATE);
 });
 
 test('parseCallType handles hex types correctly', t => {
-  t.is(parseCallType('0x00'), CALL_TYPE_CALL);
-  t.is(parseCallType('0x01'), CALL_TYPE_BATCH);
-  t.is(parseCallType('0xff'), CALL_TYPE_DELEGATE);
+  t.is(parseCallType('0x00'), CallTypes.CALL);
+  t.is(parseCallType('0x01'), CallTypes.BATCH);
+  t.is(parseCallType('0xff'), CallTypes.DELEGATE);
   t.is(parseCallType('0xab' as CallType), '0xab');
 });
 
@@ -81,13 +78,13 @@ test('parseCallType throws on invalid input', t => {
 });
 
 test('parseExecType handles string types correctly', t => {
-  t.is(parseExecType('default'), EXEC_TYPE_DEFAULT);
-  t.is(parseExecType('try'), EXEC_TYPE_TRY);
+  t.is(parseExecType('default'), ExecutionTypes.DEFAULT);
+  t.is(parseExecType('try'), ExecutionTypes.TRY);
 });
 
 test('parseExecType handles hex types correctly', t => {
-  t.is(parseExecType('0x00'), EXEC_TYPE_DEFAULT);
-  t.is(parseExecType('0x01'), EXEC_TYPE_TRY);
+  t.is(parseExecType('0x00'), ExecutionTypes.DEFAULT);
+  t.is(parseExecType('0x01'), ExecutionTypes.TRY);
   t.is(parseExecType('0xab' as ExecType), '0xab');
 });
 
@@ -209,8 +206,8 @@ test('encodeMode uses defaults correctly', t => {
   const mode = encodeMode();
   const decoded = decodeMode(mode);
 
-  t.is(decoded.callType, CALL_TYPE_CALL);
-  t.is(decoded.execType, EXEC_TYPE_DEFAULT);
+  t.is(decoded.callType, CallTypes.CALL);
+  t.is(decoded.execType, ExecutionTypes.DEFAULT);
   t.is(decoded.selector, '0x00000000');
 });
 

@@ -14,7 +14,7 @@ import { SmartAccount, createBundlerClient, BundlerClient, entryPoint09Address }
 import { erc7579Actions, ERC7579Actions, InstallModulesParameters } from '../erc7579.actions.js';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import ECDSAValidatorArtifact from '@open-accounts-framework/contracts/out/ERC7579ECDSAValidator.sol/ERC7579ECDSAValidator.json' with { type: 'json' };
-import { MODULE_TYPE_VALIDATOR } from '../erc7579.utils.js';
+import { ModuleTypes } from '../erc7579.utils.js';
 import { setup, cleanup } from './helpers/setup.js';
 import { deployECDSAValidator, validatorNonceKey } from './helpers/erc7579.modules.js';
 import { OpenAccountContext, createAndFundOpenAccount, createAndFundEOA } from './helpers/accounts.js';
@@ -84,7 +84,7 @@ test('isModuleInstalled throws without account', async t => {
   await t.throwsAsync(
     async () =>
       (t.context.testClient as Client<Transport, undefined, SmartAccount>).extend(erc7579Actions()).isModuleInstalled({
-        type: MODULE_TYPE_VALIDATOR,
+        type: ModuleTypes.VALIDATOR,
         address: t.context.ECDSAValidator.address,
         account: undefined as unknown as SmartAccount,
       }),
@@ -98,7 +98,7 @@ test('isModuleInstalled reverts if not deployed', async t => {
   await t.throwsAsync(
     async () =>
       t.context.bundlerClient.isModuleInstalled({
-        type: MODULE_TYPE_VALIDATOR,
+        type: ModuleTypes.VALIDATOR,
         address: t.context.ECDSAValidator.address,
       }),
     {
@@ -111,7 +111,7 @@ test('isModuleInstalled returns true', async t => {
   await t.context.deployAccount();
   await t.context.bundlerClient
     .isModuleInstalled({
-      type: MODULE_TYPE_VALIDATOR,
+      type: ModuleTypes.VALIDATOR,
       address: t.context.ECDSAValidator.address,
     })
     .then(installed => t.is(installed, true));
