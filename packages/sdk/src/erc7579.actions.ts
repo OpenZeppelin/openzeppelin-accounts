@@ -441,7 +441,7 @@ async function execute<TSmartAccount extends SmartAccount | undefined>(
  * @property {function} uninstallModules Uninstalls one or more modules from an ERC-7579 account
  * @property {function} execute Executes calls on an ERC-7579 account
  */
-export type Erc7579Actions<TSmartAccount extends SmartAccount | undefined> = {
+export type ERC7579Actions<TSmartAccount extends SmartAccount | undefined> = {
   // eslint-disable-next-line no-unused-vars
   accountId: (parameters?: GetSmartAccountParameter<TSmartAccount>) => Promise<string>;
   // eslint-disable-next-line no-unused-vars
@@ -467,7 +467,7 @@ export type Erc7579Actions<TSmartAccount extends SmartAccount | undefined> = {
 function erc7579Actions() {
   return <TSmartAccount extends SmartAccount | undefined>(
     client: Client<Transport, Chain | undefined, TSmartAccount>,
-  ): Erc7579Actions<TSmartAccount> => ({
+  ): ERC7579Actions<TSmartAccount> => ({
     accountId: args => accountId(client, args),
     installModules: args => installModules(client, args),
     isModuleInstalled: args => isModuleInstalled(client, args),

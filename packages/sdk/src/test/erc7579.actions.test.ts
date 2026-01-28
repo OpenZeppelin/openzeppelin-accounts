@@ -1,142 +1,55 @@
 import _test, { TestFn } from 'ava';
 import {
-  Chain,
-  createTestClient,
   http,
-  toHex,
-  Transport,
   publicActions,
-  type Address,
-  type Hex,
   parseEther,
-  createWalletClient,
-  type Client,
-  type Account,
-  getContract,
   encodePacked,
   bytesToHex,
-  keccak256,
-  PublicActions,
-  RpcSchema,
-  WalletActions,
   ContractFunctionExecutionError,
-  padHex,
+  GetContractReturnType,
+  Client,
+  Transport,
 } from 'viem';
-import {
-  type ToSmartAccountReturnType,
-  createBundlerClient,
-  entryPoint09Address,
-  estimateUserOperationGas,
-} from 'viem/account-abstraction';
-import { erc7579Actions, InstallModulesParameters } from '../erc7579.actions.js';
-import { toOpenAccount } from '../accounts/index.js';
+import { SmartAccount, createBundlerClient, BundlerClient, entryPoint09Address } from 'viem/account-abstraction';
+import { erc7579Actions, ERC7579Actions, InstallModulesParameters } from '../erc7579.actions.js';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import OpenAccountFactoryArtifact from '@open-accounts-framework/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' with { type: 'json' };
 import ECDSAValidatorArtifact from '@open-accounts-framework/contracts/out/ERC7579ECDSAValidator.sol/ERC7579ECDSAValidator.json' with { type: 'json' };
 import { MODULE_TYPE_VALIDATOR } from '../erc7579.utils.js';
-import { cleanup, clientArgs, Context, setup, testClientArgs } from './helpers/setup.js';
+import { OpenAccountContext, setup, setupOpenAccount, createAndFundEOA, cleanup } from './helpers/setup.js';
+import { deployECDSAValidator, validatorNonceKey } from './helpers/erc7579.modules.js';
 
-interface ERC7579ActionsTestContext extends Context {
-  deployer: Client<Transport, Chain, Account, RpcSchema, PublicActions & WalletActions<Chain, Account>>;
-  account: ToSmartAccountReturnType;
-  ECDSAValidator: ReturnType<typeof getContract>;
-  deployAccount: () => Promise<void>;
+interface ERC7579ActionsTestContext extends OpenAccountContext {
+  ECDSAValidator: GetContractReturnType<typeof ECDSAValidatorArtifact.abi>;
+  bundlerClient: Omit<
+    BundlerClient<Transport, undefined, SmartAccount>,
+    'client' | 'paymaster' | 'paymasterContext' | 'userOperation'
+  > &
+    ERC7579Actions<SmartAccount>;
 }
 
 const test = _test as TestFn<ERC7579ActionsTestContext>;
 
-const deployECDSAValidator = async (
-  deployer: Client<Transport, Chain, Account, RpcSchema, PublicActions & WalletActions<Chain, Account>>,
-): Promise<ReturnType<typeof getContract>> => {
-  return deployer
-    .deployContract({
-      abi: ECDSAValidatorArtifact.abi,
-      bytecode: ECDSAValidatorArtifact.bytecode.object as Hex,
-    })
-    .then(hash => deployer.waitForTransactionReceipt({ hash }))
-    .then(receipt =>
-      getContract({
-        address: receipt.contractAddress as Address,
-        abi: ECDSAValidatorArtifact.abi,
-        client: deployer,
-      }),
-    );
-};
-
 test.before(setup);
-test.after.always(cleanup);
 
 test.beforeEach(async t => {
-  const deployerKey = privateKeyToAccount(generatePrivateKey());
-  const signerKey = privateKeyToAccount(generatePrivateKey());
-
-  const deployer = createWalletClient({
-    account: deployerKey,
-    ...clientArgs,
-  }).extend(publicActions);
-  await t.context.testClient.setBalance({ address: deployerKey.address, value: parseEther('100') });
-  const factory = await deployer
-    .deployContract({
-      abi: OpenAccountFactoryArtifact.abi,
-      bytecode: OpenAccountFactoryArtifact.bytecode.object as Hex,
-    })
-    .then(hash => deployer.waitForTransactionReceipt({ hash }))
-    .then(receipt =>
-      getContract({
-        address: receipt.contractAddress as Address,
-        abi: OpenAccountFactoryArtifact.abi,
-        client: deployer,
-      }),
-    );
+  const deployer = await createAndFundEOA(t.context.testClient);
   t.context.ECDSAValidator = await deployECDSAValidator(deployer);
-
-  const salt = keccak256(toHex('salt'));
-
-  const bundlerClient = createBundlerClient({
+  await setupOpenAccount(t, {
+    validator: t.context.ECDSAValidator.address,
+    signerKey: privateKeyToAccount(generatePrivateKey()),
+    salt: bytesToHex(crypto.getRandomValues(new Uint8Array(32))),
+  });
+  t.context.bundlerClient = createBundlerClient({
+    account: t.context.account,
     client: t.context.testClient,
     transport: http('http://localhost:3000/'),
-  });
-
-  t.context.deployer = deployer;
-  t.context.account = await toOpenAccount({
-    client: deployer,
-    signer: signerKey,
-    factory,
-    moduleTypeIds: [MODULE_TYPE_VALIDATOR],
-    modules: [t.context.ECDSAValidator.address],
-    initDatas: [encodePacked(['address'], [signerKey.address])],
-    salt,
-    getStubSignature: async () => bytesToHex(crypto.getRandomValues(new Uint8Array(65))),
-    userOperation: {
-      estimateGas: async userOp => {
-        const gas = await estimateUserOperationGas(bundlerClient, {
-          account: t.context.account,
-          calls: [{ to: t.context.account.address, data: userOp.callData }],
-        });
-        const MIN_VERIFICATION_GAS = 150000n;
-        return {
-          verificationGasLimit:
-            gas.verificationGasLimit < MIN_VERIFICATION_GAS ? MIN_VERIFICATION_GAS : gas.verificationGasLimit,
-        };
-      },
-    },
-  });
-  await t.context.testClient.setBalance({ address: t.context.account.address, value: parseEther('100') });
-  t.context.deployAccount = async () => {
-    await t.context.account.getFactoryArgs().then(({ factory, factoryData }) =>
-      t.context.deployer.sendTransaction({
-        to: factory as Address,
-        data: factoryData as Hex,
-      }),
-    );
-  };
+  }).extend(erc7579Actions());
 });
 
+test.after.always(cleanup);
+
 test('erc7579Actions returns action functions', t => {
-  const client = createTestClient({
-    account: t.context.account,
-    ...testClientArgs,
-  }).extend(erc7579Actions());
+  const client = t.context.bundlerClient;
   t.is(typeof client.accountId, 'function');
   t.is(typeof client.installModules, 'function');
   t.is(typeof client.isModuleInstalled, 'function');
@@ -146,274 +59,303 @@ test('erc7579Actions returns action functions', t => {
   t.is(typeof client.execute, 'function');
 });
 
-test('accountId', async t => {
-  await t.throwsAsync(async () => createTestClient(testClientArgs).extend(erc7579Actions()).accountId(), {
-    message: /Account not found/,
-  });
-
-  const client = createTestClient({
-    account: t.context.account,
-    ...testClientArgs,
-  }).extend(erc7579Actions());
-
-  await t.throwsAsync(async () => client.accountId(), {
-    instanceOf: ContractFunctionExecutionError,
-  });
-
-  await t.context.deployAccount();
-
-  await client.accountId().then(id => t.is(id, '@openzeppelin/contracts.AccountERC7579.v1.0.0'));
+test('accountId throws without account', async t => {
+  await t.throwsAsync(
+    async () =>
+      (t.context.testClient as Client<Transport, undefined, SmartAccount>).extend(erc7579Actions()).accountId(),
+    {
+      message: /Account not found/,
+    },
+  );
 });
 
-test('isModuleInstalled', async t => {
-  const isModuleInstalledWithoutAccount = async () =>
-    createTestClient(testClientArgs)
-      .extend(erc7579Actions())
-      .isModuleInstalled({
+test('accountId reverts if not deployed', async t => {
+  await t.throwsAsync(async () => t.context.bundlerClient.accountId(), {
+    instanceOf: ContractFunctionExecutionError,
+  });
+});
+
+test('accountId returns @openzeppelin/contracts.AccountERC7579.v1.0.0', async t => {
+  await t.context.deployAccount();
+  await t.context.bundlerClient.accountId().then(id => t.is(id, '@openzeppelin/contracts.AccountERC7579.v1.0.0'));
+});
+
+test('isModuleInstalled throws without account', async t => {
+  await t.throwsAsync(
+    async () =>
+      (t.context.testClient as Client<Transport, undefined, SmartAccount>).extend(erc7579Actions()).isModuleInstalled({
         type: MODULE_TYPE_VALIDATOR,
         address: t.context.ECDSAValidator.address,
-        account: undefined as unknown as ToSmartAccountReturnType,
-      });
-  await t.throwsAsync(isModuleInstalledWithoutAccount, {
-    message: /Account not found/,
-  });
-
-  const client = createTestClient({
-    account: t.context.account,
-    ...testClientArgs,
-  }).extend(erc7579Actions());
-
-  const isModuleInstalledWithAccount = async () =>
-    client.isModuleInstalled({
-      type: MODULE_TYPE_VALIDATOR,
-      address: t.context.ECDSAValidator.address,
-    });
-  await t.throwsAsync(isModuleInstalledWithAccount, {
-    instanceOf: ContractFunctionExecutionError,
-  });
-
-  await t.context.deployAccount();
-
-  await isModuleInstalledWithAccount().then(installed => t.is(installed, true));
+        account: undefined as unknown as SmartAccount,
+      }),
+    {
+      message: /Account not found/,
+    },
+  );
 });
 
-test('supportsExecutionMode', async t => {
-  const clientWithoutAccount = createTestClient(testClientArgs).extend(erc7579Actions());
-  const supportsExecutionModeWithoutAccount = async () =>
-    clientWithoutAccount.supportsExecutionMode({
-      callType: 'call',
-      execType: 'default',
-      account: undefined as unknown as ToSmartAccountReturnType,
-    });
-  await t.throwsAsync(supportsExecutionModeWithoutAccount, {
-    message: /Account not found/,
-  });
-  const supportsExecutionModeWithAccount = async () =>
-    clientWithoutAccount.supportsExecutionMode({
-      account: t.context.account,
-      callType: 'call',
-      execType: 'default',
-    });
-  await t.throwsAsync(supportsExecutionModeWithAccount, {
-    instanceOf: ContractFunctionExecutionError,
-  });
+test('isModuleInstalled reverts if not deployed', async t => {
+  await t.throwsAsync(
+    async () =>
+      t.context.bundlerClient.isModuleInstalled({
+        type: MODULE_TYPE_VALIDATOR,
+        address: t.context.ECDSAValidator.address,
+      }),
+    {
+      instanceOf: ContractFunctionExecutionError,
+    },
+  );
+});
 
-  const client = createTestClient({
-    account: t.context.account,
-    ...testClientArgs,
-  }).extend(erc7579Actions());
-
-  const supportsExecutionMode = async () =>
-    client.supportsExecutionMode({
-      callType: 'call',
-      execType: 'default',
-    });
-  await t.throwsAsync(supportsExecutionMode, {
-    instanceOf: ContractFunctionExecutionError,
-  });
-
+test('isModuleInstalled returns true', async t => {
   await t.context.deployAccount();
-
-  await client
-    .supportsExecutionMode({
-      callType: 'call',
-      execType: 'default',
+  await t.context.bundlerClient
+    .isModuleInstalled({
+      type: MODULE_TYPE_VALIDATOR,
+      address: t.context.ECDSAValidator.address,
     })
-    .then(supports => t.is(supports, true));
+    .then(installed => t.is(installed, true));
+});
 
-  await client
-    .supportsExecutionMode({
-      callType: 'batchcall',
-      execType: 'try',
-    })
-    .then(supports => t.is(supports, true));
+test('supportsExecutionMode throws without account', async t => {
+  await t.throwsAsync(
+    async () =>
+      (t.context.testClient as Client<Transport, undefined, SmartAccount>)
+        .extend(erc7579Actions())
+        .supportsExecutionMode({
+          callType: 'call',
+          execType: 'default',
+          account: undefined as unknown as SmartAccount,
+        }),
+    {
+      message: /Account not found/,
+    },
+  );
+});
 
-  await client
-    .supportsExecutionMode({
+test('supportsExecutionMode reverts if not deployed', async t => {
+  await t.throwsAsync(
+    async () =>
+      t.context.bundlerClient.supportsExecutionMode({
+        account: t.context.account,
+        callType: 'call',
+        execType: 'default',
+      }),
+    {
+      instanceOf: ContractFunctionExecutionError,
+    },
+  );
+
+  await t.throwsAsync(
+    async () =>
+      t.context.bundlerClient.supportsExecutionMode({
+        callType: 'call',
+        execType: 'default',
+      }),
+    {
+      instanceOf: ContractFunctionExecutionError,
+    },
+  );
+});
+
+test('supportsExecutionMode returns true', async t => {
+  await t.context.deployAccount();
+  const client = t.context.bundlerClient;
+  await Promise.all([
+    client.supportsExecutionMode({ callType: 'call', execType: 'default' }),
+    client.supportsExecutionMode({ callType: 'batchcall', execType: 'try' }),
+    client.supportsExecutionMode({
       callType: 'batchcall',
       execType: 'try',
       selector: '0x12345678',
       payload: '0x00000000000000000000000000000000000000000000',
-    })
-    .then(supports => t.is(supports, true));
+    }),
+  ]).then(result => t.deepEqual(result, [true, true, true]));
 });
 
-test('supportsModule', async t => {
-  const clientWithoutAccount = createTestClient(testClientArgs).extend(erc7579Actions());
-  const supportsModuleWithoutAccount = async () =>
-    clientWithoutAccount.supportsModule({
-      account: undefined as unknown as ToSmartAccountReturnType,
-      type: 'validator',
-    });
-  await t.throwsAsync(supportsModuleWithoutAccount, {
-    message: /Account not found/,
-  });
-  const supportsModuleWithAccount = async () =>
-    clientWithoutAccount.supportsModule({ account: t.context.account, type: 'validator' });
-  await t.throwsAsync(supportsModuleWithAccount, {
-    instanceOf: ContractFunctionExecutionError,
-  });
-
-  const client = createTestClient({
-    account: t.context.account,
-    ...testClientArgs,
-  }).extend(erc7579Actions());
-
-  await t.throwsAsync(async () => client.supportsModule({ type: 'validator' }), {
-    instanceOf: ContractFunctionExecutionError,
-  });
-
-  await t.context.deployAccount();
-
-  await client.supportsModule({ type: 'validator' }).then(supports => t.is(supports, true));
-  await client.supportsModule({ type: 'executor' }).then(supports => t.is(supports, true));
-  await client.supportsModule({ type: 'hook' }).then(supports => t.is(supports, false));
-  await client.supportsModule({ type: 'fallback' }).then(supports => t.is(supports, true));
-});
-
-test('installModules and uninstallModules', async t => {
-  const testClient = createTestClient(testClientArgs).extend(erc7579Actions());
-  const installModulesWithoutAccount = async () =>
-    testClient.installModules({
-      account: undefined as unknown as ToSmartAccountReturnType,
-      entryPointAddress: entryPoint09Address,
-      modules: [],
-    });
-  await t.throwsAsync(installModulesWithoutAccount, {
-    message: /Account not found/,
-  });
-  const installModulesWithAccount = async () =>
-    testClient.installModules({ account: t.context.account, entryPointAddress: entryPoint09Address, modules: [] });
-  await t.throwsAsync(installModulesWithAccount, {
-    message: /No modules to install/,
-  });
-
-  const bundlerClient = createBundlerClient({
-    account: t.context.account,
-    client: testClient,
-    transport: http('http://localhost:3000/'),
-  }).extend(erc7579Actions());
-
+test('supportsModule throws without account', async t => {
   await t.throwsAsync(
     async () =>
-      bundlerClient.installModules({
+      (t.context.testClient as Client<Transport, undefined, SmartAccount>).extend(erc7579Actions()).supportsModule({
+        type: 'validator',
+        account: undefined as unknown as SmartAccount,
+      }),
+    {
+      message: /Account not found/,
+    },
+  );
+});
+
+test('supportsModule reverts if not deployed', async t => {
+  await t.throwsAsync(
+    async () =>
+      (t.context.testClient as Client<Transport, undefined, SmartAccount>).extend(erc7579Actions()).supportsModule({
+        account: t.context.account,
+        type: 'validator',
+      }),
+    {
+      instanceOf: ContractFunctionExecutionError,
+    },
+  );
+
+  await t.throwsAsync(async () => t.context.bundlerClient.supportsModule({ type: 'validator' }), {
+    instanceOf: ContractFunctionExecutionError,
+  });
+});
+
+test('supportsModule returns true', async t => {
+  await t.context.deployAccount();
+  await Promise.all([
+    t.context.bundlerClient.supportsModule({ type: 'validator' }),
+    t.context.bundlerClient.supportsModule({ type: 'executor' }),
+    t.context.bundlerClient.supportsModule({ type: 'hook' }),
+    t.context.bundlerClient.supportsModule({ type: 'fallback' }),
+  ]).then(result => t.deepEqual(result, [true, true, false, true]));
+});
+
+test('installModules throws without account', async t => {
+  await t.throwsAsync(
+    async () =>
+      (t.context.testClient as Client<Transport, undefined, SmartAccount>).extend(erc7579Actions()).installModules({
+        account: undefined as unknown as SmartAccount,
+        entryPointAddress: entryPoint09Address,
+        modules: [],
+      }),
+    {
+      message: /Account not found/,
+    },
+  );
+});
+
+test('installModules throws with no modules', async t => {
+  await t.throwsAsync(
+    async () =>
+      (t.context.testClient as Client<Transport, undefined, SmartAccount>).extend(erc7579Actions()).installModules({
+        account: t.context.account,
+        entryPointAddress: entryPoint09Address,
         modules: [],
       }),
     {
       message: /No modules to install/,
     },
   );
-
-  const validators: InstallModulesParameters<typeof t.context.account>['modules'] = [
-    {
-      type: 'validator',
-      address: (await deployECDSAValidator(t.context.deployer)).address,
-      initData: encodePacked(['address'], [privateKeyToAccount(generatePrivateKey()).address]),
-    },
-    {
-      type: 'validator',
-      address: (await deployECDSAValidator(t.context.deployer)).address,
-      initData: encodePacked(['address'], [privateKeyToAccount(generatePrivateKey()).address]),
-    },
-    {
-      type: 'validator',
-      address: (await deployECDSAValidator(t.context.deployer)).address,
-      initData: encodePacked(['address'], [privateKeyToAccount(generatePrivateKey()).address]),
-    },
-  ];
-
-  const getValidatorNonce = async () =>
-    t.context.account.getNonce({
-      key: BigInt(padHex(t.context.ECDSAValidator.address, { dir: 'right', size: 24 })),
-    });
-
-  // Install 1
-  // First user op deploys the account
-  await bundlerClient
-    .installModules({
-      modules: validators.slice(0, 1),
-      nonce: await getValidatorNonce(),
-    })
-    .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
-
-  // Install 2
-  await bundlerClient
-    .installModules({
-      modules: validators.slice(1, 3),
-      nonce: await getValidatorNonce(),
-    })
-    .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
-
-  for (const validator of validators) {
-    t.is(
-      await bundlerClient.isModuleInstalled({
-        type: 'validator',
-        address: validator.address,
-      }),
-      true,
-    );
-  }
-
-  const uninstallModulesWithoutAccount = async () =>
-    testClient.uninstallModules({
-      account: undefined as unknown as ToSmartAccountReturnType,
-      entryPointAddress: entryPoint09Address,
-      modules: [],
-    });
-  await t.throwsAsync(uninstallModulesWithoutAccount, {
-    message: /Account not found/,
-  });
-
-  const uninstallModulesWithAccount = async () =>
-    testClient.uninstallModules({ account: t.context.account, entryPointAddress: entryPoint09Address, modules: [] });
-  await t.throwsAsync(uninstallModulesWithAccount, {
-    message: /No modules to uninstall/,
-  });
-
   await t.throwsAsync(
     async () =>
-      bundlerClient.uninstallModules({
+      t.context.bundlerClient.installModules({
+        modules: [],
+      }),
+    {
+      message: /No modules to install/,
+    },
+  );
+});
+
+test('uninstallModules throws without account', async t => {
+  await t.throwsAsync(
+    async () =>
+      (t.context.testClient as Client<Transport, undefined, SmartAccount>).extend(erc7579Actions()).uninstallModules({
+        account: undefined as unknown as SmartAccount,
+        entryPointAddress: entryPoint09Address,
+        modules: [],
+      }),
+    {
+      message: /Account not found/,
+    },
+  );
+});
+
+test('uninstallModules throws with no modules', async t => {
+  const testClient = (t.context.testClient as Client<Transport, undefined, SmartAccount>).extend(erc7579Actions());
+  await t.throwsAsync(
+    async () =>
+      testClient.uninstallModules({
+        account: t.context.account,
+        entryPointAddress: entryPoint09Address,
         modules: [],
       }),
     {
       message: /No modules to uninstall/,
     },
   );
+  await t.throwsAsync(async () => t.context.bundlerClient.uninstallModules({ modules: [] }), {
+    message: /No modules to uninstall/,
+  });
+});
+
+test('installModules and uninstallModules', async t => {
+  const bundlerClient = t.context.bundlerClient;
+  const deployer = await createAndFundEOA(t.context.testClient);
+
+  const validators: InstallModulesParameters<typeof t.context.account>['modules'] = [
+    {
+      type: 'validator',
+      address: (await deployECDSAValidator(deployer)).address,
+      initData: encodePacked(['address'], [privateKeyToAccount(generatePrivateKey()).address]),
+    },
+    {
+      type: 'validator',
+      address: (await deployECDSAValidator(deployer)).address,
+      initData: encodePacked(['address'], [privateKeyToAccount(generatePrivateKey()).address]),
+    },
+    {
+      type: 'validator',
+      address: (await deployECDSAValidator(deployer)).address,
+      initData: encodePacked(['address'], [privateKeyToAccount(generatePrivateKey()).address]),
+    },
+  ];
+
+  // Install 1
+  // First user op deploys the account
+  await t.context.account
+    .getNonce({ key: validatorNonceKey(t.context.ECDSAValidator.address) })
+    .then(nonce =>
+      bundlerClient.installModules({
+        modules: validators.slice(0, 1),
+        nonce,
+      }),
+    )
+    .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
+
+  // Install 2
+  await t.context.account
+    .getNonce({ key: validatorNonceKey(t.context.ECDSAValidator.address) })
+    .then(nonce =>
+      bundlerClient.installModules({
+        modules: validators.slice(1, 3),
+        nonce,
+      }),
+    )
+    .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
+
+  for (const validator of validators) {
+    await bundlerClient
+      .isModuleInstalled({
+        type: 'validator',
+        address: validator.address,
+      })
+      .then(installed => t.is(installed, true));
+  }
 
   // Uninstall 1
-  await bundlerClient
-    .uninstallModules({
-      modules: validators.slice(2, 3),
-      nonce: await getValidatorNonce(),
-    })
+  await t.context.account
+    .getNonce({ key: validatorNonceKey(t.context.ECDSAValidator.address) })
+    .then(nonce =>
+      bundlerClient.uninstallModules({
+        modules: validators.slice(2, 3),
+        nonce,
+      }),
+    )
     .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
 
   // Uninstall 2
-  await bundlerClient
-    .uninstallModules({
-      modules: validators.slice(0, 2),
-      nonce: await getValidatorNonce(),
-    })
+  await t.context.account
+    .getNonce({ key: validatorNonceKey(t.context.ECDSAValidator.address) })
+    .then(nonce =>
+      bundlerClient.uninstallModules({
+        modules: validators.slice(0, 2),
+        nonce,
+      }),
+    )
     .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
 
   for (const validator of validators) {
@@ -426,50 +368,56 @@ test('installModules and uninstallModules', async t => {
   }
 });
 
-test('execute', async t => {
-  const testClient = createTestClient(testClientArgs).extend(erc7579Actions()).extend(publicActions);
-  const executeWithoutAccount = async () =>
-    testClient.execute({
-      account: undefined as unknown as ToSmartAccountReturnType,
-      entryPointAddress: entryPoint09Address,
-      calls: [],
-    });
-  await t.throwsAsync(executeWithoutAccount, {
-    message: /Account not found/,
-  });
+test('execute throws without account', async t => {
+  await t.throwsAsync(
+    async () =>
+      (t.context.testClient as Client<Transport, undefined, SmartAccount>).extend(erc7579Actions()).execute({
+        account: undefined as unknown as SmartAccount,
+        entryPointAddress: entryPoint09Address,
+        calls: [],
+      }),
+    {
+      message: /Account not found/,
+    },
+  );
+});
 
-  const bundlerClient = createBundlerClient({
-    account: t.context.account,
-    client: testClient,
-    transport: http('http://localhost:3000/'),
-  }).extend(erc7579Actions());
-
+test('execute user operations with single call', async t => {
+  const bundlerClient = t.context.bundlerClient;
   const receiver = privateKeyToAccount(generatePrivateKey());
-
-  const getValidatorNonce = async () =>
-    t.context.account.getNonce({
-      key: BigInt(padHex(t.context.ECDSAValidator.address, { dir: 'right', size: 24 })),
-    });
-
-  await bundlerClient
-    .execute({
-      calls: [{ to: receiver.address, data: '0x', value: parseEther('1') }],
-      nonce: await getValidatorNonce(),
-    })
+  await t.context.account
+    .getNonce({ key: validatorNonceKey(t.context.ECDSAValidator.address) })
+    .then(nonce =>
+      bundlerClient.execute({
+        calls: [{ to: receiver.address, data: '0x', value: parseEther('1') }],
+        nonce,
+      }),
+    )
     .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
+  await t.context.testClient
+    .extend(publicActions)
+    .getBalance({ address: receiver.address })
+    .then(balance => t.is(balance, parseEther('1')));
+});
 
-  await testClient.getBalance({ address: receiver.address }).then(balance => t.is(balance, parseEther('1')));
-
-  await bundlerClient
-    .execute({
-      calls: [
-        { to: receiver.address, data: '0x', value: parseEther('1') },
-        { to: receiver.address, data: '0x', value: parseEther('2') },
-        { to: receiver.address, data: '0x', value: parseEther('3') },
-      ],
-      nonce: await getValidatorNonce(),
-    })
+test('execute user operations with batch call', async t => {
+  const bundlerClient = t.context.bundlerClient;
+  const receiver = privateKeyToAccount(generatePrivateKey());
+  await t.context.account
+    .getNonce({ key: validatorNonceKey(t.context.ECDSAValidator.address) })
+    .then(nonce =>
+      bundlerClient.execute({
+        calls: [
+          { to: receiver.address, data: '0x', value: parseEther('1') },
+          { to: receiver.address, data: '0x', value: parseEther('2') },
+          { to: receiver.address, data: '0x', value: parseEther('3') },
+        ],
+        nonce,
+      }),
+    )
     .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
-
-  await testClient.getBalance({ address: receiver.address }).then(balance => t.is(balance, parseEther('7')));
+  await t.context.testClient
+    .extend(publicActions)
+    .getBalance({ address: receiver.address })
+    .then(balance => t.is(balance, parseEther('6')));
 });

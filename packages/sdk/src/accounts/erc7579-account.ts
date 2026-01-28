@@ -4,7 +4,7 @@ import {
   EntryPointVersion,
   toSmartAccount,
   ToSmartAccountParameters,
-  ToSmartAccountReturnType,
+  SmartAccount,
   UserOperationRequest,
   SmartAccountImplementation,
   getUserOperationTypedData,
@@ -47,7 +47,7 @@ const entryPointV09 = {
 /**
  * Creates a smart account client for an ERC-7579 account.
  */
-const toERC7579Account = async (parameters: ToERC7579AccountParameters): Promise<ToSmartAccountReturnType> => {
+const toERC7579Account = async (parameters: ToERC7579AccountParameters): Promise<SmartAccount> => {
   const { client, signer, getAddress, getFactoryArgs, ...override } = parameters;
 
   return toSmartAccount({

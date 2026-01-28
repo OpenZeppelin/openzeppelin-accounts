@@ -16,7 +16,7 @@ import {
   publicActions,
 } from 'viem';
 import { toERC7579Account, ToERC7579AccountParameters } from './erc7579-account.js';
-import { ToSmartAccountParameters, ToSmartAccountReturnType } from 'viem/account-abstraction';
+import { ToSmartAccountParameters, SmartAccount } from 'viem/account-abstraction';
 import OpenAccountFactoryArtifact from '@open-accounts-framework/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' with { type: 'json' };
 import { encodeMode, EncodeMode, ModuleType, parseModuleTypeId } from '../erc7579.utils.js';
 import { erc1967ProxyCode } from '../erc1967.utils.js';
@@ -72,7 +72,7 @@ type ToOpenAccountParameters<
 /**
  * Creates a smart account client for an OpenAccount.
  */
-const toOpenAccount = async (parameters: ToOpenAccountParameters): Promise<ToSmartAccountReturnType> => {
+const toOpenAccount = async (parameters: ToOpenAccountParameters): Promise<SmartAccount> => {
   const { client, signer, ...override } = parameters;
   const { getAddress, getFactoryArgs } = await openAccountArgs(parameters);
 
