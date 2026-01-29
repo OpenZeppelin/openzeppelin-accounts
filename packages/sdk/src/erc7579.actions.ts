@@ -406,19 +406,12 @@ async function execute<TSmartAccount extends SmartAccount | undefined>(
  * @property {function} execute Executes calls on an ERC-7579 account
  */
 export type ERC7579Actions<TSmartAccount extends SmartAccount | undefined> = {
-  // eslint-disable-next-line no-unused-vars
   accountId: (parameters?: GetSmartAccountParameter<TSmartAccount>) => Promise<string>;
-  // eslint-disable-next-line no-unused-vars
   installModules: (parameters: InstallModulesParameters<TSmartAccount>) => Promise<Hash>;
-  // eslint-disable-next-line no-unused-vars
   isModuleInstalled: (parameters: IsModuleInstalledParameters<TSmartAccount>) => Promise<boolean>;
-  // eslint-disable-next-line no-unused-vars
   supportsExecutionMode: (parameters: SupportsExecutionModeParameters<TSmartAccount>) => Promise<boolean>;
-  // eslint-disable-next-line no-unused-vars
   supportsModule: (parameters: SupportsModuleParameters<TSmartAccount>) => Promise<boolean>;
-  // eslint-disable-next-line no-unused-vars
   uninstallModules: (parameters: UninstallModulesParameters<TSmartAccount>) => Promise<Hash>;
-  // eslint-disable-next-line no-unused-vars
   execute: (parameters: ExecuteParameters<TSmartAccount>) => Promise<Hash>;
 };
 

@@ -20,7 +20,7 @@ import { deployECDSAValidator, validatorNonceKey } from './helpers/erc7579.modul
 import { OpenAccountContext, createAndFundOpenAccount, createAndFundEOA } from './helpers/accounts.js';
 
 interface ERC7579ActionsTestContext extends OpenAccountContext {
-  ECDSAValidator: GetContractReturnType<typeof ECDSAValidatorArtifact.abi>;
+  initialValidator: GetContractReturnType<typeof ECDSAValidatorArtifact.abi>;
   bundlerClient: Omit<
     BundlerClient<Transport, undefined, SmartAccount>,
     'client' | 'paymaster' | 'paymasterContext' | 'userOperation'
@@ -35,9 +35,9 @@ test.after.always(cleanup);
 
 test.beforeEach(async t => {
   const deployer = await createAndFundEOA(t.context.anvilPort, t.context.testClient);
-  t.context.ECDSAValidator = await deployECDSAValidator(deployer);
+  t.context.initialValidator = await deployECDSAValidator(deployer);
   await createAndFundOpenAccount(t, {
-    validator: t.context.ECDSAValidator.address,
+    validator: t.context.initialValidator.address,
     signerKey: privateKeyToAccount(generatePrivateKey()),
     salt: bytesToHex(crypto.getRandomValues(new Uint8Array(32))),
   });
@@ -85,7 +85,7 @@ test('isModuleInstalled throws without account', async t => {
     async () =>
       (t.context.testClient as Client<Transport, undefined, SmartAccount>).extend(erc7579Actions()).isModuleInstalled({
         type: ModuleTypes.VALIDATOR,
-        address: t.context.ECDSAValidator.address,
+        address: t.context.initialValidator.address,
         account: undefined as unknown as SmartAccount,
       }),
     {
@@ -99,7 +99,7 @@ test('isModuleInstalled reverts if not deployed', async t => {
     async () =>
       t.context.bundlerClient.isModuleInstalled({
         type: ModuleTypes.VALIDATOR,
-        address: t.context.ECDSAValidator.address,
+        address: t.context.initialValidator.address,
       }),
     {
       instanceOf: ContractFunctionExecutionError,
@@ -112,7 +112,7 @@ test('isModuleInstalled returns true', async t => {
   await t.context.bundlerClient
     .isModuleInstalled({
       type: ModuleTypes.VALIDATOR,
-      address: t.context.ECDSAValidator.address,
+      address: t.context.initialValidator.address,
     })
     .then(installed => t.is(installed, true));
 });
@@ -307,7 +307,7 @@ test('installModules and uninstallModules', async t => {
   // Install 1
   // First user op deploys the account
   await t.context.account
-    .getNonce({ key: validatorNonceKey(t.context.ECDSAValidator.address) })
+    .getNonce({ key: validatorNonceKey(t.context.initialValidator.address) })
     .then(nonce =>
       bundlerClient.installModules({
         modules: validators.slice(0, 1),
@@ -318,7 +318,7 @@ test('installModules and uninstallModules', async t => {
 
   // Install 2
   await t.context.account
-    .getNonce({ key: validatorNonceKey(t.context.ECDSAValidator.address) })
+    .getNonce({ key: validatorNonceKey(t.context.initialValidator.address) })
     .then(nonce =>
       bundlerClient.installModules({
         modules: validators.slice(1, 3),
@@ -338,7 +338,7 @@ test('installModules and uninstallModules', async t => {
 
   // Uninstall 1
   await t.context.account
-    .getNonce({ key: validatorNonceKey(t.context.ECDSAValidator.address) })
+    .getNonce({ key: validatorNonceKey(t.context.initialValidator.address) })
     .then(nonce =>
       bundlerClient.uninstallModules({
         modules: validators.slice(2, 3),
@@ -349,7 +349,7 @@ test('installModules and uninstallModules', async t => {
 
   // Uninstall 2
   await t.context.account
-    .getNonce({ key: validatorNonceKey(t.context.ECDSAValidator.address) })
+    .getNonce({ key: validatorNonceKey(t.context.initialValidator.address) })
     .then(nonce =>
       bundlerClient.uninstallModules({
         modules: validators.slice(0, 2),
@@ -386,7 +386,7 @@ test('execute user operations with single call', async t => {
   const bundlerClient = t.context.bundlerClient;
   const receiver = privateKeyToAccount(generatePrivateKey());
   await t.context.account
-    .getNonce({ key: validatorNonceKey(t.context.ECDSAValidator.address) })
+    .getNonce({ key: validatorNonceKey(t.context.initialValidator.address) })
     .then(nonce =>
       bundlerClient.execute({
         calls: [{ to: receiver.address, data: '0x', value: parseEther('1') }],
@@ -404,7 +404,7 @@ test('execute user operations with batch call', async t => {
   const bundlerClient = t.context.bundlerClient;
   const receiver = privateKeyToAccount(generatePrivateKey());
   await t.context.account
-    .getNonce({ key: validatorNonceKey(t.context.ECDSAValidator.address) })
+    .getNonce({ key: validatorNonceKey(t.context.initialValidator.address) })
     .then(nonce =>
       bundlerClient.execute({
         calls: [

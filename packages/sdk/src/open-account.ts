@@ -14,6 +14,7 @@ import {
   parseAbiParameters,
   zeroHash,
   publicActions,
+  OneOf,
 } from 'viem';
 import { toERC7579Account, ToERC7579AccountParameters } from './erc7579-account.js';
 import { ToSmartAccountParameters, SmartAccount, SmartAccountImplementation } from 'viem/account-abstraction';
@@ -68,7 +69,7 @@ type OpenAccountParameters<
   chain extends Chain | undefined = Chain | undefined,
   account extends Account | undefined = Account | undefined,
   rpcSchema extends RpcSchema | undefined = undefined,
-> = OpenAccountExistingParameters | OpenAccountFactoryParameters<transport, chain, account, rpcSchema>;
+> = OneOf<OpenAccountExistingParameters | OpenAccountFactoryParameters<transport, chain, account, rpcSchema>>;
 
 /**
  * Parameters required to create an OpenAccount smart account.
@@ -77,7 +78,7 @@ type OpenAccountParameters<
  * See {@link OpenAccountFactoryParameters} for creating new accounts or {@link OpenAccountExistingParameters} for using existing accounts.
  *
  * @property {Client} client The viem client to use for blockchain interactions
- * @property {LocalAccount} signer The local account signer to use for signing messages and operations
+ * @property {OneOf<Omit<LocalAccount, 'address' | 'signTransaction' | 'source'> | WebAuthnAccount>} signer The account signer to use for signing messages and operations. Can be either a partial LocalAccount (without address, signTransaction, and source properties) or a WebAuthnAccount for passkey-based authentication
  * @property {function(UserOperationRequest?): Promise<Hex>} getStubSignature Function that returns a stub signature for gas estimation
  */
 type ToOpenAccountParameters<
@@ -115,7 +116,7 @@ const openAccountArgs = async (
 ): Promise<Pick<SmartAccountImplementation, 'getAddress' | 'getFactoryArgs'>> => {
   const { client } = parameters;
 
-  if ('address' in parameters) {
+  if ('address' in parameters && parameters.address) {
     const accountId = await client.extend(publicActions).readContract({
       abi: [
         {

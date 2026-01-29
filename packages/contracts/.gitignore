@@ -59,7 +59,9 @@ contracts-exposed
 # Foundry
 /out
 !/out/OpenAccountFactory.sol/OpenAccountFactory.json
-!/out/modules/validators/ERC7579ECDSAValidator.sol/ERC7579ECDSAValidator.json
+!/out/ERC7579ECDSAValidator.sol/ERC7579ECDSAValidator.json
+!/out/ERC7579WebAuthnValidator.sol/ERC7579WebAuthnValidator.json
+!/out/ERC7579WebAuthnValidator.sol/ERC7579WebAuthnValidator.json
 /cache_forge
 
 # Certora

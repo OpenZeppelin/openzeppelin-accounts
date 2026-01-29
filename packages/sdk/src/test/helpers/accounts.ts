@@ -108,7 +108,7 @@ const createAndFundOpenAccount = async (
 };
 
 const estimateGasOverride =
-  (userOp: UserOperationRequest) =>
+  (userOp: UserOperationRequest, minVerificationGas: bigint = 150000n) =>
   async (
     bundlerPort: number,
     account: SmartAccount,
@@ -124,10 +124,9 @@ const estimateGasOverride =
         calls: [{ to: account.address, data: userOp.callData }],
       },
     );
-    const MIN_VERIFICATION_GAS = 150000n;
     return {
       verificationGasLimit:
-        gas.verificationGasLimit < MIN_VERIFICATION_GAS ? MIN_VERIFICATION_GAS : gas.verificationGasLimit,
+        gas.verificationGasLimit < minVerificationGas ? minVerificationGas : gas.verificationGasLimit,
     };
   };
 
