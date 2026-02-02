@@ -21,6 +21,7 @@ import { ToSmartAccountParameters, SmartAccount, SmartAccountImplementation } fr
 import OpenAccountFactoryArtifact from '@open-accounts-framework/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' with { type: 'json' };
 import { encodeMode, EncodeMode, ModuleType, parseModuleTypeId } from './erc7579.utils.js';
 import { erc1967ProxyCode } from './erc1967.utils.js';
+import { IERC7579AccountConfigABI } from './erc7579.abi.js';
 
 /**
  * Parameters for using an existing deployed OpenAccount.
@@ -118,21 +119,7 @@ const openAccountArgs = async (
 
   if ('address' in parameters && parameters.address) {
     const accountId = await client.extend(publicActions).readContract({
-      abi: [
-        {
-          type: 'function',
-          name: 'accountId',
-          inputs: [],
-          outputs: [
-            {
-              name: '',
-              type: 'string',
-              internalType: 'string',
-            },
-          ],
-          stateMutability: 'view',
-        },
-      ],
+      abi: IERC7579AccountConfigABI,
       address: parameters.address,
       functionName: 'accountId',
     });

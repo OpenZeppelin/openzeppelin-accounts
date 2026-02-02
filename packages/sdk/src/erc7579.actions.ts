@@ -259,7 +259,7 @@ async function supportsModule<TSmartAccount extends SmartAccount | undefined>(
 
   const publicClient = account.client;
 
-  return await getAction(
+  return getAction(
     publicClient,
     readContract,
     'readContract',
@@ -435,7 +435,7 @@ function erc7579Actions() {
   });
 }
 
-export type {
+export {
   InstallModulesParameters,
   IsModuleInstalledParameters,
   CallType,
@@ -443,9 +443,6 @@ export type {
   SupportsModuleParameters,
   UninstallModulesParameters,
   ExecuteParameters,
-};
-
-export {
   erc7579Actions,
   accountId,
   installModules,
