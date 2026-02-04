@@ -18,9 +18,8 @@ import {IERC7579Module} from "@openzeppelin/contracts/interfaces/draft-IERC7579.
  * number of signatures required to approve operations.
  *
  * A smart account with this module installed can require multiple signers to approve
- * operations before they are executed, such as requiring 3-of-5 guardians to approve
- * a social recovery operation, while keeping both the signer identities and threshold
- * confidential.
+ * operations, such as requiring 3-of-5 guardians to approve a social recovery operation,
+ * while keeping both the signer identities and threshold confidential.
  *
  * IMPORTANT: Due to the non-deterministic nature of FHE encryption, encrypting the same plaintext
  * uint256 value multiple times produces different ciphertexts. This means the same underlying signer
@@ -277,7 +276,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
      * signatures of the operation `hash`.
      *
      * TIP: Given that both the threshold and signers are encrypted, it's possible to pass-in
-     * valid signatures that don't count towards the threshold.
+     * signatures that don't count towards the threshold.
      */
     function _validateMultisig(
         address account,
@@ -308,7 +307,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
      * 4. The signer must not be a duplicate of a previous signer in the array
      *
      * The signers should be ordered by their uint256 representation to ensure efficient duplication check.
-     * Unordered signers are supported, but the uniqueness check will be more expensive.
+     * Unordered signers are supported, but the uniqueness check will be more expensive. See {_toId}.
      *
      * Requirements:
      *
@@ -333,7 +332,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         for (uint256 i = 0; i < signingSigners.length; ++i) {
             bytes calldata signer = signingSigners[i];
             euint256 signerIdHandle = signerIdHandles[i];
-            uint256 signerId = _toEncryptedId(signer);
+            uint256 signerId = _toId(signer);
             bool isDuplicate = false;
 
             // If the current signer id is greater than all previous signer ids, then this is a new signer.
@@ -342,7 +341,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
                 // If this signer is not greater than all the previous ones, verify that it is not a duplicate
                 // This loop is never executed if the signers are ordered by their uint256 representation.
                 for (uint256 j = 0; j < i && !isDuplicate; ++j) {
-                    isDuplicate = signerId == _toEncryptedId(signingSigners[j]);
+                    isDuplicate = signerId == _toId(signingSigners[j]);
                 }
             }
 
@@ -431,7 +430,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     }
 
     /// @dev Converts a signer (address or ERC-7913 key) to uint256 for encryption.
-    function _toEncryptedId(bytes calldata signer) private pure returns (uint256) {
+    function _toId(bytes calldata signer) private pure returns (uint256) {
         return
             signer.length > 20
                 ? uint256(keccak256(signer)) // forge-lint: disable-next-line(unsafe-typecast)
