@@ -102,22 +102,23 @@ describe('ERC7579NativeSpender', function () {
         ['address[]', 'uint48[]', 'uint160[]', 'uint48[]'],
         [
           [this.spender1.address, this.spender2.address],
-          [this.start, this.start + 100n],
+          [0n, this.start],
           [this.limit, ethers.parseEther('5')],
           [this.renewPeriod, time.duration.days(30)],
         ],
       );
 
+      const currentTime = await time.clock.timestamp();
       await expect(
         this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, multiSpenderInstallData),
       )
         .to.emit(this.mock, 'ERC7579NativeSpendingConfigSet')
-        .withArgs(this.mockAccount.address, this.spender1.address, this.start, this.limit, this.renewPeriod)
+        .withArgs(this.mockAccount.address, this.spender1.address, currentTime, this.limit, this.renewPeriod)
         .to.emit(this.mock, 'ERC7579NativeSpendingConfigSet')
         .withArgs(
           this.mockAccount.address,
           this.spender2.address,
-          this.start + 100n,
+          this.start,
           ethers.parseEther('5'),
           time.duration.days(30),
         );
@@ -516,6 +517,15 @@ describe('ERC7579NativeSpender', function () {
       );
 
       await expect(this.mock.start(this.mockAccount.address, this.spender2.address)).to.eventually.equal(futureStart);
+    });
+
+    it('allows setting 0 start time resolving to current time', async function () {
+      const tx = await this.mockFromAccount.setSpendingConfig(this.spender1.address, 0, this.limit, this.renewPeriod);
+      const currentTime = await time.clock.timestamp();
+      await expect(tx)
+        .to.emit(this.mock, 'ERC7579NativeSpendingConfigSet')
+        .withArgs(this.mockAccount.address, this.spender1.address, currentTime, this.limit, this.renewPeriod);
+      await expect(this.mock.start(this.mockAccount.address, this.spender1.address)).to.eventually.equal(currentTime);
     });
 
     it('reverts when trying to set limit to 0', async function () {

@@ -155,12 +155,13 @@ describe('ERC7579ERC20Spender', function () {
             [
               [this.token1.target, this.token2.target],
               [this.spender1.address, this.spender2.address],
-              [this.start, this.start + 100n],
+              [0n, this.start],
               [this.limit, ethers.parseEther('5')],
               [this.renewPeriod, time.duration.days(30)],
             ],
           );
 
+          const currentTime = await time.clock[this.mode]();
           await expect(
             this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, multiSpenderInstallData),
           )
@@ -169,7 +170,7 @@ describe('ERC7579ERC20Spender', function () {
               this.mockAccount.address,
               this.token1.target,
               this.spender1.address,
-              this.start,
+              currentTime,
               this.limit,
               this.renewPeriod,
             )
@@ -178,7 +179,7 @@ describe('ERC7579ERC20Spender', function () {
               this.mockAccount.address,
               this.token2.target,
               this.spender2.address,
-              this.start + 100n,
+              this.start,
               ethers.parseEther('5'),
               time.duration.days(30),
             );
@@ -746,6 +747,20 @@ describe('ERC7579ERC20Spender', function () {
           await expect(
             this.mock.start(this.mockAccount.address, this.token1.target, this.spender2.address),
           ).to.eventually.equal(futureStart);
+        });
+
+        it('allows setting 0 start time resolving to current time', async function () {
+          const currentTime = await time.clock[this.mode]();
+          await this.mockFromAccount.setSpendingConfig(
+            this.token1.target,
+            this.spender1.address,
+            0,
+            this.limit,
+            ethers.Typed.uint48(this.renewPeriod),
+          );
+          await expect(
+            this.mock.start(this.mockAccount.address, this.token1.target, this.spender1.address),
+          ).to.eventually.equal(currentTime);
         });
 
         it('reverts when trying to set limit to 0', async function () {

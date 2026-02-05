@@ -286,6 +286,8 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
      * * Those from {_decodeERC20SpenderInitData} for the decoding requirements.
      * * All arrays must have equal length. Reverts with {ERC7579ERC20SpenderMismatchedInitDataLengths} if not.
      * * Those from {_setSpendingConfig} for the configuration requirements.
+     *
+     * TIP: Each start will be set to the current timepoint if it's 0.
      */
     function onInstall(bytes calldata initData) public virtual {
         address account = msg.sender;
@@ -383,6 +385,8 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
      *
      * * The module must be installed. Reverts with {ERC7579ERC20SpenderUninstalled} if not.
      * * Those from {_setSpendingConfig}.
+     *
+     * TIP: Setting `newStart` to 0 will resolve to the current timepoint.
      */
     function setSpendingConfig(
         address token,
@@ -397,7 +401,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
 
     /// @dev Same as {setSpendingConfig} but sets a configuration that starts immediately.
     function setSpendingConfig(address token, address spender, uint160 newLimit, uint48 newRenewPeriod) public virtual {
-        setSpendingConfig(token, spender, clock(token), newLimit, newRenewPeriod);
+        setSpendingConfig(token, spender, 0, newLimit, newRenewPeriod);
     }
 
     /**
@@ -585,9 +589,9 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
      * * Each renewal period must be greater than zero. Reverts with {ERC7579ERC20SpenderInvalidRenewPeriod} if not.
      * * Each limit must be greater than zero. Reverts with {ERC7579ERC20SpenderInvalidLimit} if not.
      * * The token must be a contract address. Reverts with {ERC7579ERC20SpenderInvalidToken} if not.
-     * * If keeping the same start time (to update limit/renewPeriod), no timepoint validation is performed.
-     * * If changing the start time, the new start must be >= current timepoint. Reverts with
-     *   {ERC7579ERC20SpenderInvalidStart} if attempting to set a different past start time
+     * * If `newStart` is non-zero, it must be >= current timepoint. Setting 0 would resolve
+     *   to the current timepoint. Reverts with {ERC7579ERC20SpenderInvalidStart} if attempting
+     *   to set any other past start time.
      *   (this prevents reusing old start times that might have existing spending data).
      *
      * Emits a {ERC7579ERC20SpendingConfigSet} event.
@@ -607,13 +611,15 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         require(newRenewPeriod > 0, ERC7579ERC20SpenderInvalidRenewPeriod(newRenewPeriod));
         require(newLimit > 0, ERC7579ERC20SpenderInvalidLimit(newLimit));
         require(address(token).code.length > 0, ERC7579ERC20SpenderInvalidToken(token));
-        require(newStart >= clock(token), ERC7579ERC20SpenderInvalidStart(newStart));
+        uint48 currentTimepoint = clock(token);
+        uint48 resolvedStart = newStart == 0 ? currentTimepoint : newStart;
+        require(resolvedStart >= currentTimepoint, ERC7579ERC20SpenderInvalidStart(newStart));
         _spenders[account][installation_][token].add(spender);
         _tokens[account][installation_].add(token);
-        _config[account][installation_][token][spender].start = newStart;
+        _config[account][installation_][token][spender].start = resolvedStart;
         _config[account][installation_][token][spender].renewPeriod = newRenewPeriod;
         _config[account][installation_][token][spender].limit = newLimit;
-        emit ERC7579ERC20SpendingConfigSet(account, token, spender, newStart, newLimit, newRenewPeriod);
+        emit ERC7579ERC20SpendingConfigSet(account, token, spender, resolvedStart, newLimit, newRenewPeriod);
     }
 
     /**
