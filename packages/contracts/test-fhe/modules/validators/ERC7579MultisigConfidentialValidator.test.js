@@ -103,7 +103,7 @@ describe('ERC7579MultisigConfidentialValidator', function () {
 
       const decryptResult = await fhevm.publicDecrypt([encryptedBool]);
 
-      await mock.discloseUserOperation(hash, encryptedBool, decryptResult.decryptionProof);
+      await mock.discloseUserOperation(hash, decryptResult.decryptionProof);
     };
 
     signer.signMessage = async function (message) {
@@ -123,6 +123,7 @@ describe('ERC7579MultisigConfidentialValidator', function () {
 
       return signature;
     };
+
     const signUserOp = async userOp =>
       Object.assign(userOp, {
         signature: await signer.signTypedData(entrypointDomain, { PackedUserOperation }, userOp.packed),

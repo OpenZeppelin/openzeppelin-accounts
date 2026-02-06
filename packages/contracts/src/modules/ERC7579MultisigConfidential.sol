@@ -32,6 +32,10 @@ import {IERC7579Module} from "@openzeppelin/contracts/interfaces/draft-IERC7579.
  * encrypted, while ERC-7913 keys are hashed with `keccak256(verifier || key)` before
  * encryption. This hybrid approach allows addresses to be recognizable after decryption,
  * while ERC-7913 keys require an off-chain mapping from hash to preimage.
+ *
+ * NOTE: The threshold can be set to 0 given it can't be validated in runtime. The account
+ * operators must rely on external validation to ensure the threshold is not 0, which allows
+ * arbitrary execution.
  */
 abstract contract ERC7579MultisigConfidential is IERC7579Module {
     using EnumerableSet for EnumerableSet.Bytes32Set;

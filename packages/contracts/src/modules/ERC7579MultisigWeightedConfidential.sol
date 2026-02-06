@@ -34,6 +34,10 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
  * IMPORTANT: When setting a threshold value, ensure it matches the scale used for signer weights.
  * For example, if signers have weights like 1, 2, or 3, then a threshold of 4 would require
  * signatures with a total weight of at least 4 (e.g., one with weight 1 and one with weight 3).
+ *
+ * NOTE: The threshold can be set to 0 given it can't be validated in runtime. The account
+ * operators must rely on external validation to ensure the threshold is not 0, which allows
+ * arbitrary execution.
  */
 abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfidential {
     using EnumerableSet for EnumerableSet.Bytes32Set;

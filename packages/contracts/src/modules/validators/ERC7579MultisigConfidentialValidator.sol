@@ -29,6 +29,7 @@ contract ERC7579MultisigConfidentialValidator is ERC7579MultisigConfidential, ER
     /// @dev Emitted when a user operation is disclosed with its decryption proof verified.
     event UserOperationDisclosed(address indexed account, bytes32 indexed hash, ebool valid, bool cleartextBool);
 
+    mapping(bytes32 userOpHash => ebool encryptedResult) private _pendingDisclosures;
     mapping(bytes32 userOpHash => bool) private _disclosed;
 
     /**
@@ -52,6 +53,7 @@ contract ERC7579MultisigConfidentialValidator is ERC7579MultisigConfidential, ER
     ) public {
         ebool valid = _validateMultisig(account, hash, signingSigners, signerIdHandles, signatures);
         FHE.makePubliclyDecryptable(valid);
+        _pendingDisclosures[hash] = valid;
         emit UserOperationDiscloseRequested(account, hash, valid);
     }
 
@@ -64,14 +66,19 @@ contract ERC7579MultisigConfidentialValidator is ERC7579MultisigConfidential, ER
      *
      * Emits a {UserOperationDisclosed} event.
      */
-    function discloseUserOperation(bytes32 hash, ebool encryptedBool, bytes calldata decryptionProof) public {
+    function discloseUserOperation(bytes32 hash, bytes calldata decryptionProof) public {
+        ebool valid = _pendingDisclosures[hash];
+
         bytes32[] memory handles = new bytes32[](1);
-        handles[0] = ebool.unwrap(encryptedBool);
+        handles[0] = ebool.unwrap(valid);
         bool cleartextBool = true; // Must be true by design
         bytes memory cleartextMemory = abi.encode(cleartextBool);
         FHE.checkSignatures(handles, cleartextMemory, decryptionProof);
-        emit UserOperationDisclosed(msg.sender, hash, encryptedBool, cleartextBool);
+
+        _pendingDisclosures[hash] = ebool.wrap(0);
         _disclosed[hash] = true;
+
+        emit UserOperationDisclosed(msg.sender, hash, valid, cleartextBool);
     }
 
     /**
