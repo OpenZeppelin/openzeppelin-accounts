@@ -82,7 +82,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
         ) = _decodeMultisigWeightedInitData(initData);
         require(externalSigners.length > 0, ERC7579MultisigEmptySigners());
         addSigners(externalSigners, inputProof);
-        setSignerWeights(getSigners(msg.sender, 0, type(uint16).max), externalWeights, inputProof);
+        setSignerWeights(getSigners(msg.sender, 0, type(uint32).max), externalWeights, inputProof);
         setThreshold(externalThreshold, inputProof);
     }
 

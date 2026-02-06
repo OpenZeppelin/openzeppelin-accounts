@@ -27,7 +27,7 @@ contract ERC7579MultisigConfidentialValidator is ERC7579MultisigConfidential, ER
     event UserOperationDiscloseRequested(address indexed account, bytes32 indexed hash, ebool valid);
 
     /// @dev Emitted when a user operation is disclosed with its decryption proof verified.
-    event UserOperationDisclosed(address indexed account, bytes32 indexed hash, ebool valid, bool cleartextBool);
+    event UserOperationDisclosed(bytes32 indexed hash, ebool valid, bool cleartextBool);
 
     mapping(bytes32 userOpHash => ebool encryptedResult) private _pendingDisclosures;
     mapping(bytes32 userOpHash => bool) private _disclosed;
@@ -78,7 +78,7 @@ contract ERC7579MultisigConfidentialValidator is ERC7579MultisigConfidential, ER
         _pendingDisclosures[hash] = ebool.wrap(0);
         _disclosed[hash] = true;
 
-        emit UserOperationDisclosed(msg.sender, hash, valid, cleartextBool);
+        emit UserOperationDisclosed(hash, valid, cleartextBool);
     }
 
     /**

@@ -390,7 +390,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         internal
         pure
         virtual
-        returns (bytes calldata inputProof, externalEuint256[] calldata signerIds, externalEuint32 threshold_)
+        returns (bytes calldata inputProof, externalEuint256[] calldata signerIds, externalEuint32 threshold)
     {
         // Minimum length:
         // inputProofOffset(32) + signerIdsOffset(32) + threshold(32) +
@@ -398,7 +398,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         require(initData.length > 0x9f, ERC7579MultisigInvalidInitData());
 
         // Get the externally encrypted threshold handle
-        threshold_ = externalEuint32.wrap(bytes32(initData[0x40:0x60]));
+        threshold = externalEuint32.wrap(bytes32(initData[0x40:0x60]));
 
         // Get offset to the input proof
         uint256 inputProofOffset = uint256(bytes32(initData[:0x20]));
@@ -430,7 +430,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
             signerIds.length := signerIdsLength
         }
 
-        return (inputProof, signerIds, threshold_);
+        return (inputProof, signerIds, threshold);
     }
 
     /// @dev Converts a signer (address or ERC-7913 key) to uint256 for encryption.
