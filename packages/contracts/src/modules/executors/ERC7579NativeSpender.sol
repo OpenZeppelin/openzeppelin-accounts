@@ -228,6 +228,8 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
      * * Those from {_decodeNativeSpenderInitData} for the decoding requirements.
      * * All arrays must have equal length. Reverts with {ERC7579NativeSpenderMismatchedInitDataLengths} if not.
      * * Those from {_setSpendingConfig} for the configuration requirements.
+     *
+     * TIP: Each start will be set to the current timepoint if it's 0.
      */
     function onInstall(bytes calldata initData) public virtual {
         address account = msg.sender;
@@ -312,6 +314,8 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
      *
      * * The module must be installed. Reverts with {ERC7579NativeSpenderUninstalled} if not.
      * * Those from {_setSpendingConfig}.
+     *
+     * TIP: Setting `newStart` to 0 will resolve to the current timepoint.
      */
     function setSpendingConfig(
         address spender,
@@ -325,7 +329,7 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
 
     /// @dev Same as {setSpendingConfig} but sets a configuration that starts immediately.
     function setSpendingConfig(address spender, uint160 newLimit, uint48 newRenewPeriod) public virtual {
-        setSpendingConfig(spender, clock(), newLimit, newRenewPeriod);
+        setSpendingConfig(spender, 0, newLimit, newRenewPeriod);
     }
 
     /**
@@ -470,9 +474,9 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
      *
      * * Each renewal period must be greater than zero. Reverts with {ERC7579NativeSpenderInvalidRenewPeriod} if not.
      * * Each limit must be greater than zero. Reverts with {ERC7579NativeSpenderInvalidLimit} if not.
-     * * If keeping the same start time (to update limit/renewPeriod), no timestamp validation is performed.
-     * * If changing the start time, the new start must be >= current timepoint. Reverts with
-     *   {ERC7579NativeSpenderInvalidStart} if attempting to set a different past start time
+     * * If `newStart` is non-zero, it must be >= current timepoint. Setting 0 would resolve
+     *   to the current timepoint. Reverts with {ERC7579NativeSpenderInvalidStart} if attempting
+     *   to set any other past start time.
      *   (this prevents reusing old start times that might have existing spending data).
      *
      * Emits a {ERC7579NativeSpendingConfigSet} event.
@@ -490,12 +494,14 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
     ) internal virtual {
         require(newRenewPeriod > 0, ERC7579NativeSpenderInvalidRenewPeriod(newRenewPeriod));
         require(newLimit > 0, ERC7579NativeSpenderInvalidLimit(newLimit));
-        require(newStart >= clock(), ERC7579NativeSpenderInvalidStart(newStart));
+        uint48 currentTimepoint = clock();
+        uint48 resolvedStart = uint48(Math.ternary(newStart == 0, currentTimepoint, newStart)); // Safe cast. Both are uint48.
+        require(resolvedStart >= currentTimepoint, ERC7579NativeSpenderInvalidStart(newStart));
         _spenders[account][installation_].add(spender);
-        _config[account][installation_][spender].start = newStart;
+        _config[account][installation_][spender].start = resolvedStart;
         _config[account][installation_][spender].renewPeriod = newRenewPeriod;
         _config[account][installation_][spender].limit = newLimit;
-        emit ERC7579NativeSpendingConfigSet(account, spender, newStart, newLimit, newRenewPeriod);
+        emit ERC7579NativeSpendingConfigSet(account, spender, resolvedStart, newLimit, newRenewPeriod);
     }
 
     /**
