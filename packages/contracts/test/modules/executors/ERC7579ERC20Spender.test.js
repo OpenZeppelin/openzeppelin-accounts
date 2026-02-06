@@ -161,10 +161,13 @@ describe('ERC7579ERC20Spender', function () {
             ],
           );
 
+          const tx = await this.mockAccountFromEntrypoint.installModule(
+            this.moduleType,
+            this.mock.target,
+            multiSpenderInstallData,
+          );
           const currentTime = await time.clock[this.mode]();
-          await expect(
-            this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, multiSpenderInstallData),
-          )
+          await expect(tx)
             .to.emit(this.mock, 'ERC7579ERC20SpendingConfigSet')
             .withArgs(
               this.mockAccount.address,
@@ -750,7 +753,6 @@ describe('ERC7579ERC20Spender', function () {
         });
 
         it('allows setting 0 start time resolving to current time', async function () {
-          const currentTime = await time.clock[this.mode]();
           await this.mockFromAccount.setSpendingConfig(
             this.token1.target,
             this.spender1.address,
@@ -758,9 +760,9 @@ describe('ERC7579ERC20Spender', function () {
             this.limit,
             ethers.Typed.uint48(this.renewPeriod),
           );
-          await expect(
-            this.mock.start(this.mockAccount.address, this.token1.target, this.spender1.address),
-          ).to.eventually.equal(currentTime);
+          const tx = this.mock.start(this.mockAccount.address, this.token1.target, this.spender1.address);
+          const currentTime = await time.clock[this.mode]();
+          await expect(tx).to.eventually.equal(currentTime);
         });
 
         it('reverts when trying to set limit to 0', async function () {

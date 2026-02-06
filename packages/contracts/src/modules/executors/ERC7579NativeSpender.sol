@@ -495,7 +495,7 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
         require(newRenewPeriod > 0, ERC7579NativeSpenderInvalidRenewPeriod(newRenewPeriod));
         require(newLimit > 0, ERC7579NativeSpenderInvalidLimit(newLimit));
         uint48 currentTimepoint = clock();
-        uint48 resolvedStart = newStart == 0 ? currentTimepoint : newStart;
+        uint48 resolvedStart = uint48(Math.ternary(newStart == 0, currentTimepoint, newStart)); // Safe cast. Both are uint48.
         require(resolvedStart >= currentTimepoint, ERC7579NativeSpenderInvalidStart(newStart));
         _spenders[account][installation_].add(spender);
         _config[account][installation_][spender].start = resolvedStart;

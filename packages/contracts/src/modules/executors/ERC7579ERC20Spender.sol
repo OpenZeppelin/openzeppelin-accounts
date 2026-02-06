@@ -612,7 +612,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         require(newLimit > 0, ERC7579ERC20SpenderInvalidLimit(newLimit));
         require(address(token).code.length > 0, ERC7579ERC20SpenderInvalidToken(token));
         uint48 currentTimepoint = clock(token);
-        uint48 resolvedStart = newStart == 0 ? currentTimepoint : newStart;
+        uint48 resolvedStart = uint48(Math.ternary(newStart == 0, currentTimepoint, newStart)); // Safe cast. Both are uint48.
         require(resolvedStart >= currentTimepoint, ERC7579ERC20SpenderInvalidStart(newStart));
         _spenders[account][installation_][token].add(spender);
         _tokens[account][installation_].add(token);
