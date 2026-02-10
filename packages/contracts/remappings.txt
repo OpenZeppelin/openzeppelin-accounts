@@ -1,2 +1,5 @@
 @openzeppelin/contracts/=node_modules/@openzeppelin/contracts/contracts/
 @openzeppelin/contracts-upgradeable/=node_modules/@openzeppelin/contracts-upgradeable/contracts/
+@openzeppelin/community-contracts/=node_modules/@openzeppelin/community-contracts/contracts/
+@zk-email/email-tx-builder/=node_modules/email-tx-builder/packages/contracts/
+@zk-email/contracts/=node_modules/zk-email-verify/

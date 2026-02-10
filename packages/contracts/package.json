@@ -26,12 +26,15 @@
     "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
     "@nomicfoundation/hardhat-ethers": "^3.1.0",
     "@nomicfoundation/hardhat-network-helpers": "^1.1.0",
+    "@openzeppelin/community-contracts": "file:../../lib/@openzeppelin-community-contracts",
     "@openzeppelin/contracts": "file:../../lib/@openzeppelin-contracts",
     "@openzeppelin/contracts-upgradeable": "file:../../lib/@openzeppelin-contracts-upgradeable",
     "hardhat": "^2.26.3",
     "hardhat-exposed": "^0.3.19",
     "hardhat-predeploy": "^0.4.1",
     "rimraf": "^6.0.1",
-    "solidity-coverage": "^0.8.16"
+    "solidity-coverage": "^0.8.16",
+    "email-tx-builder": "file:../../lib/email-tx-builder",
+    "zk-email-verify": "file:../../lib/zk-email-verify/packages/contracts"
   }
 }
