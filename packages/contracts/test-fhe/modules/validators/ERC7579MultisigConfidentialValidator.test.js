@@ -63,6 +63,7 @@ describe('ERC7579MultisigConfidentialValidator', function () {
     // Deploy ERC-7913 verifier
     const verifier = await ethers.deployContract('ERC7913P256Verifier');
 
+    // Prepare mixed signers: one EOA and one ERC-7913 (P256)
     aliceP256.bytes = ethers.concat([
       verifier.target,
       aliceP256.signingKey.publicKey.qx,
@@ -87,7 +88,7 @@ describe('ERC7579MultisigConfidentialValidator', function () {
       }
 
       const receipt = await mock
-        .requestDiscloseUserOperation(
+        .requestDiscloseOperation(
           mockAccount.address,
           hash,
           signingSigners.map(signer => ethers.hexlify(signer)),
@@ -98,12 +99,12 @@ describe('ERC7579MultisigConfidentialValidator', function () {
 
       const [[, , encryptedBool]] = receipt.logs
         .map(log => mock.interface.parseLog(log))
-        .filter(log => log?.name === 'UserOperationDiscloseRequested')
+        .filter(log => log?.name === 'ERC7579MultisigOperationDiscloseRequested')
         .map(log => log.args.map(arg => ethers.hexlify(arg)));
 
       const decryptResult = await fhevm.publicDecrypt([encryptedBool]);
 
-      await mock.discloseUserOperation(hash, decryptResult.decryptionProof);
+      await mock.discloseOperation(hash, decryptResult.decryptionProof);
     };
 
     signer.signMessage = async function (message) {

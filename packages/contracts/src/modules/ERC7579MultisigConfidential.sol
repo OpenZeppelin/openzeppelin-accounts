@@ -21,6 +21,14 @@ import {IERC7579Module} from "@openzeppelin/contracts/interfaces/draft-IERC7579.
  * operations, such as requiring 3-of-5 guardians to approve a social recovery operation,
  * while keeping both the signer identities and threshold confidential.
  *
+ * Operations are identified by their hash, which represents arbitrary data for the application
+ * to validate. Therefore, replay protection and other considersations about the operation must be
+ * handled by the application.
+ *
+ * To request disclosure of the multisignature validation result for a given operation, the
+ * application must call `requestDiscloseOperation` to make the result publicly decryptable,
+ * then call `discloseOperation` to verify the decryption proof and get the result.
+ *
  * IMPORTANT: Due to the non-deterministic nature of FHE encryption, encrypting the same plaintext
  * uint256 value multiple times produces different ciphertexts. This means the same underlying signer
  * can be added multiple times with different encrypted handles, and duplicate detection by
@@ -75,8 +83,16 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     /// @dev Emitted when the encrypted threshold is updated.
     event ERC7579MultisigThresholdSet(address indexed account, euint32 threshold);
 
+    /// @dev Emitted when a disclosure request is made for an operation.
+    event ERC7579MultisigOperationDiscloseRequested(address indexed account, bytes32 indexed hash, ebool valid);
+
+    /// @dev Emitted when an operation is disclosed with its decryption proof verified.
+    event ERC7579MultisigOperationDisclosed(bytes32 indexed hash, ebool valid, bool cleartextBool);
+
     mapping(address account => EnumerableSet.Bytes32Set) private _signersSetByAccount;
     mapping(address account => euint32) private _thresholdByAccount;
+    mapping(bytes32 hash => ebool) private _pendingDisclosures;
+    mapping(bytes32 hash => bool) private _disclosed;
 
     /**
      * @dev Sets up the module's initial configuration when installed by an account.
@@ -157,6 +173,16 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         return _thresholdByAccount[account];
     }
 
+    /// @dev Returns whether the multisignature validation result for an operation (hash) is pending disclosure.
+    function isPendingDisclosure(bytes32 hash) public view virtual returns (ebool) {
+        return _pendingDisclosures[hash];
+    }
+
+    /// @dev Returns whether the multisignature validation result for an operation (hash) is disclosed.
+    function isDisclosed(bytes32 hash) public view virtual returns (bool) {
+        return _disclosed[hash];
+    }
+
     /**
      * @dev Adds new encrypted signerIds to the authorized set for the calling account.
      * Can only be called by the account itself. See {_addSigners}.
@@ -193,6 +219,56 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
      */
     function setThreshold(externalEuint32 newThreshold, bytes memory inputProof) public virtual {
         _setThreshold(msg.sender, FHE.fromExternal(newThreshold, inputProof));
+    }
+
+    /**
+     * @dev Requests disclosure of the multisignature validation result for an operation (hash).
+     *
+     * This function validates the multisignature using encrypted values and makes the
+     * result publicly decryptable. Applications that require using the validation result
+     * must call this function off-chain first to enable the decryption proof to be included
+     * in a subsequent call to `discloseOperation` to verify the proof.
+     *
+     * NOTE: This function does not perform any access control. Anyone can request disclosure
+     * of the multisignature validation result for any operation.
+     *
+     * Emits a {ERC7579MultisigOperationDiscloseRequested} event.
+     */
+    function requestDiscloseOperation(
+        address account,
+        bytes32 hash,
+        bytes[] calldata signingSigners,
+        euint256[] calldata signerIdHandles,
+        bytes[] calldata signatures
+    ) public {
+        ebool valid = _validateMultisig(account, hash, signingSigners, signerIdHandles, signatures);
+        FHE.makePubliclyDecryptable(valid);
+        _pendingDisclosures[hash] = valid;
+        emit ERC7579MultisigOperationDiscloseRequested(account, hash, valid);
+    }
+
+    /**
+     * @dev Verifies the decryption proof for a disclosed operation (hash).
+     *
+     * Requirements:
+     *
+     * * The decryption proof must be cryptographically valid. Reverts if invalid.
+     *
+     * Emits a {ERC7579MultisigOperationDisclosed} event.
+     */
+    function discloseOperation(bytes32 hash, bytes calldata decryptionProof) public {
+        ebool valid = isPendingDisclosure(hash);
+
+        bytes32[] memory handles = new bytes32[](1);
+        handles[0] = ebool.unwrap(valid);
+        bool cleartextBool = true; // Must be true by design
+        bytes memory cleartextMemory = abi.encode(cleartextBool);
+        FHE.checkSignatures(handles, cleartextMemory, decryptionProof);
+
+        _pendingDisclosures[hash] = ebool.wrap(0);
+        _disclosed[hash] = true;
+
+        emit ERC7579MultisigOperationDisclosed(hash, valid, cleartextBool);
     }
 
     /**
