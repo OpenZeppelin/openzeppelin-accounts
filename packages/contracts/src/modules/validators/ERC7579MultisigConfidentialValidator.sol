@@ -20,7 +20,7 @@ import {ERC7579MultisigConfidential} from "../ERC7579MultisigConfidential.sol";
  *    and mark the operation as disclosed.
  * 3. Submit the user operation to the entrypoint; the entrypoint calls `validateUserOp`,
  *    which invokes this validator's `_rawERC7579Validation` to ensure the operation hash
- *    is disclosed (see {isDisclosed}).
+ *    is disclosed (see {disclosed}).
  *
  * NOTE: By definition, the user operation is public in the bundler mempool the moment it's
  * submitted. Users must not assume that the user operation is confidential, and should consider
@@ -39,6 +39,6 @@ contract ERC7579MultisigConfidentialValidator is ERC7579MultisigConfidential, ER
         bytes32 hash,
         bytes calldata /* signature */
     ) internal view virtual override returns (bool) {
-        return isDisclosed(hash);
+        return disclosed(hash);
     }
 }

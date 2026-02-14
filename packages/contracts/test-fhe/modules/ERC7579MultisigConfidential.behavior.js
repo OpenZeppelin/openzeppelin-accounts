@@ -5,6 +5,15 @@ const { anyValue } = require('@nomicfoundation/hardhat-chai-matchers/withArgs');
 
 const { allowHandle } = require('../helpers/fhe');
 const { MAX_UINT32 } = require('../../../../lib/@openzeppelin-contracts/test/helpers/constants');
+const {
+  NonNativeSigner,
+  MultiERC7913SigningKey,
+} = require('../../../../lib/@openzeppelin-contracts/test/helpers/signers');
+
+const toId = signer =>
+  ethers.isAddress(ethers.hexlify(signer))
+    ? BigInt(ethers.getAddress(ethers.hexlify(signer)))
+    : BigInt(ethers.keccak256(signer));
 
 function shouldBehaveLikeERC7579MultisigConfidential() {
   it('sets initial signers and threshold on installation', async function () {
@@ -221,6 +230,91 @@ function shouldBehaveLikeERC7579MultisigConfidential() {
       await expect(
         fhevm.userDecryptEuint(FhevmType.euint32, threshold, this.mockAccount.address, this.signers[0]),
       ).to.eventually.eq(totalSigners);
+    });
+  });
+}
+
+function shouldBehaveLikeOperationDiscloser() {
+  const operation = 'test operation';
+  const operationHash = ethers.hashMessage(operation);
+
+  describe('operation disclosure', function () {
+    beforeEach(async function () {
+      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
+
+      this.requestDiscloseOperation = async signer => {
+        const decryptor = this.signers[0];
+        const signerHandles = await this.mock.getSigners(this.mockAccount.address, 0, MAX_UINT32);
+        await Promise.all(signerHandles.map(handle => allowHandle(this.accountAsSigner, decryptor.address, handle)));
+
+        const signerIds = [];
+        for (const handle of signerHandles) {
+          const decryptedId = await fhevm.userDecryptEuint(
+            FhevmType.euint256,
+            handle,
+            this.mockAccount.address,
+            decryptor,
+          );
+          signerIds.push(decryptedId);
+        }
+
+        const signature = await signer.signMessage(operation);
+        const [signingSigners, signatures] = ethers.AbiCoder.defaultAbiCoder().decode(
+          ['bytes[]', 'bytes[]'],
+          signature,
+        );
+
+        const receipt = await this.mock
+          .requestDiscloseOperation(
+            this.mockAccount.address,
+            operationHash,
+            signingSigners.map(signer => ethers.hexlify(signer)),
+            signingSigners.map(signer => ethers.hexlify(signerHandles[signerIds.findIndex(id => id === toId(signer))])),
+            signatures.map(sig => ethers.hexlify(sig)),
+          )
+          .then(tx => tx.wait());
+
+        const [[, , encryptedBool]] = receipt.logs
+          .map(log => this.mock.interface.parseLog(log))
+          .filter(log => log?.name === 'ERC7579MultisigOperationDiscloseRequested')
+          .map(log => log.args.map(arg => ethers.hexlify(arg)));
+
+        return {
+          receipt,
+          encryptedBool,
+        };
+      };
+    });
+
+    it('discloses operation and sets disclosed to true', async function () {
+      await expect(this.mock.disclosed(operationHash)).to.eventually.be.false;
+
+      const signer = new NonNativeSigner(new MultiERC7913SigningKey([...this.signers]));
+      const { encryptedBool } = await this.requestDiscloseOperation(signer);
+
+      const decryptResult = await fhevm.publicDecrypt([encryptedBool]);
+      await this.mock.discloseOperation(operationHash, decryptResult.decryptionProof);
+      await expect(this.mock.disclosed(operationHash)).to.eventually.be.true;
+    });
+
+    it('requestDiscloseOperation sets requested disclosure and requestedDisclosure returns non-zero handle', async function () {
+      await expect(this.mock.requestedDisclosure(operationHash)).to.eventually.equal(ethers.ZeroHash);
+
+      const { encryptedBool, receipt } = await this.requestDiscloseOperation(
+        new NonNativeSigner(new MultiERC7913SigningKey([...this.signers])),
+      );
+      expect(receipt)
+        .to.emit(this.mock, 'ERC7579MultisigOperationDiscloseRequested')
+        .withArgs(this.mockAccount.address, operationHash, anyValue);
+
+      await expect(this.mock.requestedDisclosure(operationHash)).to.eventually.equal(encryptedBool);
+    });
+
+    it('discloseOperation reverts with ERC7579MultisigUnknownDisclosure for unknown hash', async function () {
+      const unknownHash = ethers.id('never requested');
+      await expect(this.mock.discloseOperation(unknownHash, '0x'))
+        .to.be.revertedWithCustomError(this.mock, 'ERC7579MultisigUnknownDisclosure')
+        .withArgs(unknownHash);
     });
   });
 }
@@ -690,6 +784,8 @@ function shouldBehaveLikeERC7579MultisigConfidentialWeighted() {
 }
 
 module.exports = {
+  toId,
   shouldBehaveLikeERC7579MultisigConfidential,
   shouldBehaveLikeERC7579MultisigConfidentialWeighted,
+  shouldBehaveLikeOperationDiscloser,
 };

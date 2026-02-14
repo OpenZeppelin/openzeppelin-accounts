@@ -74,6 +74,9 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     /// @dev The encrypted `signerId` is a duplicate handle.
     error ERC7579MultisigDuplicateHandle(euint256 signerId);
 
+    /// @dev The operation (hash) is not requested for disclosure.
+    error ERC7579MultisigUnknownDisclosure(bytes32 hash);
+
     /// @dev Emitted when an encrypted signerId is added to the authorized set.
     event ERC7579MultisigSignerAdded(address indexed account, euint256 signerId);
 
@@ -91,7 +94,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
 
     mapping(address account => EnumerableSet.Bytes32Set) private _signersSetByAccount;
     mapping(address account => euint32) private _thresholdByAccount;
-    mapping(bytes32 hash => ebool) private _pendingDisclosures;
+    mapping(bytes32 hash => ebool) private _requestedDisclosure;
     mapping(bytes32 hash => bool) private _disclosed;
 
     /**
@@ -173,13 +176,13 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         return _thresholdByAccount[account];
     }
 
-    /// @dev Returns whether the multisignature validation result for an operation (hash) is pending disclosure.
-    function isPendingDisclosure(bytes32 hash) public view virtual returns (ebool) {
-        return _pendingDisclosures[hash];
+    /// @dev Returns whether the multisignature validation result for an operation (hash) is requested for disclosure.
+    function requestedDisclosure(bytes32 hash) public view virtual returns (ebool) {
+        return _requestedDisclosure[hash];
     }
 
     /// @dev Returns whether the multisignature validation result for an operation (hash) is disclosed.
-    function isDisclosed(bytes32 hash) public view virtual returns (bool) {
+    function disclosed(bytes32 hash) public view virtual returns (bool) {
         return _disclosed[hash];
     }
 
@@ -243,7 +246,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     ) public {
         ebool valid = _validateMultisig(account, hash, signingSigners, signerIdHandles, signatures);
         FHE.makePubliclyDecryptable(valid);
-        _pendingDisclosures[hash] = valid;
+        _requestedDisclosure[hash] = valid;
         emit ERC7579MultisigOperationDiscloseRequested(account, hash, valid);
     }
 
@@ -257,15 +260,16 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
      * Emits a {ERC7579MultisigOperationDisclosed} event.
      */
     function discloseOperation(bytes32 hash, bytes calldata decryptionProof) public {
-        ebool valid = isPendingDisclosure(hash);
+        ebool valid = requestedDisclosure(hash);
+        require(FHE.isInitialized(valid), ERC7579MultisigUnknownDisclosure(hash));
 
         bytes32[] memory handles = new bytes32[](1);
-        handles[0] = ebool.unwrap(valid);
+        handles[0] = FHE.toBytes32(valid);
         bool cleartextBool = true; // Must be true by design
         bytes memory cleartextMemory = abi.encode(cleartextBool);
         FHE.checkSignatures(handles, cleartextMemory, decryptionProof);
 
-        _pendingDisclosures[hash] = ebool.wrap(0);
+        _requestedDisclosure[hash] = ebool.wrap(0);
         _disclosed[hash] = true;
 
         emit ERC7579MultisigOperationDisclosed(hash, valid, cleartextBool);
@@ -466,7 +470,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         internal
         pure
         virtual
-        returns (bytes calldata inputProof, externalEuint256[] calldata signerIds, externalEuint32 threshold)
+        returns (bytes calldata inputProof, externalEuint256[] calldata signerIds, externalEuint32 _threshold)
     {
         // Minimum length:
         // inputProofOffset(32) + signerIdsOffset(32) + threshold(32) +
@@ -474,7 +478,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         require(initData.length > 0x9f, ERC7579MultisigInvalidInitData());
 
         // Get the externally encrypted threshold handle
-        threshold = externalEuint32.wrap(bytes32(initData[0x40:0x60]));
+        _threshold = externalEuint32.wrap(bytes32(initData[0x40:0x60]));
 
         // Get offset to the input proof
         uint256 inputProofOffset = uint256(bytes32(initData[:0x20]));
@@ -506,7 +510,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
             signerIds.length := signerIdsLength
         }
 
-        return (inputProof, signerIds, threshold);
+        return (inputProof, signerIds, _threshold);
     }
 
     /// @dev Converts a signer (address or ERC-7913 key) to uint256 for encryption.

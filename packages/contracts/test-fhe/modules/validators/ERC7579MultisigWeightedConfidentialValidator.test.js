@@ -18,12 +18,16 @@ const {
 } = require('../../../test/modules/ERC7579Module.behavior');
 const { allowHandle } = require('../../helpers/fhe');
 const { MAX_UINT32 } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/constants');
-const { shouldBehaveLikeERC7579MultisigConfidentialWeighted } = require('../ERC7579MultisigConfidential.behavior');
+const {
+  toId,
+  shouldBehaveLikeERC7579MultisigConfidentialWeighted,
+  shouldBehaveLikeOperationDiscloser,
+} = require('../ERC7579MultisigConfidential.behavior');
 
-const TEST_MESSAGE = ethers.id('OpenZeppelin');
+const TEST_MESSAGE = 'OpenZeppelin';
 const TEST_MESSAGE_HASH = ethers.hashMessage(TEST_MESSAGE);
 
-const WRONG_MESSAGE = ethers.id('Nope');
+const WRONG_MESSAGE = 'Nope';
 const WRONG_MESSAGE_HASH = ethers.hashMessage(WRONG_MESSAGE);
 
 // Prepare signers in advance
@@ -33,11 +37,6 @@ const signerECDSA2 = ethers.Wallet.createRandom();
 // Prepare P256 signers for ERC-7913 tests
 const aliceP256 = new NonNativeSigner(P256SigningKey.random());
 const bobP256 = new NonNativeSigner(P256SigningKey.random());
-
-const toId = signer =>
-  ethers.isAddress(ethers.hexlify(signer))
-    ? BigInt(ethers.getAddress(ethers.hexlify(signer)))
-    : BigInt(ethers.keccak256(signer));
 
 describe('ERC7579MultisigWeightedConfidentialValidator', function () {
   beforeEach(async function () {
@@ -177,6 +176,7 @@ describe('ERC7579MultisigWeightedConfidentialValidator', function () {
 
   shouldBehaveLikeERC7579Module();
   shouldBehaveLikeERC7579MultisigConfidentialWeighted();
+  shouldBehaveLikeOperationDiscloser();
   shouldBehaveLikeERC7579Validator();
 
   describe('signature validation', function () {
@@ -347,7 +347,7 @@ describe('ERC7579MultisigWeightedConfidentialValidator', function () {
       const receipt = await this.mock
         .$_validateMultisig(
           this.mockAccount.address,
-          ethers.hashMessage('different message'),
+          WRONG_MESSAGE_HASH,
           signingSigners.map(signer => ethers.hexlify(signer)),
           signingSigners.map(signer => {
             // For EOA: signer is address bytes, convert to uint256
