@@ -244,10 +244,16 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         euint256[] calldata signerIdHandles,
         bytes[] calldata signatures
     ) public {
-        ebool valid = _validateMultisig(account, hash, signingSigners, signerIdHandles, signatures);
-        FHE.makePubliclyDecryptable(valid);
-        _requestedDisclosure[hash] = valid;
-        emit ERC7579MultisigOperationDiscloseRequested(account, hash, valid);
+        _requestDisclosure(
+            account,
+            hash,
+            _validateMultisig(account, hash, signingSigners, signerIdHandles, signatures)
+        );
+    }
+
+    /// @dev Same as {requestDiscloseOperation} but with the validation result already provided.
+    function requestDisclosure(address account, bytes32 hash, ebool valid) public {
+        _requestDisclosure(account, hash, valid);
     }
 
     /**
@@ -347,6 +353,13 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     /// @dev Returns the maximum threshold for the specified account.
     function _maxThreshold(address account) internal virtual returns (euint32) {
         return FHE.asEuint32(uint32(getSignerCount(account)));
+    }
+
+    /// @dev Requests disclosure of the multisignature validation result for an operation (hash).
+    function _requestDisclosure(address account, bytes32 hash, ebool valid) internal virtual {
+        FHE.makePubliclyDecryptable(valid);
+        _requestedDisclosure[hash] = valid;
+        emit ERC7579MultisigOperationDiscloseRequested(account, hash, valid);
     }
 
     /**
