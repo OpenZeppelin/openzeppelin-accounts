@@ -97,7 +97,7 @@ describe('ERC7579MultisigWeightedConfidentialValidator', function () {
         )
         .then(tx => tx.wait());
 
-      const [[, , encryptedBool]] = receipt.logs
+      const [[, , , encryptedBool]] = receipt.logs
         .map(log => mock.interface.parseLog(log))
         .filter(log => log?.name === 'ERC7579MultisigOperationDiscloseRequested')
         .map(log => log.args.map(arg => ethers.hexlify(arg)));

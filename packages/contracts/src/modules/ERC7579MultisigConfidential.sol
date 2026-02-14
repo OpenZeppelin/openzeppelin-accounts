@@ -87,14 +87,19 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     event ERC7579MultisigThresholdSet(address indexed account, euint32 threshold);
 
     /// @dev Emitted when a disclosure request is made for an operation.
-    event ERC7579MultisigOperationDiscloseRequested(address indexed account, bytes32 indexed hash, ebool valid);
+    event ERC7579MultisigOperationDiscloseRequested(
+        address indexed relayer,
+        address indexed account,
+        bytes32 indexed hash,
+        ebool valid
+    );
 
     /// @dev Emitted when an operation is disclosed with its decryption proof verified.
     event ERC7579MultisigOperationDisclosed(bytes32 indexed hash, ebool valid, bool cleartextBool);
 
     mapping(address account => EnumerableSet.Bytes32Set) private _signersSetByAccount;
     mapping(address account => euint32) private _thresholdByAccount;
-    mapping(bytes32 hash => ebool) private _requestedDisclosure;
+    mapping(address relayer => mapping(bytes32 hash => ebool)) private _requestedDisclosure;
     mapping(bytes32 hash => bool) private _disclosed;
 
     /**
@@ -177,8 +182,8 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     }
 
     /// @dev Returns whether the multisignature validation result for an operation (hash) is requested for disclosure.
-    function requestedDisclosure(bytes32 hash) public view virtual returns (ebool) {
-        return _requestedDisclosure[hash];
+    function requestedDisclosure(address relayer, bytes32 hash) public view virtual returns (ebool) {
+        return _requestedDisclosure[relayer][hash];
     }
 
     /// @dev Returns whether the multisignature validation result for an operation (hash) is disclosed.
@@ -245,6 +250,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         bytes[] calldata signatures
     ) public {
         _requestDisclosure(
+            msg.sender,
             account,
             hash,
             _validateMultisig(account, hash, signingSigners, signerIdHandles, signatures)
@@ -253,7 +259,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
 
     /// @dev Same as {requestDiscloseOperation} but with the validation result already provided.
     function requestDisclosure(address account, bytes32 hash, ebool valid) public {
-        _requestDisclosure(account, hash, valid);
+        _requestDisclosure(msg.sender, account, hash, valid);
     }
 
     /**
@@ -265,20 +271,13 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
      *
      * Emits a {ERC7579MultisigOperationDisclosed} event.
      */
+    function discloseOperation(address relayer, bytes32 hash, bytes calldata decryptionProof) public {
+        _discloseOperation(relayer, hash, decryptionProof);
+    }
+
+    /// @dev Same as {discloseOperation} but with the relayer set to `msg.sender`.
     function discloseOperation(bytes32 hash, bytes calldata decryptionProof) public {
-        ebool valid = requestedDisclosure(hash);
-        require(FHE.isInitialized(valid), ERC7579MultisigUnknownDisclosure(hash));
-
-        bytes32[] memory handles = new bytes32[](1);
-        handles[0] = FHE.toBytes32(valid);
-        bool cleartextBool = true; // Must be true by design
-        bytes memory cleartextMemory = abi.encode(cleartextBool);
-        FHE.checkSignatures(handles, cleartextMemory, decryptionProof);
-
-        _requestedDisclosure[hash] = ebool.wrap(0);
-        _disclosed[hash] = true;
-
-        emit ERC7579MultisigOperationDisclosed(hash, valid, cleartextBool);
+        _discloseOperation(msg.sender, hash, decryptionProof);
     }
 
     /**
@@ -356,10 +355,27 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     }
 
     /// @dev Requests disclosure of the multisignature validation result for an operation (hash).
-    function _requestDisclosure(address account, bytes32 hash, ebool valid) internal virtual {
+    function _requestDisclosure(address relayer, address account, bytes32 hash, ebool valid) internal virtual {
         FHE.makePubliclyDecryptable(valid);
-        _requestedDisclosure[hash] = valid;
-        emit ERC7579MultisigOperationDiscloseRequested(account, hash, valid);
+        _requestedDisclosure[relayer][hash] = valid;
+        emit ERC7579MultisigOperationDiscloseRequested(relayer, account, hash, valid);
+    }
+
+    /// @dev Verifies the decryption proof for a disclosed operation (hash).
+    function _discloseOperation(address relayer, bytes32 hash, bytes calldata decryptionProof) public {
+        ebool valid = requestedDisclosure(relayer, hash);
+        require(FHE.isInitialized(valid), ERC7579MultisigUnknownDisclosure(hash));
+
+        bytes32[] memory handles = new bytes32[](1);
+        handles[0] = FHE.toBytes32(valid);
+        bool cleartextBool = true; // Must be true by design
+        bytes memory cleartextMemory = abi.encode(cleartextBool);
+        FHE.checkSignatures(handles, cleartextMemory, decryptionProof);
+
+        _requestedDisclosure[relayer][hash] = ebool.wrap(0);
+        _disclosed[hash] = true;
+
+        emit ERC7579MultisigOperationDisclosed(hash, valid, cleartextBool);
     }
 
     /**
