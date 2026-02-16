@@ -7,9 +7,12 @@ import {
     IERC7579Module,
     IERC7579Hook
 } from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
+import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {ERC7579Validator} from "../../modules/validators/ERC7579Validator.sol";
 import {ERC7579Executor} from "../../modules/executors/ERC7579Executor.sol";
+import {ERC7579MultisigConfidentialValidator} from "../../modules/validators/ERC7579MultisigConfidentialValidator.sol";
+import {ERC7579MultisigWeightedConfidentialValidator} from "../../modules/validators/ERC7579MultisigWeightedConfidentialValidator.sol";
 
 abstract contract ERC7579ModuleMock is IERC7579Module {
     uint256 private _moduleTypeId;
@@ -122,3 +125,10 @@ contract ERC7579ExecutorMock is ERC7579Executor {
         return _execute(account, salt, mode, data);
     }
 }
+
+contract ERC7579MultisigConfidentialValidatorMock is ERC7579MultisigConfidentialValidator, ZamaEthereumConfig {}
+
+contract ERC7579MultisigWeightedConfidentialValidatorMock is
+    ERC7579MultisigWeightedConfidentialValidator,
+    ZamaEthereumConfig
+{}
