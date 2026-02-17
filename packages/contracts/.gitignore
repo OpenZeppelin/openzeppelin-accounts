@@ -16,6 +16,7 @@ scTopics
 coverage
 coverage.json
 coverageEnv
+coverage-fhe
 
 # node-waf configuration
 .lock-wscript
@@ -68,3 +69,6 @@ contracts-exposed
 .last_confs
 certora_*
 .zip-output-url.txt
+
+# Zama
+fhevmTemp

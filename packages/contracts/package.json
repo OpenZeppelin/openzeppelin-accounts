@@ -12,7 +12,9 @@
     "compile": "hardhat compile",
     "clean": "hardhat clean && rimraf build contracts/build",
     "coverage": "scripts/checks/coverage.sh",
-    "test": "hardhat test"
+    "test": "pnpm run test:regular && pnpm run test:fhe",
+    "test:regular": "hardhat test",
+    "test:fhe": "FHE=true hardhat test"
   },
   "keywords": [
     "solidity",
@@ -23,11 +25,17 @@
     "ERC-7579"
   ],
   "devDependencies": {
+    "@fhevm/hardhat-plugin": "0.3.0-4",
+    "@fhevm/mock-utils": "0.3.0-4",
+    "@fhevm/solidity": "0.10.0",
     "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
     "@nomicfoundation/hardhat-ethers": "^3.1.0",
     "@nomicfoundation/hardhat-network-helpers": "^1.1.0",
     "@openzeppelin/contracts": "file:../../lib/@openzeppelin-contracts",
     "@openzeppelin/contracts-upgradeable": "file:../../lib/@openzeppelin-contracts-upgradeable",
+    "@zama-fhe/oracle-solidity": "^0.2.0",
+    "@zama-fhe/relayer-sdk": "0.3.0-8",
+    "encrypted-types": "^0.0.4",
     "hardhat": "^2.26.3",
     "hardhat-exposed": "^0.3.19",
     "hardhat-predeploy": "^0.4.1",

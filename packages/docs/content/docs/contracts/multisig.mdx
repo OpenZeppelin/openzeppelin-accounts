@@ -3,6 +3,8 @@ title: Multisig
 description: Modular multisig based on ERC-7913 verifiers
 ---
 
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
 The Open Accounts Framework provides powerful multisignature (multisig) modules that enable accounts to require multiple signatures before executing operations. Unlike traditional accounts controlled by a single private key, multisigs distribute control among multiple parties, eliminating single points of failure.
 
 ## Why ERC-7913?
@@ -35,12 +37,44 @@ The framework provides two base multisig modules:
 - Configurable thresholds
 - Weighted voting support (in `ERC7579MultisigWeighted`)
 
+The framework also provides confidential versions of the multisig modules that use Fully Homomorphic Encryption (FHE) to keep signer addresses, weights, and thresholds encrypted on-chain. This provides privacy benefits by hiding sensitive information from public view.
+
+**`ERC7579MultisigConfidential`**: A confidential threshold-based multisig module that keeps signer addresses and threshold values encrypted.
+
+**`ERC7579MultisigWeightedConfidential`**: A confidential weighted multisig module that keeps signer addresses, individual weights, and threshold values encrypted.
+
+### Understanding Confidential Multisig
+
+Confidential multisig modules provide enhanced privacy by keeping critical multisig parameters encrypted on-chain using Fully Homomorphic Encryption (FHE). This approach offers several privacy properties:
+
+**Signer Privacy**: Signer addresses are stored as encrypted values (ciphertexts) on-chain. While signers must reveal their addresses when providing valid signatures for an operation, the confidential nature provides obfuscation benefits:
+
+- **Weight Obfuscation** (weighted variant): Even when a signer reveals their address, their individual weight remains encrypted. Observers cannot determine how much voting power each participant has.
+- **Threshold Ambiguity**: The exact threshold required remains encrypted. Valid signatures are accepted, but observers cannot determine which specific signatures counted toward the threshold, or how many signatures were actually needed.
+- **Dynamic Privacy**: Signers can be rotated at the end of any ERC-4337 user operation execution. Even if the same signers are set again, FHE's non-deterministic encryption produces different ciphertexts (handles) for the same addresses, effectively re-establishing their confidentiality. This makes it difficult for observers to track whether the signer set has changed or remained constant.
+
+<Callout>The confidential module variants don't support ERC-7913 signers, only addresses.</Callout>
+
+<Callout>
+  Due to FHE's non-deterministic nature, encrypting the same address multiple times produces different ciphertexts. This
+  means the same signer can be added multiple times with different encrypted handles. The validation logic handles
+  duplicates by checking plaintext addresses.
+</Callout>
+
+<Callout type="idea">
+  While signers must reveal their addresses when signing valid operations, they can maintain long-term privacy by rotating
+  their encrypted handles (even to the same addresses) after each sensitive operation, particularly at the end of user
+  operations where the signer update won't be immediately observable.
+</Callout>
+
 ### As validators
 
 The framework provides validator implementations that combine the base multisig modules with validator functionality:
 
 - **`ERC7579MultisigValidator`**: Combines `ERC7579Multisig` with validator functionality for signature validation
 - **`ERC7579MultisigWeightedValidator`**: Combines `ERC7579MultisigWeighted` with validator functionality
+- **`ERC7579MultisigConfidentialValidator`**: Combines `ERC7579MultisigConfidential` with validator functionality for confidential signature validation
+- **`ERC7579MultisigWeightedConfidentialValidator`**: Combines `ERC7579MultisigWeightedConfidential` with validator functionality for confidential weighted signature validation
 
 These validators enable accounts to require multiple signatures before executing operations through ERC-4337 UserOperations.
 
@@ -115,6 +149,186 @@ The `initData` must be encoded as:
 ```solidity
 bytes memory initData = abi.encode(bytes[] signers, uint64 threshold, uint64[] weights);
 ```
+
+#### Multisig Confidential Validator
+
+The confidential validators use FHE to keep signer addresses and thresholds encrypted on-chain, providing enhanced privacy for multisig operations. Due to FHE's asynchronous decryption model, validating a UserOperation with confidential multisig requires a three-step process:
+
+<Steps>
+
+<Step>
+**Request Disclosure**
+
+Call `requestDiscloseOperation` to validate the multisig using encrypted values and make the result publicly decryptable:
+
+```solidity
+import {ERC7579MultisigConfidentialValidator} from "@open-accounts-framework/contracts/modules/validators/ERC7579MultisigConfidentialValidator.sol";
+
+// Prepare the UserOperation hash and signature data
+bytes32 userOpHash = ...; // Hash of the UserOperation
+bytes[] memory signingSigners = new bytes[](2);
+signingSigners[0] = abi.encodePacked(alice);
+signingSigners[1] = abi.encodePacked(bob);
+
+// Provide the encrypted signer handles (obtained from the module)
+euint256[] memory signerIdHandles = new euint256[](2);
+signerIdHandles[0] = ...; // Alice's encrypted handle
+signerIdHandles[1] = ...; // Bob's encrypted handle
+
+bytes[] memory signatures = new bytes[](2);
+signatures[0] = aliceSignature;
+signatures[1] = bobSignature;
+
+// Request disclosure (can be called by anyone)
+multisigConfidential.requestDiscloseOperation(
+    address(account),
+    userOpHash,
+    signingSigners,
+    signerIdHandles,
+    signatures
+);
+```
+</Step>
+
+<Step>
+**Disclose Operation**
+
+After requesting disclosure, call `discloseOperation` with the decryption proof to verify and mark the operation as disclosed:
+
+```solidity
+// Obtain the decryption proof (from FHE network/oracle)
+bytes memory decryptionProof = ...;
+
+// Disclose the operation result
+multisigConfidential.discloseOperation(userOpHash, decryptionProof);
+```
+</Step>
+
+<Step>
+**Submit UserOperation**
+
+Once the operation is disclosed, submit the UserOperation to the EntryPoint. The validator will check that the operation hash has been properly disclosed:
+
+```solidity
+// The EntryPoint will call validateUserOp, which checks:
+// - That the operation hash has been disclosed
+// - The disclosed result indicates valid signatures
+
+// Submit through EntryPoint as normal
+entryPoint.handleOps(userOps, beneficiary);
+```
+</Step>
+
+</Steps>
+
+To install a confidential multisig validator on your account:
+
+```solidity
+import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
+import {ERC7579MultisigConfidentialValidator} from "@open-accounts-framework/contracts/modules/validators/ERC7579MultisigConfidentialValidator.sol";
+import {FHE, externalEuint256, externalEuint32} from "@fhevm/solidity/lib/FHE.sol";
+
+// Deploy the confidential validator (singleton, can be reused)
+ERC7579MultisigConfidentialValidator multisigConfidential = new ERC7579MultisigConfidentialValidator();
+
+// Encrypt signer addresses off-chain using FHE
+// (signers must be encrypted as uint256 addresses)
+externalEuint256[] memory encryptedSigners = new externalEuint256[](3);
+encryptedSigners[0] = ...; // Encrypted alice address
+encryptedSigners[1] = ...; // Encrypted bob address
+encryptedSigners[2] = ...; // Encrypted charlie address
+
+// Encrypt the threshold
+externalEuint32 encryptedThreshold = ...; // Encrypted threshold value (e.g., 2)
+
+// Prepare the FHE input proof
+bytes memory inputProof = ...;
+
+// Encode initialization data
+bytes memory initData = abi.encode(inputProof, encryptedSigners, encryptedThreshold);
+
+// Install the module
+account.installModule(MODULE_TYPE_VALIDATOR, address(multisigConfidential), initData);
+```
+
+The `initData` must be encoded as:
+
+```solidity
+bytes memory initData = abi.encode(
+    bytes inputProof,
+    externalEuint256[] signerIds,
+    externalEuint32 threshold
+);
+```
+
+#### Multisig Weighted Confidential Validator
+
+The weighted confidential validator extends the confidential validator to support weighted signatures while keeping weights encrypted:
+
+```solidity
+import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
+import {ERC7579MultisigWeightedConfidentialValidator} from "@open-accounts-framework/contracts/modules/validators/ERC7579MultisigWeightedConfidentialValidator.sol";
+import {FHE, externalEuint256, externalEuint32, externalEuint16} from "@fhevm/solidity/lib/FHE.sol";
+
+// Deploy the weighted confidential validator (singleton, can be reused)
+ERC7579MultisigWeightedConfidentialValidator multisigWeightedConfidential = 
+    new ERC7579MultisigWeightedConfidentialValidator();
+
+// Encrypt signer addresses off-chain
+externalEuint256[] memory encryptedSigners = new externalEuint256[](3);
+encryptedSigners[0] = ...; // Encrypted alice address
+encryptedSigners[1] = ...; // Encrypted bob address  
+encryptedSigners[2] = ...; // Encrypted charlie address
+
+// Encrypt the threshold (total weight needed)
+externalEuint32 encryptedThreshold = ...; // Encrypted threshold (e.g., 5)
+
+// Encrypt individual signer weights
+externalEuint16[] memory encryptedWeights = new externalEuint16[](3);
+encryptedWeights[0] = ...; // Encrypted weight for alice (e.g., 2)
+encryptedWeights[1] = ...; // Encrypted weight for bob (e.g., 2)
+encryptedWeights[2] = ...; // Encrypted weight for charlie (e.g., 2)
+
+// Prepare the FHE input proof
+bytes memory inputProof = ...;
+
+// Encode initialization data
+bytes memory initData = abi.encode(
+    inputProof,
+    encryptedSigners,
+    encryptedThreshold,
+    encryptedWeights
+);
+
+// Install the module
+account.installModule(MODULE_TYPE_VALIDATOR, address(multisigWeightedConfidential), initData);
+```
+
+The `initData` must be encoded as:
+
+```solidity
+bytes memory initData = abi.encode(
+    bytes inputProof,
+    externalEuint256[] signerIds,
+    externalEuint32 threshold,
+    externalEuint16[] weights
+);
+```
+
+<Callout>
+  The three-step disclosure process (request, disclose, submit) is required because FHE operations are asynchronous.
+  The decryption proof must be obtained from the FHE network between steps 1 and 2.
+</Callout>
+
+<Callout>
+  UserOperations are public in the bundler mempool once submitted. Do not assume the UserOperation payload is confidential.
+  Consider front-running risks associated with your UserOperation data.
+</Callout>
+
+<Callout>
+  To maintain signer privacy after an operation, rotate the encrypted signer handles at the end of the UserOperation
+  execution. Even if setting the same addresses, new handles will be generated due to FHE's non-deterministic encryption.
+</Callout>
 
 ### As executors
 

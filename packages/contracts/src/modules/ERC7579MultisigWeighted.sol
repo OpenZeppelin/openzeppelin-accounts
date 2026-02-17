@@ -128,7 +128,7 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
      *
      * Requirements:
      *
-     * * The `initData` must be at least 96 bytes long to contain the minimum ABI-encoded structure.
+     * * The `initData` must be at least 160 bytes long to contain the minimum ABI-encoded structure.
      * * The signers array offset must be properly aligned and within bounds.
      * * The weights array offset must be properly aligned and within bounds.
      * * The array length fields must be accessible within the provided data.
@@ -136,6 +136,8 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
     function _decodeMultisigWeightedInitData(
         bytes calldata initData
     ) internal pure virtual returns (bytes[] calldata signers, uint64 threshold_, uint64[] calldata weights) {
+        // Minimum length: signersOffset(32) + threshold(32) + weightsOffset(32) + signersLength(32) + weightsLength(32) = 160 bytes
+        require(initData.length > 0x9f, ERC7579MultisigInvalidInitData());
         (signers, threshold_) = _decodeMultisigInitData(initData);
 
         // Get offset to the weights array (third 32 bytes)

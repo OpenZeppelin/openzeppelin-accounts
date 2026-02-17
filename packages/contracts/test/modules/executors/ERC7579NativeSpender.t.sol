@@ -41,7 +41,7 @@ contract ERC7579NativeSpenderTest is Test {
     function testInstallation(uint48 start, uint160 limit, uint48 renewPeriod) public {
         vm.assume(renewPeriod > 0);
         vm.assume(limit > 0);
-        vm.assume(start >= block.timestamp);
+        vm.assume(start >= block.timestamp || start == 0);
 
         address[] memory spenders = new address[](1);
         spenders[0] = _spenderAddress;
@@ -67,7 +67,7 @@ contract ERC7579NativeSpenderTest is Test {
 
         assertTrue(_spender.isModuleType(MODULE_TYPE_EXECUTOR));
         assertEq(_spender.spendersCount(address(_account)), 1);
-        assertEq(_spender.start(address(_account), _spenderAddress), start);
+        assertEq(_spender.start(address(_account), _spenderAddress), start == 0 ? block.timestamp : start);
         assertEq(_spender.limit(address(_account), _spenderAddress), limit);
         assertEq(_spender.renewPeriod(address(_account), _spenderAddress), renewPeriod);
     }
@@ -262,7 +262,7 @@ contract ERC7579NativeSpenderTest is Test {
     function testSetSpendingConfig(uint48 newStart, uint160 newLimit, uint48 newRenewPeriod) public {
         vm.assume(newRenewPeriod > 0);
         vm.assume(newLimit > 0);
-        vm.assume(newStart >= block.timestamp);
+        vm.assume(newStart >= block.timestamp || newStart == 0);
 
         uint48 start = uint48(block.timestamp);
         _installSpender(start, 1 ether, 1 days);
@@ -270,7 +270,7 @@ contract ERC7579NativeSpenderTest is Test {
         vm.prank(address(_account));
         _spender.setSpendingConfig(_spenderAddress, newStart, newLimit, newRenewPeriod);
 
-        assertEq(_spender.start(address(_account), _spenderAddress), newStart);
+        assertEq(_spender.start(address(_account), _spenderAddress), newStart == 0 ? block.timestamp : newStart);
         assertEq(_spender.limit(address(_account), _spenderAddress), newLimit);
         assertEq(_spender.renewPeriod(address(_account), _spenderAddress), newRenewPeriod);
     }
