@@ -249,17 +249,12 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         euint256[] calldata signerIdHandles,
         bytes[] calldata signatures
     ) public {
-        _requestDisclosure(
+        _requestDiscloseOperation(
             msg.sender,
             account,
             hash,
             _validateMultisig(account, hash, signingSigners, signerIdHandles, signatures)
         );
-    }
-
-    /// @dev Same as {requestDiscloseOperation} but with the validation result already provided.
-    function requestDisclosure(address account, bytes32 hash, ebool valid) public {
-        _requestDisclosure(msg.sender, account, hash, valid);
     }
 
     /**
@@ -355,7 +350,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     }
 
     /// @dev Requests disclosure of the multisignature validation result for an operation (hash).
-    function _requestDisclosure(address relayer, address account, bytes32 hash, ebool valid) internal virtual {
+    function _requestDiscloseOperation(address relayer, address account, bytes32 hash, ebool valid) internal virtual {
         FHE.makePubliclyDecryptable(valid);
         _requestedDisclosure[relayer][hash] = valid;
         emit ERC7579MultisigOperationDiscloseRequested(relayer, account, hash, valid);
