@@ -307,10 +307,7 @@ describe('ERC7579MultisigConfidentialValidator', function () {
       await allowHandle(this.accountAsSigner, signerECDSA1.address, encryptedBool);
       const { decryptionProof } = await fhevm.publicDecrypt([encryptedBool]);
 
-      userOp.signature = ethers.concat([
-        ethers.getBytes(ethers.zeroPadValue(relayer.address, 20)),
-        decryptionProof,
-      ]);
+      userOp.signature = ethers.concat([ethers.getBytes(ethers.zeroPadValue(relayer.address, 20)), decryptionProof]);
 
       await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOpHash))
         .to.emit(this.mockFromAccount, 'return$_validateUserOp')
