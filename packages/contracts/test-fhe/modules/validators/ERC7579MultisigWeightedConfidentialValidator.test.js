@@ -3,7 +3,10 @@ const { expect } = require('chai');
 const { FhevmType } = require('@fhevm/hardhat-plugin');
 
 const { impersonate } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/account');
-const { ERC4337Helper } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
+const {
+  ERC4337Helper,
+  SIG_VALIDATION_SUCCESS,
+} = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
 const { MODULE_TYPE_VALIDATOR } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc7579');
 const {
   NonNativeSigner,
@@ -370,6 +373,67 @@ describe('ERC7579MultisigWeightedConfidentialValidator', function () {
       await allowHandle(this.accountAsSigner, signerECDSA1.address, encryptedBool);
       await expect(fhevm.userDecryptEbool(encryptedBool, this.mockAccount.address, signerECDSA1)).to.eventually.be
         .false;
+    });
+
+    it('validates user op with 2-step flow (request disclose then submit with inline proof, no discloseOperation)', async function () {
+      const entrypointDomain = await getDomain(predeploy.entrypoint.v09);
+      const relayer = this.other;
+      const entrypoint = this.mockAccount._env.entrypoint;
+
+      const userOp = await this.mockAccount.createUserOp(this.userOp);
+      const userOpHash = userOp.hash(entrypoint);
+
+      const { serialized: multiSignature } = this.signer.signingKey.sign(
+        ethers.TypedDataEncoder.hash(entrypointDomain, { PackedUserOperation }, userOp.packed),
+      );
+      const [signingSigners, signatures] = ethers.AbiCoder.defaultAbiCoder().decode(
+        ['bytes[]', 'bytes[]'],
+        multiSignature,
+      );
+
+      const signerHandles = await this.mock.getSigners(this.mockAccount.address, 0, MAX_UINT32);
+      await Promise.all(signerHandles.map(handle => allowHandle(this.accountAsSigner, signerECDSA1.address, handle)));
+
+      const signerIds = [];
+      for (const handle of signerHandles) {
+        const decryptedId = await fhevm.userDecryptEuint(
+          FhevmType.euint256,
+          handle,
+          this.mockAccount.address,
+          signerECDSA1,
+        );
+        signerIds.push(decryptedId);
+      }
+
+      const receipt = await this.mock
+        .connect(relayer)
+        .requestDiscloseOperation(
+          this.mockAccount.address,
+          userOpHash,
+          signingSigners.map(s => ethers.hexlify(s)),
+          signingSigners.map(s => ethers.hexlify(signerHandles[signerIds.findIndex(id => id === toId(s))])),
+          signatures.map(s => ethers.hexlify(s)),
+        )
+        .then(tx => tx.wait());
+
+      const [[, , , encryptedBool]] = receipt.logs
+        .map(log => this.mock.interface.parseLog(log))
+        .filter(log => log?.name === 'ERC7579MultisigOperationDiscloseRequested')
+        .map(log => log.args.map(arg => ethers.hexlify(arg)));
+
+      await allowHandle(this.accountAsSigner, signerECDSA1.address, encryptedBool);
+      const { decryptionProof } = await fhevm.publicDecrypt([encryptedBool]);
+
+      userOp.signature = ethers.concat([
+        ethers.getBytes(ethers.zeroPadValue(relayer.address, 20)),
+        decryptionProof,
+      ]);
+
+      await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOpHash))
+        .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+        .withArgs(SIG_VALIDATION_SUCCESS);
+
+      await expect(this.mock.disclosed(userOpHash)).to.eventually.be.false;
     });
   });
 });
