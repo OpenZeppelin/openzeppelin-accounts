@@ -3,10 +3,7 @@ const { expect } = require('chai');
 const { FhevmType } = require('@fhevm/hardhat-plugin');
 
 const { impersonate } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/account');
-const {
-  ERC4337Helper,
-  SIG_VALIDATION_SUCCESS,
-} = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
+const { ERC4337Helper } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
 const { MODULE_TYPE_VALIDATOR } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc7579');
 const {
   NonNativeSigner,
