@@ -95,7 +95,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     );
 
     /// @dev Emitted when an operation is disclosed with its decryption proof verified.
-    event ERC7579MultisigOperationDisclosed(bytes32 indexed hash, ebool valid, bool cleartextBool);
+    event ERC7579MultisigOperationDisclosed(bytes32 indexed hash, ebool valid);
 
     mapping(address account => EnumerableSet.Bytes32Set) private _signersSetByAccount;
     mapping(address account => euint32) private _thresholdByAccount;
@@ -363,14 +363,12 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
 
         bytes32[] memory handles = new bytes32[](1);
         handles[0] = FHE.toBytes32(valid);
-        bool cleartextBool = true; // Must be true by design
-        bytes memory cleartextMemory = abi.encode(cleartextBool);
+        bytes memory cleartextMemory = abi.encode(true); // Must be true by design
         FHE.checkSignatures(handles, cleartextMemory, decryptionProof);
 
         _requestedDisclosure[relayer][hash] = ebool.wrap(0);
         _disclosed[hash] = true;
-
-        emit ERC7579MultisigOperationDisclosed(hash, valid, cleartextBool);
+        emit ERC7579MultisigOperationDisclosed(hash, valid);
     }
 
     /**
