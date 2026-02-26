@@ -2,7 +2,7 @@
 
 **ERC-7579 modules and smart account contracts for the Open Accounts Framework.**
 
-This package provides production-ready Solidity contracts — a base smart account implementation and a set of ERC-7579 modules — that can be used with any ERC-7579 compliant account.
+This package provides production-ready Solidity contracts: a base smart account implementation and a set of ERC-7579 modules that can be used with any ERC-7579 compliant account.
 
 ## Installation
 

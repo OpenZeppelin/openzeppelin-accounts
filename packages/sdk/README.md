@@ -72,7 +72,7 @@ const bundlerClient = createBundlerClient({
   transport: http('https://bundler.example.com'),
 }).extend(erc7579Actions());
 
-// Execute calls — first user op deploys the account automatically
+// Execute calls: first user op deploys the account automatically
 const hash = await bundlerClient.execute({
   calls: [{ to: '0x<recipient>', data: '0x', value: 0n }],
 });
