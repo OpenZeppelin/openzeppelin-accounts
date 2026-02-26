@@ -1,3 +1,20 @@
+## 21-02-2026
+
+- `ERC7579MultisigConfidentialValidator`: User op validation now requires only 2 steps instead of 3. The explicit `discloseOperation` call is no longer needed: users can instead embed the FHE decryption proof directly in the user op signature (relayer address in the first 20 bytes, proof thereafter), and the validator verifies it inline during `validateUserOp`. The prior 3-step flow (request → disclose → submit) remains supported as a fallback via the `disclosed` flag.
+
+## 17-02-2026
+
+- `ERC7579MultisigConfidential`: Removed the `requestDisclosure` function that allowed submitting arbitrary encrypted booleans (`ebool`) for disclosure. The internal `_requestDisclosure` function has been renamed to `_requestDiscloseOperation`. Only `requestDiscloseOperation` is now supported for requesting decryption of validated operations.
+
+## 16-02-2026
+
+- Add `ERC7579MultisigConfidential` and `ERC7579MultisigWeightedConfidential` abstract contract modules, providing confidential multisignature validation using Fully Homomorphic Encryption (FHE). Signer identities and the approval threshold are kept encrypted on-chain, enabling privacy-preserving multisignature authorization for ERC-7579 accounts.
+- Add `ERC7579MultisigConfidentialValidator` and `ERC7579MultisigWeightedConfidentialValidator` contract modules, extending the confidential multisig abstract contracts with ERC-7579 validator module support.
+
+## 06-02-2026
+
+- `ERC7579ERC20Spender` and `ERC7579NativeSpender`: `newStart` can now be set to `0` as a sentinel value that resolves to the current timepoint. Previously, the current timepoint had to be passed explicitly for immediate-start configurations.
+
 ## 09-01-2026
 
 - Add `ERC7579SocialRecoveryExecutor` contract module, combining weighted multisignatures with time-delayed execution to provide a secure social recovery mechanism. Trusted guardians can collectively schedule recovery operations, which execute after a security delay, giving the account owner time to detect and cancel malicious recovery attempts.
