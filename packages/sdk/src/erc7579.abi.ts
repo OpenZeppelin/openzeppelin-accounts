@@ -233,7 +233,7 @@ const IERC7579ModuleABI = [
     outputs: [],
     stateMutability: 'nonpayable',
   },
-];
+] as const;
 
 const IERC7579ModuleConfigABI = [
   {
@@ -349,7 +349,7 @@ const IERC7579ModuleConfigABI = [
     ],
     anonymous: false,
   },
-];
+] as const;
 
 const IERC7579ValidatorABI = [
   {
@@ -497,7 +497,7 @@ const IERC7579ValidatorABI = [
     ],
     stateMutability: 'nonpayable',
   },
-];
+] as const;
 
 export {
   IERC7579ExecutionABI,
