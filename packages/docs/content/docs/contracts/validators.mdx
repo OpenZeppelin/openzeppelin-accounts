@@ -250,6 +250,11 @@ This design allows accounts to support multiple signature types while explicitly
 
 ERC-7579 does not standardize how accounts select which validator to use for a given operation. Different account implementations use different mechanisms, with the most common approach being to encode the validator address in the UserOperation's `nonce` field.
 
+<Callout type="info">
+  When using the SDK's `toOpenAccount`, pass the `validator` address once at account creation time. The nonce is
+  constructed automatically for every user operation, so you never need to encode the validator address manually.
+</Callout>
+
 #### OpenZeppelin's AccountERC7579
 
 [OpenZeppelin's AccountERC7579](https://docs.openzeppelin.com/contracts/5.x/api/account#AccountERC7579) extracts the validator address from the first 20 bytes of the nonce:

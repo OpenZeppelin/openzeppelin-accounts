@@ -84,7 +84,6 @@ const hash = await bundlerClient.installModules({
       initData: encodePacked(['address'], [signer.address]),
     },
   ],
-  nonce: await account.getNonce({ key: validatorNonceKey }),
 });
 
 await bundlerClient.waitForUserOperationReceipt({ hash });
@@ -107,7 +106,6 @@ const hash = await bundlerClient.uninstallModules({
       deInitData: '0x', // module-specific cleanup data, defaults to '0x'
     },
   ],
-  nonce: await account.getNonce({ key: validatorNonceKey }),
 });
 
 await bundlerClient.waitForUserOperationReceipt({ hash });
@@ -128,7 +126,6 @@ import { parseEther } from 'viem';
 // Single call
 const hash = await bundlerClient.execute({
   calls: [{ to: '0x<recipient>', data: '0x', value: parseEther('1') }],
-  nonce,
 });
 
 // Batch call
@@ -137,7 +134,6 @@ const hash = await bundlerClient.execute({
     { to: '0x<recipient1>', data: '0x', value: parseEther('1') },
     { to: '0x<recipient2>', data: '0x', value: parseEther('2') },
   ],
-  nonce,
 });
 
 await bundlerClient.waitForUserOperationReceipt({ hash });
@@ -149,7 +145,6 @@ Pass `execType: 'try'` to continue processing remaining calls even if one fails:
 const hash = await bundlerClient.execute({
   calls: [/* ... */],
   execType: 'try',
-  nonce,
 });
 ```
 

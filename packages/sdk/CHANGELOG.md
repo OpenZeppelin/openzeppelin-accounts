@@ -1,3 +1,10 @@
+## 27-02-2026
+
+- `toOpenAccount` now requires a `validator: Address` parameter identifying the ERC-7579 validator module that authorises the signer. This parameter drives two automatic behaviors:
+  - **ERC-1271 routing**: `signMessage` and `signTypedData` prepend `validator` (20 bytes) to the inner signature so that the account's `isValidSignature` can extract and route to the correct module without any manual encoding.
+  - **UserOp nonce routing**: `getNonce` encodes `validator` in the upper 20 bytes of the 24-byte nonce key. An optional user-supplied `key` (at most 4 bytes) occupies the lower bytes, allowing parallel nonce sequences per validator. Passing a `key` larger than 4 bytes throws at runtime.
+- `toERC7579Account` no longer overrides `getNonce`. It now relies on the default nonce implementation provided by Viem's `toSmartAccount`, which reads from the entry point without any validator encoding. Applications that need validator-aware nonces should use `toOpenAccount`, or pass a custom `getNonce` override directly to `toERC7579Account`.
+
 ## 26-02-2026
 
 - Add `toOpenAccount`: a `SmartAccount` factory for the `OpenAccount` contract. Supports two modes — factory-based deployment (deterministic CREATE2 address) and connecting to an already-deployed account (with on-chain `accountId` validation).

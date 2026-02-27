@@ -83,6 +83,7 @@ const createAndFundOpenAccount = async (
   t.context.account = await toOpenAccount({
     client: t.context.testClient as Client<Transport, Chain, LocalAccount, RpcSchema>,
     signer: signerKey,
+    validator,
     factory: t.context.factory,
     moduleTypeIds: [ModuleTypes.VALIDATOR],
     modules: [validator],

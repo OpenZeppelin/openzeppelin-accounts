@@ -50,6 +50,7 @@ const factory = getContract({
 const account = await toOpenAccount({
   client,
   signer,
+  validator: '0x<ecdsaValidatorAddress>',
   factory,
   moduleTypeIds: ['validator'],
   modules: ['0x<ecdsaValidatorAddress>'],
@@ -78,6 +79,7 @@ If the account is already on-chain, pass its `address` directly. `toOpenAccount`
 const account = await toOpenAccount({
   client,
   signer,
+  validator: '0x<validatorAddress>',
   address: '0x<deployedAccountAddress>',
   getStubSignature: async () => '0x' + 'ff'.repeat(65),
 });
