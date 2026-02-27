@@ -96,7 +96,7 @@ type ToOpenAccountParameters<
   account extends Account | undefined = Account | undefined,
   rpcSchema extends RpcSchema | undefined = undefined,
 > = Pick<ToERC7579AccountParameters<transport, chain, account, rpcSchema>, 'client' | 'signer' | 'getStubSignature'> &
-  Partial<Omit<ToSmartAccountParameters, 'signMessage' | 'signTypedData' | 'signUserOperation' | 'getNonce'>> &
+  Partial<Omit<ToSmartAccountParameters, 'signMessage' | 'signTypedData' | 'signUserOperation'>> &
   OpenAccountParameters<transport, chain, account, rpcSchema>;
 
 /**
