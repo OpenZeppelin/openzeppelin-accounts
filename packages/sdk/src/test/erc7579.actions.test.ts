@@ -16,7 +16,7 @@ import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import ECDSAValidatorArtifact from '@open-accounts-framework/contracts/out/ERC7579ECDSAValidator.sol/ERC7579ECDSAValidator.json' with { type: 'json' };
 import { ModuleTypes } from '../erc7579.utils.js';
 import { setup, cleanup } from './helpers/setup.js';
-import { deployECDSAValidator, validatorNonceKey } from './helpers/erc7579.modules.js';
+import { deployECDSAValidator } from './helpers/erc7579.modules.js';
 import { OpenAccountContext, createAndFundOpenAccount, createAndFundEOA } from './helpers/accounts.js';
 
 interface ERC7579ActionsTestContext extends OpenAccountContext {
@@ -306,25 +306,13 @@ test('installModules and uninstallModules', async t => {
 
   // Install 1
   // First user op deploys the account
-  await t.context.account
-    .getNonce({ key: validatorNonceKey(t.context.initialValidator.address) })
-    .then(nonce =>
-      bundlerClient.installModules({
-        modules: validators.slice(0, 1),
-        nonce,
-      }),
-    )
+  await bundlerClient
+    .installModules({ modules: validators.slice(0, 1) })
     .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
 
   // Install 2
-  await t.context.account
-    .getNonce({ key: validatorNonceKey(t.context.initialValidator.address) })
-    .then(nonce =>
-      bundlerClient.installModules({
-        modules: validators.slice(1, 3),
-        nonce,
-      }),
-    )
+  await bundlerClient
+    .installModules({ modules: validators.slice(1, 3) })
     .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
 
   for (const validator of validators) {
@@ -337,25 +325,13 @@ test('installModules and uninstallModules', async t => {
   }
 
   // Uninstall 1
-  await t.context.account
-    .getNonce({ key: validatorNonceKey(t.context.initialValidator.address) })
-    .then(nonce =>
-      bundlerClient.uninstallModules({
-        modules: validators.slice(2, 3),
-        nonce,
-      }),
-    )
+  await bundlerClient
+    .uninstallModules({ modules: validators.slice(2, 3) })
     .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
 
   // Uninstall 2
-  await t.context.account
-    .getNonce({ key: validatorNonceKey(t.context.initialValidator.address) })
-    .then(nonce =>
-      bundlerClient.uninstallModules({
-        modules: validators.slice(0, 2),
-        nonce,
-      }),
-    )
+  await bundlerClient
+    .uninstallModules({ modules: validators.slice(0, 2) })
     .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
 
   for (const validator of validators) {
@@ -385,14 +361,8 @@ test('execute throws without account', async t => {
 test('execute user operations with single call', async t => {
   const bundlerClient = t.context.bundlerClient;
   const receiver = privateKeyToAccount(generatePrivateKey());
-  await t.context.account
-    .getNonce({ key: validatorNonceKey(t.context.initialValidator.address) })
-    .then(nonce =>
-      bundlerClient.execute({
-        calls: [{ to: receiver.address, data: '0x', value: parseEther('1') }],
-        nonce,
-      }),
-    )
+  await bundlerClient
+    .execute({ calls: [{ to: receiver.address, data: '0x', value: parseEther('1') }] })
     .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
   await t.context.testClient
     .extend(publicActions)
@@ -403,18 +373,14 @@ test('execute user operations with single call', async t => {
 test('execute user operations with batch call', async t => {
   const bundlerClient = t.context.bundlerClient;
   const receiver = privateKeyToAccount(generatePrivateKey());
-  await t.context.account
-    .getNonce({ key: validatorNonceKey(t.context.initialValidator.address) })
-    .then(nonce =>
-      bundlerClient.execute({
-        calls: [
-          { to: receiver.address, data: '0x', value: parseEther('1') },
-          { to: receiver.address, data: '0x', value: parseEther('2') },
-          { to: receiver.address, data: '0x', value: parseEther('3') },
-        ],
-        nonce,
-      }),
-    )
+  await bundlerClient
+    .execute({
+      calls: [
+        { to: receiver.address, data: '0x', value: parseEther('1') },
+        { to: receiver.address, data: '0x', value: parseEther('2') },
+        { to: receiver.address, data: '0x', value: parseEther('3') },
+      ],
+    })
     .then(hash => bundlerClient.waitForUserOperationReceipt({ hash }));
   await t.context.testClient
     .extend(publicActions)

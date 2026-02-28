@@ -1,5 +1,6 @@
 import {
   Address,
+  concat,
   encodeFunctionData,
   getCreate2Address,
   keccak256,
@@ -11,6 +12,9 @@ import {
   Hex,
   GetContractReturnType,
   encodeAbiParameters,
+  padHex,
+  size,
+  toHex,
   parseAbiParameters,
   zeroHash,
   publicActions,
@@ -64,13 +68,17 @@ type OpenAccountFactoryParameters<
  * Supports two modes:
  * 1. Using an existing deployed account via `OpenAccountExistingParameters`
  * 2. Creating a new account via factory using `OpenAccountFactoryParameters`
+ *
+ * @property {Address} validator The address of the ERC-7579 validator module that authorises this signer. Used to (1) prefix `signMessage`/`signTypedData` outputs for ERC-1271 routing, and (2) encode the validator in the upper 20 bytes of the nonce key for UserOp routing
  */
 type OpenAccountParameters<
   transport extends Transport = Transport,
   chain extends Chain | undefined = Chain | undefined,
   account extends Account | undefined = Account | undefined,
   rpcSchema extends RpcSchema | undefined = undefined,
-> = OneOf<OpenAccountExistingParameters | OpenAccountFactoryParameters<transport, chain, account, rpcSchema>>;
+> = OneOf<OpenAccountExistingParameters | OpenAccountFactoryParameters<transport, chain, account, rpcSchema>> & {
+  validator: Address;
+};
 
 /**
  * Parameters required to create an OpenAccount smart account.
@@ -88,23 +96,48 @@ type ToOpenAccountParameters<
   account extends Account | undefined = Account | undefined,
   rpcSchema extends RpcSchema | undefined = undefined,
 > = Pick<ToERC7579AccountParameters<transport, chain, account, rpcSchema>, 'client' | 'signer' | 'getStubSignature'> &
-  Partial<ToSmartAccountParameters> &
+  Partial<Omit<ToSmartAccountParameters, 'signMessage' | 'signTypedData' | 'signUserOperation'>> &
   OpenAccountParameters<transport, chain, account, rpcSchema>;
 
 /**
  * Creates a smart account client for an OpenAccount.
  */
 const toOpenAccount = async (parameters: ToOpenAccountParameters): Promise<SmartAccount> => {
-  const { client, signer, ...override } = parameters;
+  const { client, signer, validator, ...override } = parameters;
   const { getAddress, getFactoryArgs } = await openAccountArgs(parameters);
 
-  return toERC7579Account({
+  const account = await toERC7579Account({
     client,
     signer,
     getAddress,
     getFactoryArgs,
     ...override,
   });
+
+  const defaults = {
+    signMessage: account.signMessage,
+    signTypedData: account.signTypedData,
+    getNonce: account.getNonce,
+  };
+
+  account.signMessage = signMessageParameters =>
+    defaults.signMessage
+      .bind(account)(signMessageParameters)
+      .then(sig => concat([validator, sig]));
+  account.signTypedData = typedDataParameters =>
+    defaults.signTypedData
+      .bind(account)(typedDataParameters)
+      .then(sig => concat([validator, sig]));
+  account.getNonce = async ({ key }: { key?: bigint } = {}) => {
+    if (key !== undefined && size(toHex(key)) > 4) {
+      throw new Error(`Key must be at most 4 bytes when a validator is configured, got ${toHex(key)}`);
+    }
+    return defaults.getNonce.bind(account)({
+      key: BigInt(padHex(validator, { dir: 'right', size: 24 })) | (key ?? 0n),
+    });
+  };
+
+  return account;
 };
 
 /**

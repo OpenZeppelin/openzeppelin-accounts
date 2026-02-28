@@ -54,6 +54,7 @@ const signer = privateKeyToAccount('0x<privateKey>');
 const account = await toOpenAccount({
   client,
   signer,
+  validator: '0x<ecdsaValidatorAddress>',
   factory: getContract({
     address: '0x9045eF209067701bE7b78AaC216C04Ffa6543330',
     abi: OpenAccountFactoryABI.abi,
@@ -86,6 +87,7 @@ await bundlerClient.waitForUserOperationReceipt({ hash });
 const account = await toOpenAccount({
   client,
   signer,
+  validator: '0x<validatorAddress>',
   address: '0x<deployedAccountAddress>',
   getStubSignature: async () => '0x' + 'ff'.repeat(65),
 });

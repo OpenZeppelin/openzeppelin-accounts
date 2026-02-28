@@ -16,7 +16,6 @@ import {
   Address,
   Chain,
   type Client,
-  getContract,
   Hex,
   LocalAccount,
   RpcSchema,
@@ -70,9 +69,6 @@ const toERC7579Account = async (parameters: ToERC7579AccountParameters): Promise
     encodeCalls: async calls => encodeCalls(calls),
     getAddress,
     getFactoryArgs,
-    async getNonce({ key } = {}) {
-      return this.getAddress().then(addr => getContract({ client, ...entryPointV09 }).read.getNonce([addr, key ?? 0n]));
-    },
     async signMessage({ message }: { message: SignableMessage }) {
       return signer.signMessage({ message }).then(sig => (typeof sig === 'object' ? sig.signature : sig));
     },

@@ -10,12 +10,9 @@ import {
   Account,
   RpcSchema,
   Address,
-  padHex,
 } from 'viem';
 import ECDSAValidatorArtifact from '@open-accounts-framework/contracts/out/ERC7579ECDSAValidator.sol/ERC7579ECDSAValidator.json' with { type: 'json' };
 import WebAuthnValidatorArtifact from '@open-accounts-framework/contracts/out/ERC7579WebAuthnValidator.sol/ERC7579WebAuthnValidator.json' with { type: 'json' };
-
-const validatorNonceKey = (validator: Address): bigint => BigInt(padHex(validator, { dir: 'right', size: 24 }));
 
 const deployECDSAValidator = async (
   deployer: Client<Transport, Chain, Account, RpcSchema, PublicActions & WalletActions<Chain, Account>>,
@@ -51,4 +48,4 @@ const deployWebAuthnValidator = async (
       }),
     );
 
-export { deployECDSAValidator, deployWebAuthnValidator, validatorNonceKey };
+export { deployECDSAValidator, deployWebAuthnValidator };
