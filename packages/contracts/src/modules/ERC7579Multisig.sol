@@ -116,7 +116,7 @@ abstract contract ERC7579Multisig is IERC7579Module {
     }
 
     /// @dev Returns whether the `signer` is an authorized signer for the specified account.
-    function isSigner(address account, bytes memory signer) public view virtual returns (bool) {
+    function isSigner(address account, bytes calldata signer) public view virtual returns (bool) {
         return _signersSetByAccount[account].contains(signer);
     }
 
@@ -137,7 +137,7 @@ abstract contract ERC7579Multisig is IERC7579Module {
      * * Each of `newSigners` must be at least 20 bytes long.
      * * Each of `newSigners` must not be already authorized.
      */
-    function addSigners(bytes[] memory newSigners) public virtual {
+    function addSigners(bytes[] calldata newSigners) public virtual {
         _addSigners(msg.sender, newSigners);
     }
 
@@ -150,7 +150,7 @@ abstract contract ERC7579Multisig is IERC7579Module {
      * * Each of `oldSigners` must be authorized.
      * * After removal, the threshold must still be reachable.
      */
-    function removeSigners(bytes[] memory oldSigners) public virtual {
+    function removeSigners(bytes[] calldata oldSigners) public virtual {
         _removeSigners(msg.sender, oldSigners);
     }
 
@@ -181,9 +181,9 @@ abstract contract ERC7579Multisig is IERC7579Module {
      * allow arbitrary validation (e.g. using the identity precompile at `address(0x04)`, which would return the
      * ERC-1271 magic value for any `isValidSignature` call).
      */
-    function _addSigners(address account, bytes[] memory newSigners) internal virtual {
+    function _addSigners(address account, bytes[] calldata newSigners) internal virtual {
         for (uint256 i = 0; i < newSigners.length; ++i) {
-            bytes memory signer = newSigners[i];
+            bytes calldata signer = newSigners[i];
             require(signer.length >= 20, ERC7579MultisigInvalidSigner(signer));
             require(_signersSetByAccount[account].add(signer), ERC7579MultisigAlreadyExists(signer));
             emit ERC7913SignerAdded(account, signer);
@@ -198,9 +198,9 @@ abstract contract ERC7579Multisig is IERC7579Module {
      * * Each of `oldSigners` must be authorized. Reverts with {ERC7579MultisigNonexistentSigner} if not.
      * * The threshold must remain reachable after removal. See {_validateReachableThreshold} for details.
      */
-    function _removeSigners(address account, bytes[] memory oldSigners) internal virtual {
+    function _removeSigners(address account, bytes[] calldata oldSigners) internal virtual {
         for (uint256 i = 0; i < oldSigners.length; ++i) {
-            bytes memory signer = oldSigners[i];
+            bytes calldata signer = oldSigners[i];
             require(_signersSetByAccount[account].remove(signer), ERC7579MultisigNonexistentSigner(signer));
             emit ERC7913SignerRemoved(account, signer);
         }
