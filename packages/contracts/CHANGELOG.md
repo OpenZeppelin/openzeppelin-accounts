@@ -4,6 +4,7 @@
 - `ERC7579MultisigWeighted`: `signerWeight`, `setSignerWeights`, `_setSignerWeights`, and `_addSigners` now use `calldata` instead of `memory` for `bytes` parameters.
 - `ERC7579SocialRecoveryExecutor`: `isGuardian`, `addGuardians`, and `removeGuardians` now use `calldata` instead of `memory` for `bytes` parameters.
 - `ERC7579MultisigWeightedValidator`: `_addSigners` and `_removeSigners` now use `calldata` instead of `memory` for `bytes` parameters.
+- `ERC7579WebAuthnValidator`: The `_rawERC7579Validation` function now returns `false` when the signature is not a valid WebAuthn authentication assertion. P256 fallback is removed.
 
 ## 21-02-2026
 
