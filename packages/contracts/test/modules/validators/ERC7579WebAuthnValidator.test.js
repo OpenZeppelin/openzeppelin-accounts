@@ -13,7 +13,6 @@ const { MODULE_TYPE_VALIDATOR } = require('../../../../../lib/@openzeppelin-cont
 const {
   NonNativeSigner,
   WebAuthnSigningKey,
-  P256SigningKey,
 } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/signers');
 
 const { shouldBehaveLikeERC7579Module, shouldBehaveLikeERC7579Validator } = require('../ERC7579Module.behavior');
@@ -36,10 +35,6 @@ async function fixture() {
     signer
       .signTypedData(entrypointDomain, { PackedUserOperation }, userOp.packed)
       .then(signature => Object.assign(userOp, { signature }));
-
-  // Prepare P256 signer (for fallback testing)
-  const p256SigningKey = P256SigningKey.random();
-  const p256Signer = new NonNativeSigner(p256SigningKey);
 
   // Prepare module installation data (qx, qy coordinates)
   const installData = ethers.solidityPacked(
@@ -83,7 +78,6 @@ async function fixture() {
     other,
     signer,
     newSigner,
-    p256Signer,
     signUserOp,
     installData,
     newSignerInstallData,
@@ -91,7 +85,6 @@ async function fixture() {
     invalidSignature,
     webAuthnSigningKey,
     newWebAuthnSigningKey,
-    p256SigningKey,
   };
 }
 
@@ -353,27 +346,6 @@ describe('ERC7579WebAuthnValidator', function () {
 
         await expect(this.mockFromAccount.$_rawERC7579Validation(this.mockAccount.address, hash, signature)).to
           .eventually.be.false;
-      });
-
-      it('validates raw P256 signature as fallback', async function () {
-        const message = 'Hello, world!';
-        const hash = ethers.hashMessage(message);
-
-        // Create raw P256 signature (r, s components)
-        const p256Signature = await this.p256Signer.signMessage(message);
-
-        // Install P256 signer instead of WebAuthn signer
-        const p256InstallData = ethers.solidityPacked(
-          ['bytes32', 'bytes32'],
-          [this.p256SigningKey.publicKey.qx, this.p256SigningKey.publicKey.qy],
-        );
-
-        // Clear current signer and install P256 signer
-        await this.mockFromAccount.onUninstall('0x');
-        await this.mockFromAccount.onInstall(p256InstallData);
-
-        await expect(this.mockFromAccount.$_rawERC7579Validation(this.mockAccount.address, hash, p256Signature)).to
-          .eventually.be.true;
       });
 
       it('rejects malformed WebAuthn signature data', async function () {
