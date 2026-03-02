@@ -5,8 +5,9 @@
   "pages": [
     "index",
     "erc7579",
+    "erc7913",
     "---Modules---",
-    "multisig",
+    "base",
     "validators",
     "executors"
   ]
