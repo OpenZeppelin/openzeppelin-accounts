@@ -100,7 +100,7 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
     }
 
     /// @dev Gets the weight of a signer for a specific account. Returns 0 if the signer is not authorized.
-    function signerWeight(address account, bytes memory signer) public view virtual returns (uint64) {
+    function signerWeight(address account, bytes calldata signer) public view virtual returns (uint64) {
         unchecked {
             // Safe cast, _setSignerWeights guarantees 1+_extraWeights is a uint64
             return uint64(isSigner(account, signer).toUint() * (1 + _extraWeights[account][signer]));
@@ -116,7 +116,7 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
      * @dev Sets weights for signers for the calling account.
      * Can only be called by the account itself.
      */
-    function setSignerWeights(bytes[] memory signers, uint64[] memory weights) public virtual {
+    function setSignerWeights(bytes[] calldata signers, uint64[] calldata weights) public virtual {
         _setSignerWeights(msg.sender, signers, weights);
     }
 
@@ -172,13 +172,13 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
      *
      * Emits {ERC7579MultisigWeightChanged} for each signer.
      */
-    function _setSignerWeights(address account, bytes[] memory signers, uint64[] memory weights) internal virtual {
+    function _setSignerWeights(address account, bytes[] calldata signers, uint64[] calldata weights) internal virtual {
         require(signers.length == weights.length, ERC7579MultisigMismatchedLength());
 
         uint256 extraWeightAdded = 0;
         uint256 extraWeightRemoved = 0;
         for (uint256 i = 0; i < signers.length; ++i) {
-            bytes memory signer = signers[i];
+            bytes calldata signer = signers[i];
             require(isSigner(account, signer), ERC7579MultisigNonexistentSigner(signer));
 
             uint64 weight = weights[i];
@@ -213,7 +213,7 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
      * signers could cause the {totalWeight} computation to overflow. Adding a {totalWeight} call after the new
      * signers are added ensures no such overflow happens.
      */
-    function _addSigners(address account, bytes[] memory newSigners) internal virtual override {
+    function _addSigners(address account, bytes[] calldata newSigners) internal virtual override {
         super._addSigners(account, newSigners);
 
         // This will revert if the new signers cause an overflow
@@ -226,7 +226,7 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
      * Just like {_addSigners}, this function does not emit {ERC7579MultisigWeightChanged} events. The
      * {ERC7913SignerRemoved} event emitted by {ERC7579Multisig-_removeSigners} is enough to track weights here.
      */
-    function _removeSigners(address account, bytes[] memory oldSigners) internal virtual override {
+    function _removeSigners(address account, bytes[] calldata oldSigners) internal virtual override {
         // Clean up weights for removed signers
         //
         // The `extraWeightRemoved` is bounded by `_totalExtraWeight`. The `super._removeSigners` function will revert
@@ -235,7 +235,7 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
         unchecked {
             uint64 extraWeightRemoved = 0;
             for (uint256 i = 0; i < oldSigners.length; ++i) {
-                bytes memory signer = oldSigners[i];
+                bytes calldata signer = oldSigners[i];
 
                 extraWeightRemoved += _extraWeights[account][signer];
                 delete _extraWeights[account][signer];

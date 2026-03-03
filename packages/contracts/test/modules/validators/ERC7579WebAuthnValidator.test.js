@@ -13,7 +13,6 @@ const { MODULE_TYPE_VALIDATOR } = require('../../../../../lib/@openzeppelin-cont
 const {
   NonNativeSigner,
   WebAuthnSigningKey,
-  P256SigningKey,
 } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/signers');
 
 const { shouldBehaveLikeERC7579Module, shouldBehaveLikeERC7579Validator } = require('../ERC7579Module.behavior');
@@ -36,10 +35,6 @@ async function fixture() {
     signer
       .signTypedData(entrypointDomain, { PackedUserOperation }, userOp.packed)
       .then(signature => Object.assign(userOp, { signature }));
-
-  // Prepare P256 signer (for fallback testing)
-  const p256SigningKey = P256SigningKey.random();
-  const p256Signer = new NonNativeSigner(p256SigningKey);
 
   // Prepare module installation data (qx, qy coordinates)
   const installData = ethers.solidityPacked(
@@ -83,7 +78,6 @@ async function fixture() {
     other,
     signer,
     newSigner,
-    p256Signer,
     signUserOp,
     installData,
     newSignerInstallData,
@@ -91,7 +85,6 @@ async function fixture() {
     invalidSignature,
     webAuthnSigningKey,
     newWebAuthnSigningKey,
-    p256SigningKey,
   };
 }
 
@@ -133,7 +126,7 @@ describe('ERC7579WebAuthnValidator', function () {
     describe('onInstall', function () {
       it('sets signer on first installation', async function () {
         await expect(this.mockFromAccount.onInstall(this.installData))
-          .to.emit(this.mock, 'ERC7579P256ValidatorSignerSet')
+          .to.emit(this.mock, 'ERC7579P256SignerSet')
           .withArgs(
             this.mockAccount.address,
             this.webAuthnSigningKey.publicKey.qx,
@@ -151,7 +144,7 @@ describe('ERC7579WebAuthnValidator', function () {
         // Subsequent installation should revert
         await expect(this.mockFromAccount.onInstall(this.newSignerInstallData)).to.be.revertedWithCustomError(
           this.mock,
-          'ERC7579P256ValidatorAlreadyInstalled',
+          'ERC7579P256AlreadyInstalled',
         );
       });
 
@@ -159,7 +152,7 @@ describe('ERC7579WebAuthnValidator', function () {
         const shortData = '0x' + '12'.repeat(63); // 63 bytes
         await expect(this.mockFromAccount.onInstall(shortData)).to.be.revertedWithCustomError(
           this.mock,
-          'ERC7579P256ValidatorInvalidSignerLength',
+          'ERC7579P256InvalidSignerLength',
         );
       });
 
@@ -169,7 +162,7 @@ describe('ERC7579WebAuthnValidator', function () {
           [this.webAuthnSigningKey.publicKey.qx, this.webAuthnSigningKey.publicKey.qy],
         );
         await expect(this.mockFromAccount.onInstall(exactData))
-          .to.emit(this.mock, 'ERC7579P256ValidatorSignerSet')
+          .to.emit(this.mock, 'ERC7579P256SignerSet')
           .withArgs(
             this.mockAccount.address,
             this.webAuthnSigningKey.publicKey.qx,
@@ -183,7 +176,7 @@ describe('ERC7579WebAuthnValidator', function () {
           [this.webAuthnSigningKey.publicKey.qx, this.webAuthnSigningKey.publicKey.qy, 12345],
         );
         await expect(this.mockFromAccount.onInstall(longData))
-          .to.emit(this.mock, 'ERC7579P256ValidatorSignerSet')
+          .to.emit(this.mock, 'ERC7579P256SignerSet')
           .withArgs(
             this.mockAccount.address,
             this.webAuthnSigningKey.publicKey.qx,
@@ -203,14 +196,14 @@ describe('ERC7579WebAuthnValidator', function () {
 
         await expect(this.mockFromAccount.onInstall(invalidData)).to.be.revertedWithCustomError(
           this.mock,
-          'ERC7579P256ValidatorInvalidPublicKey',
+          'ERC7579P256InvalidPublicKey',
         );
       });
 
       it('reverts when trying to install with zero coordinates', async function () {
         const zeroData = ethers.solidityPacked(['bytes32', 'bytes32'], [ethers.ZeroHash, ethers.ZeroHash]);
         await expect(this.mockFromAccount.onInstall(zeroData))
-          .to.be.revertedWithCustomError(this.mock, 'ERC7579P256ValidatorInvalidPublicKey')
+          .to.be.revertedWithCustomError(this.mock, 'ERC7579P256InvalidPublicKey')
           .withArgs(ethers.ZeroHash, ethers.ZeroHash);
       });
     });
@@ -224,7 +217,7 @@ describe('ERC7579WebAuthnValidator', function () {
         ]);
 
         await expect(this.mockFromAccount.onUninstall('0x'))
-          .to.emit(this.mock, 'ERC7579P256ValidatorSignerSet')
+          .to.emit(this.mock, 'ERC7579P256SignerSet')
           .withArgs(this.mockAccount.address, ethers.ZeroHash, ethers.ZeroHash);
         await expect(this.mock.signer(this.mockAccount.address)).to.eventually.deep.equal([
           ethers.ZeroHash,
@@ -234,7 +227,7 @@ describe('ERC7579WebAuthnValidator', function () {
 
       it('does nothing when no signer is configured', async function () {
         // Should not emit event when no signer is configured (no-op)
-        await expect(this.mockFromAccount.onUninstall('0x')).to.not.emit(this.mock, 'ERC7579P256ValidatorSignerSet');
+        await expect(this.mockFromAccount.onUninstall('0x')).to.not.emit(this.mock, 'ERC7579P256SignerSet');
 
         await expect(this.mock.signer(this.mockAccount.address)).to.eventually.deep.equal([
           ethers.ZeroHash,
@@ -256,7 +249,7 @@ describe('ERC7579WebAuthnValidator', function () {
             this.newWebAuthnSigningKey.publicKey.qy,
           ),
         )
-          .to.emit(this.mock, 'ERC7579P256ValidatorSignerSet')
+          .to.emit(this.mock, 'ERC7579P256SignerSet')
           .withArgs(
             this.mockAccount.address,
             this.newWebAuthnSigningKey.publicKey.qx,
@@ -271,7 +264,7 @@ describe('ERC7579WebAuthnValidator', function () {
 
       it('reverts when trying to set signer to zero coordinates', async function () {
         await expect(this.mockFromAccount.setSigner(this.mockAccount.address, ethers.ZeroHash, ethers.ZeroHash))
-          .to.be.revertedWithCustomError(this.mock, 'ERC7579P256ValidatorInvalidPublicKey')
+          .to.be.revertedWithCustomError(this.mock, 'ERC7579P256InvalidPublicKey')
           .withArgs(ethers.ZeroHash, ethers.ZeroHash);
       });
 
@@ -285,7 +278,7 @@ describe('ERC7579WebAuthnValidator', function () {
               this.newWebAuthnSigningKey.publicKey.qy,
             ),
         )
-          .to.be.revertedWithCustomError(this.mock, 'ERC7579P256ValidatorNotAuthorized')
+          .to.be.revertedWithCustomError(this.mock, 'ERC7579P256NotAuthorized')
           .withArgs(this.other.address, this.mockAccount.address);
       });
 
@@ -297,7 +290,7 @@ describe('ERC7579WebAuthnValidator', function () {
             this.newWebAuthnSigningKey.publicKey.qy,
           ),
         )
-          .to.be.revertedWithCustomError(this.mock, 'ERC7579P256ValidatorNotAuthorized')
+          .to.be.revertedWithCustomError(this.mock, 'ERC7579P256NotAuthorized')
           .withArgs(this.mockAccount.address, this.other.address);
       });
 
@@ -305,7 +298,7 @@ describe('ERC7579WebAuthnValidator', function () {
         const invalidQx = ethers.ZeroHash;
         const invalidQy = '0x0000000000000000000000000000000000000000000000000000000000000001';
         await expect(this.mockFromAccount.setSigner(this.mockAccount.address, invalidQx, invalidQy))
-          .to.be.revertedWithCustomError(this.mock, 'ERC7579P256ValidatorInvalidPublicKey')
+          .to.be.revertedWithCustomError(this.mock, 'ERC7579P256InvalidPublicKey')
           .withArgs(invalidQx, invalidQy);
       });
     });
@@ -353,27 +346,6 @@ describe('ERC7579WebAuthnValidator', function () {
 
         await expect(this.mockFromAccount.$_rawERC7579Validation(this.mockAccount.address, hash, signature)).to
           .eventually.be.false;
-      });
-
-      it('validates raw P256 signature as fallback', async function () {
-        const message = 'Hello, world!';
-        const hash = ethers.hashMessage(message);
-
-        // Create raw P256 signature (r, s components)
-        const p256Signature = await this.p256Signer.signMessage(message);
-
-        // Install P256 signer instead of WebAuthn signer
-        const p256InstallData = ethers.solidityPacked(
-          ['bytes32', 'bytes32'],
-          [this.p256SigningKey.publicKey.qx, this.p256SigningKey.publicKey.qy],
-        );
-
-        // Clear current signer and install P256 signer
-        await this.mockFromAccount.onUninstall('0x');
-        await this.mockFromAccount.onInstall(p256InstallData);
-
-        await expect(this.mockFromAccount.$_rawERC7579Validation(this.mockAccount.address, hash, p256Signature)).to
-          .eventually.be.true;
       });
 
       it('rejects malformed WebAuthn signature data', async function () {
@@ -520,7 +492,7 @@ describe('ERC7579WebAuthnValidator', function () {
 
       // Attempting to set to zero coordinates should fail
       await expect(this.mockFromAccount.setSigner(this.mockAccount.address, ethers.ZeroHash, ethers.ZeroHash))
-        .to.be.revertedWithCustomError(this.mock, 'ERC7579P256ValidatorInvalidPublicKey')
+        .to.be.revertedWithCustomError(this.mock, 'ERC7579P256InvalidPublicKey')
         .withArgs(ethers.ZeroHash, ethers.ZeroHash);
 
       // Signer should remain unchanged

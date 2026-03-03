@@ -1,29 +1,47 @@
 ---
-title: Multisig
-description: Modular multisig based on ERC-7913 verifiers
+title: Base Modules
+description: Reusable abstract modules for signer management and multisig
 ---
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-The Open Accounts Framework provides powerful multisignature (multisig) modules that enable accounts to require multiple signatures before executing operations. Unlike traditional accounts controlled by a single private key, multisigs distribute control among multiple parties, eliminating single points of failure.
+The framework provides abstract base modules that implement common patterns for signer management and authorization. These modules are not tied to any specific module type and can be composed with validators, executors, or other contracts.
 
-## Why ERC-7913?
+## Signers
 
-The multisig modules leverage [ERC-7913](https://eips.ethereum.org/EIP-7913) (Signature Verifiers), which extends signature verification beyond traditional Ethereum addresses. This enables several powerful capabilities:
+These abstract modules handle signer storage, the installation lifecycle, and core signature validation primitives. See the [Validators](/docs/contracts/validators) page for the ready-to-use validator implementations built on top of them.
 
-- **Address-less keys**: Use cryptographic keys that don't have EVM addresses (P256, WebAuthn, ZKEmail, etc.)
-- **Flexible signer types**: Mix different signature schemes in a single multisig
-- **No deployment cost**: ERC-7913 verifiers can be shared across accounts, eliminating per-key deployment costs
+### ERC7579ECDSA
 
-ERC-7913 signers are represented as `bytes` objects that concatenate a verifier address and a key: `verifier || key`. For traditional EOA addresses, the verifier is the address itself and the key is empty (20 bytes total).
+Manages a single EOA signer per account and exposes `_validateECDSA` for downstream validation logic. Installation data encodes the signer as a packed 20-byte address.
 
-## Architecture
+```solidity
+address currentSigner = module.signer(account);
+module.setSigner(account, newSigner); // must be called by the account
+```
 
-The framework provides base multisig modules that can be combined with different module types (validators or executors) to create various use cases. This flexible design allows multisig functionality to be used for signature validation, execution authorization, or both.
+### ERC7579P256
 
-### Base Modules
+Manages a single P256 (secp256r1) public key per account as `(qx, qy)` coordinates and exposes `_validateP256`. Installation data encodes the key as 64 packed bytes.
 
-The framework provides two base multisig modules:
+```solidity
+(bytes32 qx, bytes32 qy) = module.signer(account);
+module.setSigner(account, newQx, newQy); // must be called by the account
+```
+
+### ERC7579WebAuthn
+
+Extends `ERC7579P256` with WebAuthn authentication by adding `_validateWebAuthn`. Signatures must be ABI-encoded [`WebAuthn.WebAuthnAuth`](https://docs.openzeppelin.com/contracts/5.x/api/utils/cryptography#WebAuthn) structs. Signer storage and management are inherited from `ERC7579P256`.
+
+---
+
+## Multisig
+
+The framework provides multisignature (multisig) modules that enable accounts to require multiple signatures before executing operations. Unlike traditional accounts controlled by a single private key, multisigs distribute control among multiple parties, eliminating single points of failure.
+
+It also provides base multisig modules that can be combined with different module types (validators or executors) to create various use cases. This flexible design allows multisig functionality to be used for signature validation, execution authorization, or both.
+
+Two main multisig modules are available:
 
 **`ERC7579Multisig`**: A threshold-based multisig module that requires a fixed number of signatures. For example, a 3-of-5 multisig requires signatures from at least 3 out of 5 possible signers.
 
@@ -32,7 +50,7 @@ The framework provides two base multisig modules:
 **Key Features of Base Modules:**
 
 - Threshold-based validation (e.g., 3-of-5 signers required)
-- ERC-7913 signer support (P256, WebAuthn, ECDSA, etc.)
+- [ERC-7913](/docs/contracts/erc7913) signer support (P256, WebAuthn, ECDSA, etc.)
 - Dynamic signer management (add/remove signers)
 - Configurable thresholds
 - Weighted voting support (in `ERC7579MultisigWeighted`)
@@ -338,9 +356,9 @@ The base multisig modules can also be extended to work with executors, enabling 
 
 - **Social Recovery with Delayed Execution**: Combine multisig with `ERC7579DelayedExecutor` to require guardians to approve recovery operations, which then execute after a time delay. This provides a security window to cancel suspicious operations.
 
-This design pattern allows multisig to be used flexibly across different use cases, not just for signature validation.
+This design pattern allows multisig to be used flexibly across different use cases, not just for signature validation. The framework provides `ERC7579SocialRecoveryExecutor` as a ready-to-use implementation of the delayed social recovery pattern. See [Executors](/docs/contracts/executors#erc7579socialrecoveryexecutor) for details.
 
-## Managing Signers
+### Managing Signers
 
 After installation, you can manage signers dynamically:
 
@@ -364,7 +382,7 @@ multisig.setThreshold(4); // Now requires 4-of-N signatures
   the threshold unreachable.
 </Callout>
 
-## Signature Format
+### Signature Format
 
 When signing a UserOperation or message, the signature must be encoded as:
 
@@ -377,99 +395,7 @@ bytes memory signature = abi.encode(
 
 The `signingSigners` array must be sorted in ascending order by `keccak256(signer)` to prevent duplicates and optimize verification.
 
-## Use Cases
-
-### Two-Factor Authentication (2FA)
-
-Require 2-of-2 signatures for enhanced security on sensitive operations:
-
-```solidity
-bytes[] memory signers = new bytes[](2);
-signers[0] = abi.encodePacked(hardwareWallet); // Hardware wallet
-signers[1] = abi.encodePacked(mobileDevice);    // Mobile device
-
-uint64 threshold = 2; // Both must sign
-bytes memory initData = abi.encode(signers, threshold);
-account.installModule(MODULE_TYPE_VALIDATOR, address(multisig), initData);
-```
-
-This ensures that even if one device is compromised, the account remains secure.
-
-### Social Recovery
-
-Social recovery is fundamentally a multisig operation where guardians approve recovery actions. The framework's flexible architecture allows combining multisig with different executors to create different recovery patterns:
-
-#### Immediate Recovery with Validator
-
-Use a multisig validator to require guardian signatures before executing recovery operations:
-
-```solidity
-bytes[] memory guardians = new bytes[](5);
-guardians[0] = abi.encodePacked(trustedFriend1);
-guardians[1] = abi.encodePacked(trustedFriend2);
-guardians[2] = abi.encodePacked(familyMember);
-guardians[3] = abi.encodePacked(backupDevice);
-guardians[4] = abi.encodePacked(secureLocation);
-
-uint64 threshold = 3; // 3-of-5 guardians required
-bytes memory initData = abi.encode(guardians, threshold);
-account.installModule(MODULE_TYPE_VALIDATOR, address(multisig), initData);
-```
-
-#### Delayed Recovery with Executor
-
-For enhanced security, combine multisig with `ERC7579DelayedExecutor` to require guardian approval followed by a time delay before execution. This provides a security window to cancel suspicious recovery operations. You would extend both `ERC7579Multisig` and `ERC7579DelayedExecutor` to create a custom recovery module.
-
-If you lose access to your primary key, 3 out of 5 trusted guardians can help you recover, with optional time delays for additional security.
-
-### Committee/Council Governance
-
-Implement weighted voting where council members have different voting power:
-
-```solidity
-import {ERC7579MultisigWeightedValidator} from "@open-accounts-framework/contracts/modules/validators/ERC7579MultisigWeightedValidator.sol";
-
-ERC7579MultisigWeightedValidator weightedMultisig = new ERC7579MultisigWeightedValidator();
-
-bytes[] memory councilMembers = new bytes[](5);
-councilMembers[0] = abi.encodePacked(chairperson);    // Weight: 5
-councilMembers[1] = abi.encodePacked(viceChair);      // Weight: 3
-councilMembers[2] = abi.encodePacked(member1);        // Weight: 2
-councilMembers[3] = abi.encodePacked(member2);        // Weight: 2
-councilMembers[4] = abi.encodePacked(member3);        // Weight: 1
-
-uint64[] memory weights = new uint64[](5);
-weights[0] = 5; // Chairperson has highest weight
-weights[1] = 3;
-weights[2] = 2;
-weights[3] = 2;
-weights[4] = 1;
-
-uint64 threshold = 7; // Requires chairperson + vice chair, or chairperson + 2 members, etc.
-
-bytes memory initData = abi.encode(councilMembers, threshold, weights);
-account.installModule(MODULE_TYPE_VALIDATOR, address(weightedMultisig), initData);
-```
-
-This enables sophisticated governance where different members have different levels of authority.
-
-### ZKEmail Recovery
-
-Combine traditional signatures with ZKEmail proofs for email-based recovery:
-
-```solidity
-bytes[] memory signers = new bytes[](2);
-signers[0] = abi.encodePacked(primaryKey);           // Your primary signing key
-signers[1] = abi.encodePacked(zkEmailVerifier, emailKey); // ZKEmail verifier + email key
-
-uint64 threshold = 1; // 1-of-2 multisig (either primary key OR email proof)
-bytes memory initData = abi.encode(signers, threshold);
-account.installModule(MODULE_TYPE_VALIDATOR, address(multisig), initData);
-```
-
-This allows recovery using email verification through zero-knowledge proofs, providing a convenient backup mechanism.
-
-## Weighted Multisig Details
+### Weighted Multisig Details
 
 When using `ERC7579MultisigWeightedValidator`, each signer has a weight (default is 1). The threshold is based on total weight, not signer count.
 
@@ -487,7 +413,7 @@ Example:
 // Threshold = 4 means: Bob+Charlie (5) or Alice+Bob+Charlie (6) or Alice+Charlie (4)
 ```
 
-## Querying Multisig State
+### Querying Multisig State
 
 You can query the multisig module to check signers and thresholds:
 

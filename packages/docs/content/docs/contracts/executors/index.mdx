@@ -23,89 +23,6 @@ Developers extending this base contract must implement:
 
 The framework provides the following executor implementations:
 
-### ERC7579Executor
-
-A basic executor base contract that provides the core `_execute` function for immediate execution. This contract does not include any built-in validation or access control, developers must implement their own `execute` function with appropriate security measures.
-
-**Key Features:**
-
-- Internal `_execute` function for operation execution
-- Salt-based operation identification
-- Support for all ERC-7579 execution modes
-- Full flexibility for custom validation and access control
-
-<Callout>
-This is an abstract contract. You need to create a concrete implementation:
-
-```solidity
-contract MyExecutor is ERC7579Executor {
-  function onInstall(bytes calldata data) public override {
-    // Installation logic
-  }
-
-  function onUninstall(bytes calldata data) public override {
-    // Cleanup logic
-  }
-
-  function execute(
-    address account,
-    bytes32 salt,
-    bytes32 mode,
-    bytes calldata data
-  ) public returns (bytes[] memory) {
-    // Implement your validation logic here
-    // e.g., require(msg.sender == account, "unauthorized");
-    
-    // Call the internal _execute function
-    return _execute(account, salt, mode, executionCalldata);
-  }
-}
-```
-
-</Callout>
-
-To install an ERC7579Executor:
-
-```solidity
-import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {ERC7579Executor} from "@open-accounts-framework/contracts/modules/executors/ERC7579Executor.sol";
-
-// Create a dummy concrete implementation
-// WARNING: Do not use in production since it doesn't implement access control
-contract MyExecutor is ERC7579Executor {
-    function onInstall(bytes calldata) public override {}
-    function onUninstall(bytes calldata) public override {}
-    
-    function execute(
-        address account,
-        bytes32 salt,
-        bytes32 mode,
-        bytes calldata data
-    ) public returns (bytes[] memory) {
-        // No access control for educational purposes.
-        return _execute(account, salt, mode, data);
-    }
-}
-
-// Deploy the executor (singleton, can be reused)
-MyExecutor executor = new MyExecutor();
-
-// Install the module (initData can be empty or contain custom configuration)
-bytes memory initData = "";
-account.installModule(MODULE_TYPE_EXECUTOR, address(executor), initData);
-```
-
-To execute operations through the module:
-
-```solidity
-// Execute an operation
-bytes32 salt = keccak256("unique-operation-id");
-bytes32 mode = /* ERC-7579 execution mode */;
-bytes calldata executionData = /* calldata to execute */;
-
-bytes[] memory returnData = executor.execute(address(account), salt, mode, executionData);
-```
-
 ### ERC7579DelayedExecutor
 
 An executor base contract that provides scheduling infrastructure for time-delayed execution with expiration. Operations are scheduled and must wait for a delay period before becoming executable. This provides a security window to cancel suspicious operations.
@@ -312,81 +229,6 @@ uint32 expiration = executor.getExpiration(account);
   already scheduled retain their original delay and expiration times—they are not retroactively updated.
 </Callout>
 
-## Use Cases
-
-### Social Recovery
-
-Social recovery is fundamentally a multisig operation where guardians approve recovery actions. The framework's flexible architecture allows combining multisig with different executors to create different recovery patterns. Executors enable guardians to execute recovery operations on behalf of the account once the threshold is met.
-
-#### Immediate Execution
-
-Combine multisig with `ERC7579Executor` to allow guardians to immediately execute recovery operations once the threshold is met. This pattern requires guardians to approve the recovery action, which then executes right away.
-
-To implement this, you would extend both `ERC7579Multisig` and `ERC7579Executor` to create a custom recovery executor that validates multisig signatures before executing:
-
-```solidity
-import {ERC7579Multisig} from "@open-accounts-framework/contracts/modules/ERC7579Multisig.sol";
-import {ERC7579Executor} from "@open-accounts-framework/contracts/modules/executors/ERC7579Executor.sol";
-
-contract RecoveryExecutor is ERC7579Multisig, ERC7579Executor {
-    function onInstall(bytes calldata data) public override(ERC7579Multisig, IERC7579Module) {
-        super.onInstall(data);
-    }
-
-    function onUninstall(bytes calldata data) public override(ERC7579Multisig, IERC7579Module) {
-        super.onUninstall(data);
-    }
-
-    function execute(
-        address account,
-        bytes32 salt,
-        bytes32 mode,
-        bytes calldata data
-    ) public returns (bytes[] memory) {
-        // Decode the multisig signature and execution calldata
-        (bytes memory multisignature, bytes memory executionCalldata) = abi.decode(data, (bytes, bytes));
-        (bytes[] memory signingSigners, bytes[] memory signatures) =
-            abi.decode(multisignature, (bytes[], bytes[]));
-
-        // NOTE: EIP-712 typed hashes are a better recommendation, but using a
-        // simplified hash is better for educational purposes
-        bytes32 hash = keccak256(abi.encode(account, salt, mode, executionCalldata));
-        require(_validateMultisig(account, hash, signingSigners, signatures), "Invalid multisig");
-
-        // Call the internal _execute function
-        return _execute(account, salt, mode, executionCalldata);
-    }
-}
-```
-
-To set it up:
-
-```solidity
-// Deploy the recovery executor
-RecoveryExecutor recovery = new RecoveryExecutor();
-
-// Set up guardians (same as multisig validator setup)
-bytes[] memory guardians = new bytes[](5);
-guardians[0] = abi.encodePacked(trustedFriend1);
-guardians[1] = abi.encodePacked(trustedFriend2);
-guardians[2] = abi.encodePacked(familyMember);
-guardians[3] = abi.encodePacked(backupDevice);
-guardians[4] = abi.encodePacked(secureLocation);
-
-uint64 threshold = 3; // 3-of-5 guardians required
-
-// Install the executor with guardian configuration
-bytes memory initData = abi.encode(guardians, threshold);
-account.installModule(MODULE_TYPE_EXECUTOR, address(recovery), initData);
-```
-
-When guardians need to recover the account, they:
-
-1. Sign the recovery operation with their individual signatures
-2. Call `recovery.execute()` with the account address, salt, mode, and combined data (multisig signature + recovery calldata)
-3. The executor validates that at least 3 guardians have signed
-4. If validated, the recovery operation executes immediately
-
 #### Delayed Execution
 
 To maximize security when safeguarding account recovery, combine multisig with `ERC7579DelayedExecutor` so that recovery operations require approval from multiple guardians and then are subject to a configurable time delay before execution. This layered approach brings several security benefits:
@@ -508,3 +350,114 @@ When guardians need to recover the account:
 5. During the delay, the account owner can cancel if the recovery is suspicious
 6. After 7 days, the operation becomes `Ready`
 7. Anyone can then call `recovery.execute()` to complete the recovery
+
+### ERC7579SocialRecoveryExecutor
+
+A production-ready implementation of the delayed social recovery pattern. It combines `ERC7579MultisigWeighted` with `ERC7579DelayedExecutor`, exposing dedicated `startRecovery`, `executeRecovery`, and `cancelRecovery` functions. Guardian signing uses EIP-712 typed data over the account's domain separator.
+
+See [Multisig as Executors](/docs/contracts/base#as-executors) for the underlying pattern.
+
+Installation data is length-prefixed to separate the two components:
+
+```solidity
+import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
+import {ERC7579SocialRecoveryExecutor} from "@open-accounts-framework/contracts/modules/executors/ERC7579SocialRecoveryExecutor.sol";
+
+ERC7579SocialRecoveryExecutor recovery = new ERC7579SocialRecoveryExecutor();
+
+// Encode each component separately
+bytes memory executorArgs = abi.encodePacked(delay, expiration); // uint32 each
+bytes memory multisigArgs = abi.encode(guardians, threshold, weights); // bytes[], uint64, uint64[]
+
+// Pack with length prefixes: [uint16 executorArgsLen][executorArgs][uint16 multisigArgsLen][multisigArgs]
+bytes memory initData = abi.encodePacked(
+    uint16(executorArgs.length), executorArgs,
+    uint16(multisigArgs.length), multisigArgs
+);
+
+account.installModule(MODULE_TYPE_EXECUTOR, address(recovery), initData);
+```
+
+After installation, guardians use `startRecovery` to schedule and `cancelRecovery` to abort:
+
+```solidity
+// Guardians sign the SCHEDULE_RECOVER_TYPEHASH typed hash and submit
+recovery.startRecovery(account, salt, mode, recoveryData, multisignature);
+
+// Account owner (or guardians) can cancel during the delay window
+recovery.cancelRecovery(account, salt, mode, recoveryData);
+
+// Anyone can execute once ready
+recovery.executeRecovery(account, salt, mode, recoveryData);
+```
+
+Guardian management mirrors `ERC7579MultisigWeighted`, with aliased helpers:
+
+```solidity
+recovery.addGuardians(newGuardians);
+recovery.removeGuardians(oldGuardians);
+bool ok = recovery.isGuardian(account, guardian);
+```
+
+### ERC7579NativeSpender
+
+Extends `ERC7579Executor` with native token (ETH) spending limits and automatic renewal periods. Authorized spenders can call `transferFrom` to move ETH from an account up to a configurable per-period limit. Limits reset automatically at the end of each period without requiring manual intervention.
+
+```solidity
+import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
+import {ERC7579NativeSpender} from "@open-accounts-framework/contracts/modules/executors/ERC7579NativeSpender.sol";
+
+ERC7579NativeSpender nativeSpender = new ERC7579NativeSpender();
+
+// initData: abi.encode(spenders, starts, limits, renewPeriods)
+// starts: pass 0 to start immediately; all arrays must be equal length
+bytes memory initData = abi.encode(spenders, starts, limits, renewPeriods);
+account.installModule(MODULE_TYPE_EXECUTOR, address(nativeSpender), initData);
+```
+
+Spenders call `transferFrom` or `batchTransferFrom` to move funds within their limit:
+
+```solidity
+nativeSpender.transferFrom(account, recipient, amount);
+nativeSpender.batchTransferFrom(account, recipients, amounts);
+```
+
+The account can adjust or revoke spending configurations at any time:
+
+```solidity
+nativeSpender.setSpendingConfig(spender, newLimit, newRenewPeriod);
+nativeSpender.unsetSpendingConfig(spender);
+```
+
+<Callout>
+  Setting `renewPeriod` to `type(uint48).max` effectively disables automatic renewal (one-time limit).
+</Callout>
+
+### ERC7579ERC20Spender
+
+Mirrors `ERC7579NativeSpender` for ERC20 tokens. Spending configurations are tracked per token–spender pair, and the clock follows the token's ERC-6372 implementation when available, falling back to timestamps.
+
+```solidity
+import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
+import {ERC7579ERC20Spender} from "@open-accounts-framework/contracts/modules/executors/ERC7579ERC20Spender.sol";
+
+ERC7579ERC20Spender erc20Spender = new ERC7579ERC20Spender();
+
+// initData: abi.encode(tokens, spenders, starts, limits, renewPeriods)
+bytes memory initData = abi.encode(tokens, spenders, starts, limits, renewPeriods);
+account.installModule(MODULE_TYPE_EXECUTOR, address(erc20Spender), initData);
+```
+
+Spenders transfer tokens via `transferFrom` or `batchTransferFrom`:
+
+```solidity
+erc20Spender.transferFrom(account, token, recipient, amount);
+erc20Spender.batchTransferFrom(account, token, recipients, amounts);
+```
+
+The account manages configurations per token–spender pair:
+
+```solidity
+erc20Spender.setSpendingConfig(token, spender, newLimit, newRenewPeriod);
+erc20Spender.unsetSpendingConfig(token, spender);
+```

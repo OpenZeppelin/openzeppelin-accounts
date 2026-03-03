@@ -1,3 +1,13 @@
+## 28-02-2026
+
+- `ERC7579Multisig`: `isSigner`, `addSigners`, `removeSigners`, `_addSigners`, and `_removeSigners` now use `calldata` instead of `memory` for `bytes` parameters.
+- `ERC7579MultisigWeighted`: `signerWeight`, `setSignerWeights`, `_setSignerWeights`, and `_addSigners` now use `calldata` instead of `memory` for `bytes` parameters.
+- `ERC7579SocialRecoveryExecutor`: `isGuardian`, `addGuardians`, and `removeGuardians` now use `calldata` instead of `memory` for `bytes` parameters.
+- `ERC7579MultisigWeightedValidator`: `_addSigners` and `_removeSigners` now use `calldata` instead of `memory` for `bytes` parameters.
+- Add `ERC7579ECDSA`, `ERC7579P256`, and `ERC7579WebAuthn` abstract contract modules, extracting the signer management and signature validation logic from their respective validator contracts into reusable primitives.
+- `ERC7579ECDSAValidator`, `ERC7579P256Validator`, and `ERC7579WebAuthnValidator` now extend these abstract primitives and compose them with `ERC7579Validator`.
+- `ERC7579WebAuthnValidator`: The `_rawERC7579Validation` function now returns `false` when the signature is not a valid WebAuthn authentication assertion. P256 fallback is removed.
+
 ## 21-02-2026
 
 - `ERC7579MultisigConfidentialValidator`: User op validation now requires only 2 steps instead of 3. The explicit `discloseOperation` call is no longer needed: users can instead embed the FHE decryption proof directly in the user op signature (relayer address in the first 20 bytes, proof thereafter), and the validator verifies it inline during `validateUserOp`. The prior 3-step flow (request → disclose → submit) remains supported as a fallback via the `disclosed` flag.
