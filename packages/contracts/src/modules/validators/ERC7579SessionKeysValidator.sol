@@ -26,7 +26,7 @@ import {ERC7579Validator} from "./ERC7579Validator.sol";
  * account.installModule(MODULE_TYPE_VALIDATOR, validatorAddress, initData);
  * ```
  */
-contract ERC7579SessionKeysValidator is ERC7579SessionKeys, ERC7579Validator {
+abstract contract ERC7579SessionKeysValidator is ERC7579SessionKeys, ERC7579Validator {
     /**
      * @dev See {IERC7579Validator-isValidSignatureWithSender}.
      *
