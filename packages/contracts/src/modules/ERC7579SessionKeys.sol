@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
-import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
+import {IERC7579Module} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {Nonces} from "@openzeppelin/contracts/utils/Nonces.sol";
 import {IERC6372} from "@openzeppelin/contracts/interfaces/IERC6372.sol";
@@ -10,10 +9,9 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {Time} from "@openzeppelin/contracts/utils/types/Time.sol";
 import {Calldata} from "@openzeppelin/contracts/utils/Calldata.sol";
-import {ERC7579Validator} from "./validators/ERC7579Validator.sol";
 
 /**
- * @dev Abstract base for ERC-7579 session key modules.
+ * @dev Abstract base for ERC-7579 session keys.
  *
  * This module allows registering ERC-7913 keys as session keys on a smart account, each with
  * a configurable validity range. A session key is any ERC-7913 signer (an arbitrary
@@ -24,42 +22,41 @@ import {ERC7579Validator} from "./validators/ERC7579Validator.sol";
  * The key is encoded in the `signature` field of the user operations and ERC-1271 requests for
  * identification and cryptographic verification. See {_tryDecodeSignature} for the encoding details.
  *
- * IMPORTANT: By default, any registered key within its validity range can validate any user
- * operation and sign any ERC-1271 message on behalf of the account. Derived contracts
- * should restrict the scope of what a session key is authorized to do.
+ * This module provides session key management through the {_validateSessionKey} internal
+ * function. Concrete implementations should attach it to validation flows such as
+ * {ERC7579Validator-_rawERC7579Validation}.
  *
- * WARNING: Overriding {clock} to return a value that is neither `Time.timestamp()` nor
- * `Time.blockNumber()` will cause {_validateUserOp} to return {ERC4337Utils.SIG_VALIDATION_FAILED}
+ * WARNING: Overriding {clock} to return a value that is neither timestamp nor
+ * block number will cause {_validateUserOp} to return {ERC4337Utils-SIG_VALIDATION_FAILED}
  * unconditionally, since the EntryPoint only supports timestamp-based and block-based validity
  * ranges. Consider this constraint when subclasses override the clock.
  *
  * TIP: Set `starts[i]` to `0` during installation to activate the key immediately.
  * TIP: Set `ends[i]` to `0` during installation to register a key with no expiry.
  */
-abstract contract ERC7579SessionKeyValidator is ERC7579Validator, Nonces, IERC6372 {
+abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
     using EnumerableSet for EnumerableSet.BytesSet;
-    using ERC4337Utils for address;
 
     /// @dev The `keys`, `starts`, and `ends` arrays passed to {onInstall} have different lengths.
-    error ERC7579SessionKeysMismatchedInitDataLengths();
+    error ERC7579SessionKeyssMismatchedInitDataLengths();
 
     /// @dev The provided `initData` is invalid or malformed.
-    error ERC7579SessionKeysInvalidInitData();
+    error ERC7579SessionKeyssInvalidInitData();
 
     /// @dev The provided `key` is already registered.
-    error ERC7579SessionKeysAlreadyRegisteredKey(bytes key);
+    error ERC7579SessionKeyssAlreadyRegisteredKey(bytes key);
 
     /// @dev The provided `key` is not registered.
-    error ERC7579SessionKeysNonexistentKey(bytes key);
+    error ERC7579SessionKeyssNonexistentKey(bytes key);
 
     /// @dev Emitted when all session keys are cleared for an account on uninstall.
-    event ERC7579SessionKeysCleared(address indexed account);
+    event ERC7579SessionKeyssCleared(address indexed account);
 
     /// @dev Emitted when a session key is registered or updated for an account.
-    event ERC7579SessionKeysERC7913KeySet(address indexed account, bytes indexed key, uint48 start, uint48 end);
+    event ERC7579SessionKeyssERC7913KeySet(address indexed account, bytes indexed key, uint48 start, uint48 end);
 
     /// @dev Emitted when a session key is removed from an account.
-    event ERC7579SessionKeysERC7913KeyUnset(address indexed account, bytes indexed key);
+    event ERC7579SessionKeyssERC7913KeyUnset(address indexed account, bytes indexed key);
 
     /**
      * @dev Validity range for a session key.
@@ -92,27 +89,6 @@ abstract contract ERC7579SessionKeyValidator is ERC7579Validator, Nonces, IERC63
         return "mode=timestamp";
     }
 
-    /**
-     * @dev See {IERC7579Validator-isValidSignatureWithSender}.
-     *
-     * Enforces the validity range of the session key manually since the EntryPoint is not
-     * involved in ERC-1271 signature validation. See {_tryDecodeSignature} for the encoding details.
-     */
-    function isValidSignatureWithSender(
-        address sender,
-        bytes32 hash,
-        bytes calldata signature
-    ) public view virtual override returns (bytes4) {
-        bytes calldata key;
-        (, key, ) = _tryDecodeSignature(signature); // `success` is checked further down in `super.isValidSignatureWithSender` -> `_rawERC7579Validation`
-        (uint48 from, uint48 until) = validity(msg.sender, key);
-        uint48 timepoint = clock();
-        return
-            from <= timepoint && until >= timepoint
-                ? super.isValidSignatureWithSender(sender, hash, signature)
-                : bytes4(0xffffffff);
-    }
-
     /// @dev Returns the installation nonce for an `account`. See {onUninstall}.
     function installation(address account) public view virtual returns (uint256) {
         return nonces(account);
@@ -126,6 +102,11 @@ abstract contract ERC7579SessionKeyValidator is ERC7579Validator, Nonces, IERC63
     /// @dev Returns the validity range `(from, until)` for a `key` on an `account`.
     function validity(address account, bytes calldata key) public view virtual returns (uint48 from, uint48 until) {
         return _validity(account, installation(account), key);
+    }
+
+    /// @dev Returns whether a `key` is valid for an `account` at the current timepoint.
+    function isValid(address account, bytes calldata key) public view virtual returns (bool) {
+        return _isValid(account, installation(account), key);
     }
 
     /**
@@ -174,7 +155,7 @@ abstract contract ERC7579SessionKeyValidator is ERC7579Validator, Nonces, IERC63
      */
     function onUninstall(bytes calldata) public virtual {
         _useNonce(msg.sender);
-        emit ERC7579SessionKeysCleared(msg.sender);
+        emit ERC7579SessionKeyssCleared(msg.sender);
     }
 
     /**
@@ -188,7 +169,7 @@ abstract contract ERC7579SessionKeyValidator is ERC7579Validator, Nonces, IERC63
     function addKeys(bytes[] calldata newKeys, uint48[] calldata starts, uint48[] calldata ends) public virtual {
         require(
             newKeys.length == starts.length && newKeys.length == ends.length,
-            ERC7579SessionKeysMismatchedInitDataLengths()
+            ERC7579SessionKeyssMismatchedInitDataLengths()
         );
         _addKeys(msg.sender, newKeys, starts, ends);
     }
@@ -222,6 +203,12 @@ abstract contract ERC7579SessionKeyValidator is ERC7579Validator, Nonces, IERC63
         );
     }
 
+    /// @dev Internal version of {isValid} that receives an `installation_` nonce.
+    function _isValid(address account, uint256 installation_, bytes calldata key) internal view virtual returns (bool) {
+        uint48 timepoint = clock();
+        return from <= timepoint && until >= timepoint;
+    }
+
     /// @dev Internal version of {keys} that receives an `installation_` nonce.
     function _keys(
         address account,
@@ -233,39 +220,6 @@ abstract contract ERC7579SessionKeyValidator is ERC7579Validator, Nonces, IERC63
     }
 
     /**
-     * @dev See {ERC7579Validator-_validateUserOp}.
-     *
-     * Decodes the session key from `userOp.signature` and reads its validity range. The range
-     * is packed into the returned `validationData` so the EntryPoint enforces it without
-     * requiring an explicit timestamp check in the validator.
-     * See {_tryDecodeSignature} for the signature encoding details.
-     *
-     * NOTE: Returns {ERC4337Utils.SIG_VALIDATION_FAILED} immediately if {clock} returns a value
-     * that is neither the current block timestamp nor the current block number, as the EntryPoint
-     * does not support other validity range formats.
-     */
-    function _validateUserOp(
-        PackedUserOperation calldata userOp,
-        bytes32 userOpHash
-    ) internal virtual override returns (uint256) {
-        uint48 timepoint = clock();
-        bool blockRange = timepoint == Time.blockNumber();
-        bool timestampRange = timepoint == Time.timestamp();
-        if (!blockRange && !timestampRange) {
-            return ERC4337Utils.SIG_VALIDATION_FAILED; // Unrecognized validity range.
-        }
-        bytes calldata key;
-        (, key, ) = _tryDecodeSignature(userOp.signature); // `success` is checked further down in `super._validateUserOp` -> `_rawERC7579Validation`
-        (uint48 from, uint48 until) = validity(userOp.sender, key);
-        ERC4337Utils.ValidationRange range = blockRange
-            ? ERC4337Utils.ValidationRange.BLOCK
-            : ERC4337Utils.ValidationRange.TIMESTAMP;
-        // We know from the resolution order that `super._validateUserOp` calls `ERC7579Validator._rawERC7579Validation`
-        // which only returns SIG_VALIDATION_FAILED or SIG_VALIDATION_SUCCESS. Casting to address(uint160) is safe.
-        return address(uint160(super._validateUserOp(userOp, userOpHash))).packValidationData(from, until, range);
-    }
-
-    /**
      * @dev Internal function to register session keys for an `account`.
      *
      * For each key, stores the ERC-7913 key bytes in the enumerable set and records its
@@ -273,13 +227,13 @@ abstract contract ERC7579SessionKeyValidator is ERC7579Validator, Nonces, IERC63
      *
      * Requirements:
      *
-     * * All arrays must have equal length. Reverts with {ERC7579SessionKeysMismatchedInitDataLengths} if not.
-     * * Each of `keys_` must not be registered. Reverts with {ERC7579SessionKeysAlreadyRegisteredKey} if it is.
+     * * All arrays must have equal length. Reverts with {ERC7579SessionKeyssMismatchedInitDataLengths} if not.
+     * * Each of `keys_` must not be registered. Reverts with {ERC7579SessionKeyssAlreadyRegisteredKey} if it is.
      *
      * TIP: Setting `starts[i]` to `0` resolves to the current timepoint.
      * TIP: Setting `ends[i]` to `0` stores `type(uint48).max`, meaning no expiry.
      *
-     * Emits an {ERC7579SessionKeysERC7913KeySet} event for each key.
+     * Emits an {ERC7579SessionKeyssERC7913KeySet} event for each key.
      */
     function _addKeys(
         address account,
@@ -289,19 +243,19 @@ abstract contract ERC7579SessionKeyValidator is ERC7579Validator, Nonces, IERC63
     ) internal {
         require(
             keys_.length == starts.length && keys_.length == ends.length,
-            ERC7579SessionKeysMismatchedInitDataLengths()
+            ERC7579SessionKeyssMismatchedInitDataLengths()
         );
         uint256 installation_ = installation(account);
         for (uint256 i = 0; i < keys_.length; ++i) {
             bytes calldata key = keys_[i];
-            require(_keys[account][installation_].add(key), ERC7579SessionKeysAlreadyRegisteredKey(key));
+            require(_keys[account][installation_].add(key), ERC7579SessionKeyssAlreadyRegisteredKey(key));
             bytes32 keyId = _keyId(key);
             uint48 start = uint48(Math.ternary(starts[i] == 0, clock(), starts[i])); // Safe cast. Both are uint48.
             uint48 end = uint48(Math.ternary(ends[i] == 0, type(uint48).max, ends[i])); // Safe cast. Both are uint48.
             Validity storage validity_ = _validity[account][installation_][keyId];
             validity_.from = start;
             validity_.until = end;
-            emit ERC7579SessionKeysERC7913KeySet(account, key, start, end);
+            emit ERC7579SessionKeyssERC7913KeySet(account, key, start, end);
         }
     }
 
@@ -312,40 +266,41 @@ abstract contract ERC7579SessionKeyValidator is ERC7579Validator, Nonces, IERC63
      *
      * Requirements:
      *
-     * * Each of `keys_` must be registered. Reverts with {ERC7579SessionKeysNonexistentKey} if not.
+     * * Each of `keys_` must be registered. Reverts with {ERC7579SessionKeyssNonexistentKey} if not.
      *
-     * Emits an {ERC7579SessionKeysERC7913KeyUnset} event for each key.
+     * Emits an {ERC7579SessionKeyssERC7913KeyUnset} event for each key.
      */
     function _removeKeys(address account, bytes[] calldata keys_) internal {
         uint256 installation_ = installation(account);
         for (uint256 i = 0; i < keys_.length; ++i) {
             bytes calldata key = keys_[i];
-            require(_keys[account][installation_].remove(key), ERC7579SessionKeysNonexistentKey(key));
+            require(_keys[account][installation_].remove(key), ERC7579SessionKeyssNonexistentKey(key));
             bytes32 keyId = _keyId(key);
             Validity storage validity_ = _validity[account][installation_][keyId];
             validity_.from = 0;
             validity_.until = 0;
-            emit ERC7579SessionKeysERC7913KeyUnset(account, key);
+            emit ERC7579SessionKeyssERC7913KeyUnset(account, key);
         }
     }
 
     /**
-     * @dev See {ERC7579Validator-_rawERC7579Validation}.
+     * @dev Validates an ERC-7913 session key signature against the registered keys for the account.
      *
      * Decodes the ERC-7913 key and its cryptographic signature from the encoded `signature`
      * field, then checks that the key is registered and that the cryptographic signature is
-     * valid. Validity range enforcement is handled upstream: by {isValidSignatureWithSender}
-     * for ERC-1271 calls and by the EntryPoint (via packed `validationData`) for user operations.
+     * valid. Does not validate the {validity} range.
      *
      * See {_tryDecodeSignature} for the encoding details.
+     *
+     * NOTE: Does not validate the {validity} range.
      */
-    function _rawERC7579Validation(
+    function _validateSessionKey(
         address account,
         bytes32 hash,
         bytes calldata signature
-    ) internal view virtual override returns (bool) {
+    ) internal view virtual returns (bool) {
         (bool success, bytes calldata key, bytes calldata keySignature) = _tryDecodeSignature(signature);
-        // Validity is enforced manually in `isValidSignatureWithSender` while `_validateUserOp` lets the entrypoint handle it.
+        // Validity is enforced by the caller (e.g. ERC7579SessionKeysValidator).
         return success && isKey(account, key) && SignatureChecker.isValidSignatureNow(key, hash, keySignature);
     }
 
@@ -405,7 +360,7 @@ abstract contract ERC7579SessionKeyValidator is ERC7579Validator, Nonces, IERC63
      * * `initData` must be at least 192 bytes (6 × 32 bytes for the 3 ABI offsets and 3 array lengths).
      * * All offsets must point within the `initData` bounds.
      *
-     * Reverts with {ERC7579SessionKeysInvalidInitData} if the encoding is invalid.
+     * Reverts with {ERC7579SessionKeyssInvalidInitData} if the encoding is invalid.
      */
     function _decodeKeysInitData(
         bytes calldata initData
@@ -413,7 +368,7 @@ abstract contract ERC7579SessionKeyValidator is ERC7579Validator, Nonces, IERC63
         // Minimum length:
         // keys offset (32 bytes) + starts offset (32 bytes) + ends offset (32 bytes) +
         // keys length (32 bytes) + starts length (32 bytes) + ends length (32 bytes) = 192 bytes
-        require(initData.length > 0xbf, ERC7579SessionKeysInvalidInitData());
+        require(initData.length > 0xbf, ERC7579SessionKeyssInvalidInitData());
 
         uint256 keysOffset = uint256(bytes32(initData[0x00:0x20]));
         uint256 startsOffset = uint256(bytes32(initData[0x20:0x40]));
@@ -427,7 +382,7 @@ abstract contract ERC7579SessionKeyValidator is ERC7579Validator, Nonces, IERC63
             keysDataOffset <= initData.length &&
                 startsDataOffset <= initData.length &&
                 endsDataOffset <= initData.length,
-            ERC7579SessionKeysInvalidInitData()
+            ERC7579SessionKeyssInvalidInitData()
         );
 
         uint256 keysLength = uint256(bytes32(initData[keysOffset:keysDataOffset]));
@@ -438,7 +393,7 @@ abstract contract ERC7579SessionKeyValidator is ERC7579Validator, Nonces, IERC63
             keysDataOffset + keysLength * 0x20 <= initData.length &&
                 startsDataOffset + startsLength * 0x20 <= initData.length &&
                 endsDataOffset + endsLength * 0x20 <= initData.length,
-            ERC7579SessionKeysInvalidInitData()
+            ERC7579SessionKeyssInvalidInitData()
         );
 
         assembly ("memory-safe") {
