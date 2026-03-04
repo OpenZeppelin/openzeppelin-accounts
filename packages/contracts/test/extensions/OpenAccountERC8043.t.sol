@@ -2,8 +2,7 @@
 pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
-import {OpenAccountERC8043} from "../../src/extensions/OpenAccountERC8043.sol";
-import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {OpenAccountFactory, OpenAccountImplementation} from "../../src/OpenAccountFactory.sol";
 import {
     ERC7579Utils,
     Execution,
@@ -20,10 +19,6 @@ import {ERC7579ValidatorMock} from "../../src/mocks/modules/ERC7579Mock.sol";
 import {CallReceiverMock} from "../../src/mocks/CallReceiverMock.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
-contract OpenAccountERC8043Mock is OpenAccountERC8043 {
-    constructor() EIP712("MyAccount", "1") {}
-}
-
 contract OpenAccountERC8043Test is Test {
     using ERC7579Utils for *;
     using ERC4337Utils for PackedUserOperation;
@@ -38,7 +33,9 @@ contract OpenAccountERC8043Test is Test {
 
     uint256 private _initialValidatorPrivateKey = 0x1234;
     address private _initialValidatorSigner = vm.addr(_initialValidatorPrivateKey);
-    OpenAccountERC8043 private _account;
+
+    OpenAccountFactory private _factory;
+    OpenAccountImplementation private _account;
     ERC7579ValidatorMock private _initialValidator;
     ERC7579ValidatorMock private _newValidator;
 
@@ -50,14 +47,20 @@ contract OpenAccountERC8043Test is Test {
     function setUp() public {
         _target = new CallReceiverMock();
 
-        _account = new OpenAccountERC8043Mock();
+        _factory = new OpenAccountFactory();
         _initialValidator = new ERC7579ValidatorMock();
+
         (
             uint256[] memory moduleTypeIds,
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(address(_initialValidator), _initialValidatorSigner);
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+
+        _account = OpenAccountImplementation(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
         vm.deal(address(_account), MAX_ETH);
 
         _newValidator = new ERC7579ValidatorMock();
@@ -101,7 +104,6 @@ contract OpenAccountERC8043Test is Test {
         );
 
         PackedUserOperation memory userOp = _prepareUserOperation(nonce, initCode);
-
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(
             _newValidatorPrivateKey,
             IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp)
@@ -182,7 +184,6 @@ contract OpenAccountERC8043Test is Test {
 
         uint256 nonce = _prepareNonce(address(_newValidator));
         bytes memory initData = abi.encodePacked(_newValidatorSigner);
-        // Build initCode signed with the wrong key — installationSignature will be invalid
         bytes memory initCode = _buildEnableModeInitCode(nonce, address(_newValidator), initData, wrongKey);
 
         PackedUserOperation memory userOp = _prepareUserOperation(nonce, initCode);
@@ -216,7 +217,6 @@ contract OpenAccountERC8043Test is Test {
         );
 
         PackedUserOperation memory userOp = _prepareUserOperation(nonce, initCode);
-        // Sign userOp with the wrong key — validator will reject it
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(
             wrongKey,
             IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp)
@@ -235,7 +235,7 @@ contract OpenAccountERC8043Test is Test {
     function testEnableModeWithMalformedInitCode(address bundler, bytes memory malformedPayload) public {
         vm.assume(bundler.code.length == 0);
 
-        // Prepend the magic so enable mode is triggered, but ABI decoding will fail
+        // Prepend the magic so enable mode is triggered, but ABI decoding will fail.
         bytes memory initCode = abi.encodePacked(ENABLE_MODE_MAGIC_VALUE, malformedPayload);
 
         PackedUserOperation memory userOp = _prepareUserOperation(_prepareNonce(address(_newValidator)), initCode);
@@ -299,7 +299,7 @@ contract OpenAccountERC8043Test is Test {
         assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(validator3), bytes("")));
     }
 
-    function _buildMultiModuleEnableModeInitCode(
+    function _buildEnableModeInitCode(
         uint256 nonce,
         address validator2,
         address validator3
@@ -378,7 +378,7 @@ contract OpenAccountERC8043Test is Test {
         );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(installationSignerKey, typedDataHash);
 
-        // Prefix with the validator module address so the account's isValidSignature routes correctly.
+        // Prefix with the validator module address so the account's `isValidSignature` routes correctly.
         bytes memory installationSignature = abi.encodePacked(address(_initialValidator), abi.encodePacked(r, s, v));
 
         return
@@ -386,6 +386,10 @@ contract OpenAccountERC8043Test is Test {
                 ENABLE_MODE_MAGIC_VALUE,
                 abi.encode(moduleTypeIds, modules, initDatas, installationSignature)
             );
+    }
+
+    function _prepareNonce(address validator) internal pure returns (uint256) {
+        return uint256(uint160(validator)) << 96;
     }
 
     function _prepareUserOperation(
