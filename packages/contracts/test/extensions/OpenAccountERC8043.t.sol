@@ -299,7 +299,7 @@ contract OpenAccountERC8043Test is Test {
         assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(validator3), bytes("")));
     }
 
-    function _buildEnableModeInitCode(
+    function _buildMultiModuleEnableModeInitCode(
         uint256 nonce,
         address validator2,
         address validator3
@@ -386,10 +386,6 @@ contract OpenAccountERC8043Test is Test {
                 ENABLE_MODE_MAGIC_VALUE,
                 abi.encode(moduleTypeIds, modules, initDatas, installationSignature)
             );
-    }
-
-    function _prepareNonce(address validator) internal pure returns (uint256) {
-        return uint256(uint160(validator)) << 96;
     }
 
     function _prepareUserOperation(
