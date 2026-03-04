@@ -185,16 +185,7 @@ contract ERC7579SocialRecoveryExecutorTest is Test {
         vm.stopPrank();
     }
 
-    function testRecovery(
-        uint32 delay,
-        uint32 expiration,
-        uint64 threshold,
-        uint256 guardiansAmount,
-        bytes32 salt,
-        uint256 arg1,
-        uint256 arg2,
-        address executor
-    ) public {
+    function testRecovery(uint32 delay, uint32 expiration, uint64 threshold, uint256 guardiansAmount) public {
         guardiansAmount = bound(guardiansAmount, 1, 10);
         (uint256[] memory guardianKeys, bytes[] memory guardians, uint64[] memory weights) = _buildGuardians(
             guardiansAmount
@@ -202,39 +193,48 @@ contract ERC7579SocialRecoveryExecutorTest is Test {
         threshold = uint64(bound(threshold, 1, _calculateTotalWeight(weights)));
         _account = _createAndInstall(delay, expiration, threshold, guardians, weights);
 
-        (bytes memory calldata_, bytes32 mode) = _prepareDataAndMode(arg1, arg2);
+        (bytes memory calldata_, bytes32 mode) = _prepareDataAndMode(1, 2);
 
         bytes memory multisignature = _createMultisignature(
             SCHEDULE_RECOVER_TYPEHASH,
-            salt,
+            bytes32(0),
+            mode,
+            calldata_,
+            guardians,
+            guardianKeys
+        );
+        bytes memory cancelMultisignature = _createMultisignature(
+            CANCEL_RECOVER_TYPEHASH,
+            bytes32(0),
             mode,
             calldata_,
             guardians,
             guardianKeys
         );
 
-        (delay, , ) = _executor.getDelay(address(_account));
         vm.expectEmit(true, true, true, true);
-        bytes32 operationId = _executor.hashOperation(address(_account), salt, mode, calldata_);
+        bytes32 operationId = _executor.hashOperation(address(_account), bytes32(0), mode, calldata_);
+        uint48 executableAt = uint48(block.timestamp + delay);
+        uint48 expiresAt = uint48(executableAt + expiration);
         emit ERC7579DelayedExecutor.ERC7579ExecutorOperationScheduled(
             address(_account),
             operationId,
-            salt,
+            bytes32(0),
             mode,
             calldata_,
-            uint48(block.timestamp + delay)
+            executableAt
         );
-        _executor.startRecovery(address(_account), salt, mode, calldata_, multisignature);
+        _executor.startRecovery(address(_account), bytes32(0), mode, calldata_, multisignature);
 
         bool ready = delay == 0;
-        bool expired = expiration == 0 && ready;
+        bool expiresImmediately = expiration == 0;
 
         ERC7579DelayedExecutor.OperationState state = _executor.state(operationId);
         assertEq(
             uint8(state),
             !ready
                 ? uint8(ERC7579DelayedExecutor.OperationState.Scheduled)
-                : !expired
+                : (!expiresImmediately || !ready)
                     ? uint8(ERC7579DelayedExecutor.OperationState.Ready)
                     : uint8(ERC7579DelayedExecutor.OperationState.Expired)
         );
@@ -248,7 +248,7 @@ contract ERC7579SocialRecoveryExecutorTest is Test {
                 1 << uint8(ERC7579DelayedExecutor.OperationState.Unknown)
             )
         );
-        _executor.startRecovery(address(_account), salt, mode, calldata_, multisignature);
+        _executor.startRecovery(address(_account), bytes32(0), mode, calldata_, multisignature);
 
         if (!ready) {
             // Try to execute before delay passes
@@ -260,18 +260,17 @@ contract ERC7579SocialRecoveryExecutorTest is Test {
                     1 << uint8(ERC7579DelayedExecutor.OperationState.Ready)
                 )
             );
-            _executor.executeRecovery(address(_account), salt, mode, calldata_);
+            _executor.executeRecovery(address(_account), bytes32(0), mode, calldata_);
         }
 
         uint256 snapshot = vm.snapshotState();
 
-        vm.warp(block.timestamp + delay);
+        vm.warp(executableAt);
 
         // Try to execute after delay passes
-        if (expiration > 0) {
-            vm.expectCall(address(_target), abi.encodeCall(CallReceiverMock.mockFunctionWithArgs, (arg1, arg2)));
-            vm.prank(executor); // Anyone can execute the recovery
-            _executor.executeRecovery(address(_account), salt, mode, calldata_);
+        if (!expiresImmediately) {
+            vm.expectCall(address(_target), abi.encodeCall(CallReceiverMock.mockFunctionWithArgs, (1, 2)));
+            _executor.executeRecovery(address(_account), bytes32(0), mode, calldata_); // Anyone can execute the recovery
             assertEq(uint8(_executor.state(operationId)), uint8(ERC7579DelayedExecutor.OperationState.Executed));
             // Try to execute again
             vm.expectRevert(
@@ -282,7 +281,7 @@ contract ERC7579SocialRecoveryExecutorTest is Test {
                     1 << uint8(ERC7579DelayedExecutor.OperationState.Ready)
                 )
             );
-            _executor.executeRecovery(address(_account), salt, mode, calldata_);
+            _executor.executeRecovery(address(_account), bytes32(0), mode, calldata_);
         } else {
             vm.expectRevert(
                 abi.encodeWithSelector(
@@ -292,12 +291,12 @@ contract ERC7579SocialRecoveryExecutorTest is Test {
                     1 << uint8(ERC7579DelayedExecutor.OperationState.Ready)
                 )
             );
-            _executor.executeRecovery(address(_account), salt, mode, calldata_);
+            _executor.executeRecovery(address(_account), bytes32(0), mode, calldata_);
         }
 
         vm.revertTo(snapshot);
 
-        vm.warp(block.timestamp + delay + expiration);
+        vm.warp(expiresAt);
 
         // Try to execute after expiration
         vm.expectRevert(
@@ -308,16 +307,16 @@ contract ERC7579SocialRecoveryExecutorTest is Test {
                 1 << uint8(ERC7579DelayedExecutor.OperationState.Ready)
             )
         );
-        _executor.executeRecovery(address(_account), salt, mode, calldata_);
+        _executor.executeRecovery(address(_account), bytes32(0), mode, calldata_);
 
-        if (expiration > 0) {
+        if (!expiresImmediately) {
             vm.revertTo(snapshot);
 
             // Cancel by the account
             vm.expectEmit(true, true, true, true);
             emit ERC7579DelayedExecutor.ERC7579ExecutorOperationCanceled(address(_account), operationId);
             vm.prank(address(_account));
-            _executor.cancelRecovery(address(_account), salt, mode, calldata_);
+            _executor.cancelRecovery(address(_account), bytes32(0), mode, calldata_);
             assertEq(uint8(_executor.state(operationId)), uint8(ERC7579DelayedExecutor.OperationState.Canceled));
 
             vm.revertTo(snapshot);
@@ -325,13 +324,7 @@ contract ERC7579SocialRecoveryExecutorTest is Test {
             // Cancel by the guardians
             vm.expectEmit(true, true, true, true);
             emit ERC7579DelayedExecutor.ERC7579ExecutorOperationCanceled(address(_account), operationId);
-            _executor.cancelRecovery(
-                address(_account),
-                salt,
-                mode,
-                calldata_,
-                _createMultisignature(CANCEL_RECOVER_TYPEHASH, salt, mode, calldata_, guardians, guardianKeys)
-            );
+            _executor.cancelRecovery(address(_account), bytes32(0), mode, calldata_, cancelMultisignature);
             assertEq(uint8(_executor.state(operationId)), uint8(ERC7579DelayedExecutor.OperationState.Canceled));
 
             // Try to cancel again
@@ -345,7 +338,7 @@ contract ERC7579SocialRecoveryExecutorTest is Test {
                 )
             );
             vm.prank(address(_account));
-            _executor.cancelRecovery(address(_account), salt, mode, calldata_);
+            _executor.cancelRecovery(address(_account), bytes32(0), mode, calldata_);
         }
 
         vm.deleteStateSnapshot(snapshot);
