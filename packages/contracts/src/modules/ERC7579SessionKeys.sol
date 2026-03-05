@@ -22,17 +22,9 @@ import {Calldata} from "@openzeppelin/contracts/utils/Calldata.sol";
  * The key is encoded in the `signature` field of the user operations and ERC-1271 requests for
  * identification and cryptographic verification. See {_tryDecodeSignature} for the encoding details.
  *
- * This module provides session key management through the {_validateSessionKey} internal
- * function. Concrete implementations should attach it to validation flows such as
+ * This module provides session key management through the {_validateSessionKey}  and
+ * {isValid} internal functions. Concrete implementations should attach it to validation flows such as
  * {ERC7579Validator-_rawERC7579Validation}.
- *
- * WARNING: Overriding {clock} to return a value that is neither timestamp nor
- * block number will cause {_validateUserOp} to return {ERC4337Utils-SIG_VALIDATION_FAILED}
- * unconditionally, since the EntryPoint only supports timestamp-based and block-based validity
- * ranges. Consider this constraint when subclasses override the clock.
- *
- * TIP: Set `starts[i]` to `0` during installation to activate the key immediately.
- * TIP: Set `ends[i]` to `0` during installation to register a key with no expiry.
  */
 abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
     using EnumerableSet for EnumerableSet.BytesSet;
