@@ -9,10 +9,10 @@ import {Calldata} from "@openzeppelin/contracts/utils/Calldata.sol";
 
 /**
  * @dev Extension of `OpenAccount` that implements atomic module installation and usage through
- * _enable mode_ following https://eip.tools/eip/8043[ERC-8043].
+ * _init mode_ following https://eip.tools/eip/8043[ERC-8043].
  *
  * This extension allows installing and using one or more modules within the same user operation.
- * Enable mode is triggered when `userOp.initCode` starts with the 4-byte magic value `0x80438043`.
+ * Init mode is triggered when `userOp.initCode` starts with the 4-byte magic value `0x80438043`.
  * The remaining bytes of `initCode` carry the ABI-encoded module installation payload and an
  * EIP-712 installation signature from the account owner.
  *
@@ -26,14 +26,14 @@ import {Calldata} from "@openzeppelin/contracts/utils/Calldata.sol";
  * NOTE: Requires EntryPoint v0.9 or later.
  */
 abstract contract OpenAccountERC8043 is OpenAccount {
-    bytes4 private constant ENABLE_MODE_MAGIC_VALUE = 0x80438043;
-    bytes32 private constant ENABLE_MODULES_TYPEHASH =
-        keccak256("EnableModules(uint256[] moduleTypeIds,address[] modules,bytes[] initDatas,uint256 nonce)");
+    bytes4 private constant INIT_MODE_MAGIC_VALUE = 0x80438043;
+    bytes32 private constant INIT_MODULES_TYPEHASH =
+        keccak256("InitModules(uint256[] moduleTypeIds,address[] modules,bytes[] initDatas,uint256 nonce)");
 
     /**
-     * @dev Validates a user operation, checking for the enable mode magic value in `initCode`.
+     * @dev Validates a user operation, checking for the init mode magic value in `initCode`.
      *
-     * If `userOp.initCode` starts with `ENABLE_MODE_MAGIC_VALUE`, enters enable mode:
+     * If `userOp.initCode` starts with `INIT_MODE_MAGIC_VALUE`, enters init mode:
      *
      * 1. Decodes module installation data from `userOp.initCode[4:]`
      * 2. Validates the EIP-712 `installationSignature` over the module installation parameters
@@ -47,14 +47,14 @@ abstract contract OpenAccountERC8043 is OpenAccount {
         bytes32 userOpHash,
         bytes calldata signature
     ) internal virtual override returns (uint256) {
-        if (userOp.initCode.length >= 4 && bytes4(userOp.initCode[:4]) == ENABLE_MODE_MAGIC_VALUE) {
-            return _validateEnableMode(userOp, userOpHash);
+        if (userOp.initCode.length >= 4 && bytes4(userOp.initCode[:4]) == INIT_MODE_MAGIC_VALUE) {
+            return _validateInitMode(userOp, userOpHash);
         }
         return super._validateUserOp(userOp, userOpHash, signature);
     }
 
     /**
-     * @dev Validates and installs modules in enable mode, then validates the user operation.
+     * @dev Validates and installs modules in init mode, then validates the user operation.
      *
      * Decodes `(moduleTypeIds, modules, initDatas, installationSignature)` from
      * `userOp.initCode[4:]`. Validates the EIP-712 `installationSignature` from the account
@@ -66,9 +66,9 @@ abstract contract OpenAccountERC8043 is OpenAccount {
      * abi.encode(uint256[] moduleTypeIds, address[] modules, bytes[] initDatas, bytes installationSignature)
      * ```
      *
-     * Where `installationSignature` is an EIP-712 signature over the {EnableModules} struct.
+     * Where `installationSignature` is an EIP-712 signature over the {InitModules} struct.
      */
-    function _validateEnableMode(
+    function _validateInitMode(
         PackedUserOperation calldata userOp,
         bytes32 userOpHash
     ) internal virtual returns (uint256) {
@@ -113,10 +113,10 @@ abstract contract OpenAccountERC8043 is OpenAccount {
     }
 
     /**
-     * @dev Computes the struct hash for the EnableModules EIP-712 message.
+     * @dev Computes the struct hash for the InitModules EIP-712 message.
      *
      * ```
-     * EnableModules(uint256[] moduleTypeIds, address[] modules, bytes[] initDatas, uint256 nonce)
+     * InitModules(uint256[] moduleTypeIds, address[] modules, bytes[] initDatas, uint256 nonce)
      * ```
      *
      * Where `nonce` is `userOp.nonce`. Caller must wrap with `_hashTypedDataV4` before
@@ -136,7 +136,7 @@ abstract contract OpenAccountERC8043 is OpenAccount {
         return
             keccak256(
                 abi.encode(
-                    ENABLE_MODULES_TYPEHASH,
+                    INIT_MODULES_TYPEHASH,
                     keccak256(abi.encodePacked(moduleTypeIds)),
                     keccak256(abi.encodePacked(modules)),
                     keccak256(abi.encodePacked(initDataHashes)),

@@ -25,9 +25,9 @@ contract OpenAccountERC8043Test is Test {
     using Strings for *;
 
     uint256 private constant MAX_ETH = type(uint128).max;
-    bytes4 private constant ENABLE_MODE_MAGIC_VALUE = 0x80438043;
-    bytes32 private constant ENABLE_MODULES_TYPEHASH =
-        keccak256("EnableModules(uint256[] moduleTypeIds,address[] modules,bytes[] initDatas,uint256 nonce)");
+    bytes4 private constant INIT_MODE_MAGIC_VALUE = 0x80438043;
+    bytes32 private constant INIT_MODULES_TYPEHASH =
+        keccak256("InitModules(uint256[] moduleTypeIds,address[] modules,bytes[] initDatas,uint256 nonce)");
 
     CallReceiverMock private _target;
 
@@ -91,12 +91,12 @@ contract OpenAccountERC8043Test is Test {
         );
     }
 
-    function testEnableMode(address bundler) public {
+    function testInitMode(address bundler) public {
         vm.assume(bundler.code.length == 0);
 
         uint256 nonce = _prepareNonce(address(_newValidator));
         bytes memory initData = abi.encodePacked(_newValidatorSigner);
-        bytes memory initCode = _buildEnableModeInitCode(
+        bytes memory initCode = _buildInitModeInitCode(
             nonce,
             address(_newValidator),
             initData,
@@ -121,12 +121,12 @@ contract OpenAccountERC8043Test is Test {
         assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
     }
 
-    function testEnableModeWithBatchExecution(address bundler, uint256 argA, uint256 argB) public {
+    function testInitModeWithBatchExecution(address bundler, uint256 argA, uint256 argB) public {
         vm.assume(bundler.code.length == 0);
 
         uint256 nonce = _prepareNonce(address(_newValidator));
         bytes memory initData = abi.encodePacked(_newValidatorSigner);
-        bytes memory initCode = _buildEnableModeInitCode(
+        bytes memory initCode = _buildInitModeInitCode(
             nonce,
             address(_newValidator),
             initData,
@@ -177,14 +177,14 @@ contract OpenAccountERC8043Test is Test {
         assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
     }
 
-    function testEnableModeWithInvalidInstallationSignature(address bundler, uint256 wrongKey) public {
+    function testInitModeWithInvalidInstallationSignature(address bundler, uint256 wrongKey) public {
         vm.assume(bundler.code.length == 0);
         vm.assume(wrongKey != _initialValidatorPrivateKey);
         wrongKey = bound(wrongKey, 1, 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141 - 1);
 
         uint256 nonce = _prepareNonce(address(_newValidator));
         bytes memory initData = abi.encodePacked(_newValidatorSigner);
-        bytes memory initCode = _buildEnableModeInitCode(nonce, address(_newValidator), initData, wrongKey);
+        bytes memory initCode = _buildInitModeInitCode(nonce, address(_newValidator), initData, wrongKey);
 
         PackedUserOperation memory userOp = _prepareUserOperation(nonce, initCode);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(
@@ -202,14 +202,14 @@ contract OpenAccountERC8043Test is Test {
         assertFalse(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
     }
 
-    function testEnableModeWithInvalidUserOpSignature(address bundler, uint256 wrongKey) public {
+    function testInitModeWithInvalidUserOpSignature(address bundler, uint256 wrongKey) public {
         vm.assume(bundler.code.length == 0);
         vm.assume(wrongKey != _newValidatorPrivateKey);
         wrongKey = bound(wrongKey, 1, 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141 - 1);
 
         uint256 nonce = _prepareNonce(address(_newValidator));
         bytes memory initData = abi.encodePacked(_newValidatorSigner);
-        bytes memory initCode = _buildEnableModeInitCode(
+        bytes memory initCode = _buildInitModeInitCode(
             nonce,
             address(_newValidator),
             initData,
@@ -232,11 +232,11 @@ contract OpenAccountERC8043Test is Test {
         assertFalse(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
     }
 
-    function testEnableModeWithMalformedInitCode(address bundler, bytes memory malformedPayload) public {
+    function testInitModeWithMalformedInitCode(address bundler, bytes memory malformedPayload) public {
         vm.assume(bundler.code.length == 0);
 
-        // Prepend the magic so enable mode is triggered, but ABI decoding will fail.
-        bytes memory initCode = abi.encodePacked(ENABLE_MODE_MAGIC_VALUE, malformedPayload);
+        // Prepend the magic so init mode is triggered, but ABI decoding will fail.
+        bytes memory initCode = abi.encodePacked(INIT_MODE_MAGIC_VALUE, malformedPayload);
 
         PackedUserOperation memory userOp = _prepareUserOperation(_prepareNonce(address(_newValidator)), initCode);
         userOp.signature = bytes("irrelevant");
@@ -248,10 +248,10 @@ contract OpenAccountERC8043Test is Test {
         ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
     }
 
-    function testNormalOperationWithoutEnableMode(address bundler) public {
+    function testNormalOperationWithoutInitMode(address bundler) public {
         vm.assume(bundler.code.length == 0);
 
-        // Empty initCode means enable mode is not triggered; normal validation applies.
+        // Empty initCode means init mode is not triggered; normal validation applies.
         uint256 nonce = _prepareNonce(address(_initialValidator));
         PackedUserOperation memory userOp = _prepareUserOperation(nonce, bytes(""));
 
@@ -270,14 +270,14 @@ contract OpenAccountERC8043Test is Test {
         assertFalse(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
     }
 
-    function testEnableModeWithMultipleModules(address bundler) public {
+    function testInitModeWithMultipleModules(address bundler) public {
         vm.assume(bundler.code.length == 0);
 
         ERC7579ValidatorMock validator2 = new ERC7579ValidatorMock();
         ERC7579ValidatorMock validator3 = new ERC7579ValidatorMock();
 
         uint256 nonce = _prepareNonce(address(_newValidator));
-        bytes memory initCode = _buildMultiModuleEnableModeInitCode(nonce, address(validator2), address(validator3));
+        bytes memory initCode = _buildMultiModuleInitModeInitCode(nonce, address(validator2), address(validator3));
 
         PackedUserOperation memory userOp = _prepareUserOperation(nonce, initCode);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(
@@ -299,7 +299,7 @@ contract OpenAccountERC8043Test is Test {
         assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(validator3), bytes("")));
     }
 
-    function _buildMultiModuleEnableModeInitCode(
+    function _buildMultiModuleInitModeInitCode(
         uint256 nonce,
         address validator2,
         address validator3
@@ -326,7 +326,7 @@ contract OpenAccountERC8043Test is Test {
             _accountDomainSeparator,
             keccak256(
                 abi.encode(
-                    ENABLE_MODULES_TYPEHASH,
+                    INIT_MODULES_TYPEHASH,
                     keccak256(abi.encodePacked(moduleTypeIds)),
                     keccak256(abi.encodePacked(modules)),
                     keccak256(abi.encodePacked(initDataHashes)),
@@ -339,7 +339,7 @@ contract OpenAccountERC8043Test is Test {
 
         return
             abi.encodePacked(
-                ENABLE_MODE_MAGIC_VALUE,
+                INIT_MODE_MAGIC_VALUE,
                 abi.encode(moduleTypeIds, modules, initDatas, installationSignature)
             );
     }
@@ -348,7 +348,7 @@ contract OpenAccountERC8043Test is Test {
         return uint256(uint160(validator)) << 96;
     }
 
-    function _buildEnableModeInitCode(
+    function _buildInitModeInitCode(
         uint256 nonce,
         address newValidator,
         bytes memory initData,
@@ -368,7 +368,7 @@ contract OpenAccountERC8043Test is Test {
             _accountDomainSeparator,
             keccak256(
                 abi.encode(
-                    ENABLE_MODULES_TYPEHASH,
+                    INIT_MODULES_TYPEHASH,
                     keccak256(abi.encodePacked(moduleTypeIds)),
                     keccak256(abi.encodePacked(modules)),
                     keccak256(abi.encodePacked(initDataHashes)),
@@ -383,7 +383,7 @@ contract OpenAccountERC8043Test is Test {
 
         return
             abi.encodePacked(
-                ENABLE_MODE_MAGIC_VALUE,
+                INIT_MODE_MAGIC_VALUE,
                 abi.encode(moduleTypeIds, modules, initDatas, installationSignature)
             );
     }
