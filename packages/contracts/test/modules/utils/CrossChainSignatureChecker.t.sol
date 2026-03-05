@@ -17,7 +17,6 @@ contract CrossChainSignatureCheckerTest is Test {
         external
         pure
         returns (
-            bool success,
             bytes1 fields,
             uint16 structIndex,
             address application,
@@ -53,7 +52,6 @@ contract CrossChainSignatureCheckerTest is Test {
         bytes memory crossChainSignature
     ) public view {
         (
-            bool success,
             bytes1 decodedFields,
             uint16 decodedStructIndex,
             address decodedApplication,
@@ -68,7 +66,6 @@ contract CrossChainSignatureCheckerTest is Test {
                     crossChainSignature
                 )
             );
-        assertTrue(success);
         assertEq(fields, decodedFields);
         assertEq(structIndex, decodedStructIndex);
         assertEq(application, decodedApplication);
@@ -78,7 +75,6 @@ contract CrossChainSignatureCheckerTest is Test {
 
     function testParseCrossChainSignatureArbitraryData(bytes memory data) public view {
         (
-            bool success,
             bytes1 fields,
             uint16 structIndex,
             address application,
@@ -92,14 +88,12 @@ contract CrossChainSignatureCheckerTest is Test {
             bytes32[] memory decodedStructsArray,
             bytes memory decodedCrossChainSignature
         ) {
-            assertTrue(success);
             assertEq(fields, decodedFields);
             assertEq(structIndex, decodedStructIndex);
             assertEq(application, decodedApplication);
             assertEq(structsArray, decodedStructsArray);
             assertEq(crossChainSignature, decodedCrossChainSignature);
         } catch {
-            assertFalse(success);
             assertEq(fields, 0);
             assertEq(structIndex, 0);
             assertEq(application, address(0));
@@ -203,13 +197,13 @@ contract CrossChainSignatureCheckerTest is Test {
         string memory name;
         string memory version;
         (, name, version, , , , ) = IERC5267(address(apps[0])).eip712Domain(); // All apps share the same name and version
+        bytes32 domainSeparator = fields.toDomainSeparator(name, version, 0, address(0), bytes32(0));
 
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
-            signerPrivateKey,
-            fields.toDomainSeparator(name, version, 0, address(0), bytes32(0)).toTypedDataHash(
-                keccak256(abi.encode(apps[0].CROSS_CHAIN_SET_VALUE_TYPEHASH(), keccak256(abi.encodePacked(operations))))
-            )
+        bytes32 structHash = keccak256(
+            abi.encode(apps[0].CROSS_CHAIN_SET_VALUE_TYPEHASH(), keccak256(abi.encodePacked(operations)))
         );
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerPrivateKey, domainSeparator.toTypedDataHash(structHash));
 
         return (vm.addr(signerPrivateKey), abi.encodePacked(r, s, v), operations);
     }
