@@ -251,9 +251,9 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
             bytes calldata key = keys_[i];
             require(_sessionKeys[account][installation_].add(key), ERC7579SessionKeyssAlreadyRegisteredKey(key));
             bytes32 keyId = _keyId(key);
+            Validity storage validity_ = _validities[account][installation_][keyId];
             uint48 start = uint48(Math.ternary(starts[i] == 0, clock(), starts[i])); // Safe cast. Both are uint48.
             uint48 end = uint48(Math.ternary(ends[i] == 0, type(uint48).max, ends[i])); // Safe cast. Both are uint48.
-            Validity storage validity_ = _validities[account][installation_][keyId];
             validity_.from = start;
             validity_.until = end;
             emit ERC7579SessionKeyssERC7913KeySet(account, key, start, end);
@@ -371,41 +371,49 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
         // keys length (32 bytes) + starts length (32 bytes) + ends length (32 bytes) = 192 bytes
         require(initData.length > 0xbf, ERC7579SessionKeyssInvalidInitData());
 
+        return (
+            _decodeKeysInitDataKeys(initData),
+            _decodeKeysInitDataStarts(initData),
+            _decodeKeysInitDataEnds(initData)
+        );
+    }
+
+    function _decodeKeysInitDataKeys(bytes calldata initData) private pure returns (bytes[] calldata keys_) {
         uint256 keysOffset = uint256(bytes32(initData[0x00:0x20]));
-        uint256 startsOffset = uint256(bytes32(initData[0x20:0x40]));
-        uint256 endsOffset = uint256(bytes32(initData[0x40:0x60]));
-
         uint256 keysDataOffset = keysOffset + 0x20;
-        uint256 startsDataOffset = startsOffset + 0x20;
-        uint256 endsDataOffset = endsOffset + 0x20;
-
-        require(
-            keysDataOffset <= initData.length &&
-                startsDataOffset <= initData.length &&
-                endsDataOffset <= initData.length,
-            ERC7579SessionKeyssInvalidInitData()
-        );
-
+        require(keysDataOffset <= initData.length, ERC7579SessionKeyssInvalidInitData());
         uint256 keysLength = uint256(bytes32(initData[keysOffset:keysDataOffset]));
-        uint256 startsLength = uint256(bytes32(initData[startsOffset:startsDataOffset]));
-        uint256 endsLength = uint256(bytes32(initData[endsOffset:endsDataOffset]));
-
-        require(
-            keysDataOffset + keysLength * 0x20 <= initData.length &&
-                startsDataOffset + startsLength * 0x20 <= initData.length &&
-                endsDataOffset + endsLength * 0x20 <= initData.length,
-            ERC7579SessionKeyssInvalidInitData()
-        );
-
+        require(keysDataOffset + keysLength * 0x20 <= initData.length, ERC7579SessionKeyssInvalidInitData());
         assembly ("memory-safe") {
             keys_.offset := add(initData.offset, keysDataOffset)
             keys_.length := keysLength
+        }
+        return keys_;
+    }
+
+    function _decodeKeysInitDataStarts(bytes calldata initData) private pure returns (uint48[] calldata starts) {
+        uint256 startsOffset = uint256(bytes32(initData[0x20:0x40]));
+        uint256 startsDataOffset = startsOffset + 0x20;
+        require(startsDataOffset <= initData.length, ERC7579SessionKeyssInvalidInitData());
+        uint256 startsLength = uint256(bytes32(initData[startsOffset:startsDataOffset]));
+        require(startsDataOffset + startsLength * 0x20 <= initData.length, ERC7579SessionKeyssInvalidInitData());
+        assembly ("memory-safe") {
             starts.offset := add(initData.offset, startsDataOffset)
             starts.length := startsLength
+        }
+        return starts;
+    }
+
+    function _decodeKeysInitDataEnds(bytes calldata initData) private pure returns (uint48[] calldata ends) {
+        uint256 endsOffset = uint256(bytes32(initData[0x40:0x60]));
+        uint256 endsDataOffset = endsOffset + 0x20;
+        require(endsDataOffset <= initData.length, ERC7579SessionKeyssInvalidInitData());
+        uint256 endsLength = uint256(bytes32(initData[endsOffset:endsDataOffset]));
+        require(endsDataOffset + endsLength * 0x20 <= initData.length, ERC7579SessionKeyssInvalidInitData());
+        assembly ("memory-safe") {
             ends.offset := add(initData.offset, endsDataOffset)
             ends.length := endsLength
         }
-
-        return (keys_, starts, ends);
+        return ends;
     }
 }
