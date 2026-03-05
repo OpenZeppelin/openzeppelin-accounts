@@ -22,7 +22,7 @@ import {Calldata} from "@openzeppelin/contracts/utils/Calldata.sol";
  * The key is encoded in the `signature` field of the user operations and ERC-1271 requests for
  * identification and cryptographic verification. See {_tryDecodeSignature} for the encoding details.
  *
- * This module provides session key management through the {_validateSessionKey}  and
+ * This module provides session key management through the {_validateSessionKey} and
  * {isValid} internal functions. Concrete implementations should attach it to validation flows such as
  * {ERC7579Validator-_rawERC7579Validation}.
  */
