@@ -2,8 +2,7 @@
 pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
-import {OpenAccountEnableMode} from "../../src/extensions/OpenAccountEnableMode.sol";
-import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {OpenAccountFactory, OpenAccountImplementation} from "../../src/OpenAccountFactory.sol";
 import {
     ERC7579Utils,
     Execution,
@@ -20,27 +19,23 @@ import {ERC7579ValidatorMock} from "../../src/mocks/modules/ERC7579Mock.sol";
 import {CallReceiverMock} from "../../src/mocks/CallReceiverMock.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
-contract OpenAccountEnableModeMock is OpenAccountEnableMode {
-    constructor() EIP712("MyAccount", "1") {}
-}
-
-contract OpenAccountEnableModeTest is Test {
+contract OpenAccountERC8043Test is Test {
     using ERC7579Utils for *;
     using ERC4337Utils for PackedUserOperation;
     using Strings for *;
 
     uint256 private constant MAX_ETH = type(uint128).max;
-    bytes1 private constant ENABLE_MODE_PREFIX = 0x01;
-    bytes32 private constant ENABLE_MODULES_TYPEHASH =
-        keccak256("EnableModules(uint256[] moduleTypeIds,address[] modules,bytes[] initDatas,uint256 nonce)");
-    string private constant NAME = "MyAccount";
-    string private constant VERSION = "1";
+    bytes4 private constant INIT_MODE_MAGIC_VALUE = 0x80438043;
+    bytes32 private constant INIT_MODULES_TYPEHASH =
+        keccak256("InitModules(uint256[] moduleTypeIds,address[] modules,bytes[] initDatas,uint256 nonce)");
 
     CallReceiverMock private _target;
 
     uint256 private _initialValidatorPrivateKey = 0x1234;
     address private _initialValidatorSigner = vm.addr(_initialValidatorPrivateKey);
-    OpenAccountEnableMode private _account;
+
+    OpenAccountFactory private _factory;
+    OpenAccountImplementation private _account;
     ERC7579ValidatorMock private _initialValidator;
     ERC7579ValidatorMock private _newValidator;
 
@@ -50,24 +45,26 @@ contract OpenAccountEnableModeTest is Test {
     bytes32 private _accountDomainSeparator;
 
     function setUp() public {
-        // Deploy target contract
         _target = new CallReceiverMock();
 
-        // Setup account and install initial validator module
-        _account = new OpenAccountEnableModeMock();
+        _factory = new OpenAccountFactory();
         _initialValidator = new ERC7579ValidatorMock();
+
         (
             uint256[] memory moduleTypeIds,
             address[] memory modules,
             bytes[] memory initDatas
         ) = _buildInstallationModules(address(_initialValidator), _initialValidatorSigner);
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+
+        _account = OpenAccountImplementation(
+            payable(
+                _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
+            )
+        );
         vm.deal(address(_account), MAX_ETH);
 
-        // Deploy a new validator to install via enable mode
         _newValidator = new ERC7579ValidatorMock();
 
-        // Setup entrypoint
         address entrypoint = address(ERC4337Utils.ENTRYPOINT_V09);
         vm.deal(entrypoint, MAX_ETH);
         vm.etch(
@@ -94,65 +91,48 @@ contract OpenAccountEnableModeTest is Test {
         );
     }
 
-    function testEnableMode(address bundler) public {
+    function testInitMode(address bundler) public {
         vm.assume(bundler.code.length == 0);
 
-        (uint256 nonce, bytes memory initData, bytes memory installationSignature) = _prepareInstallationSignature(
+        uint256 nonce = _prepareNonce(address(_newValidator));
+        bytes memory initData = abi.encodePacked(_newValidatorSigner);
+        bytes memory initCode = _buildInitModeInitCode(
+            nonce,
             address(_newValidator),
-            _newValidatorSigner,
+            initData,
             _initialValidatorPrivateKey
         );
 
-        // Create user operation that will be validated by the newly installed validator
-        PackedUserOperation memory userOp = _prepareUserOperation(nonce);
-
-        // Sign the user operation with the new validator's signer
+        PackedUserOperation memory userOp = _prepareUserOperation(nonce, initCode);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(
             _newValidatorPrivateKey,
             IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp)
         );
-        bytes memory userOpSignature = abi.encodePacked(r, s, v);
+        userOp.signature = abi.encodePacked(r, s, v);
 
-        // Encode the enable mode signature
-        uint256[] memory moduleTypeIds = new uint256[](1);
-        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
-        address[] memory modules = new address[](1);
-        modules[0] = address(_newValidator);
-        bytes[] memory initDatas = new bytes[](1);
-        initDatas[0] = initData;
-
-        userOp.signature = abi.encode(
-            moduleTypeIds,
-            modules,
-            initDatas,
-            abi.encodePacked(_initialValidator, installationSignature),
-            userOpSignature
-        );
-
-        // Expect the target function call event
         vm.expectEmit(true, true, true, false);
         emit CallReceiverMock.MockFunctionCalledExtra(address(_account), 1 ether);
 
-        // Execute the user operation
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = userOp;
         vm.prank(bundler, bundler);
         ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
 
-        // Verify the module was installed
         assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
     }
 
-    function testEnableModeWithBatchExecution(address bundler, uint256 argA, uint256 argB) public {
+    function testInitModeWithBatchExecution(address bundler, uint256 argA, uint256 argB) public {
         vm.assume(bundler.code.length == 0);
 
-        (uint256 nonce, bytes memory initData, bytes memory installationSignature) = _prepareInstallationSignature(
+        uint256 nonce = _prepareNonce(address(_newValidator));
+        bytes memory initData = abi.encodePacked(_newValidatorSigner);
+        bytes memory initCode = _buildInitModeInitCode(
+            nonce,
             address(_newValidator),
-            _newValidatorSigner,
+            initData,
             _initialValidatorPrivateKey
         );
 
-        // Create batch execution
         Execution[] memory executions = new Execution[](2);
         executions[0] = Execution({
             target: address(_target),
@@ -165,8 +145,7 @@ contract OpenAccountEnableModeTest is Test {
             callData: abi.encodeCall(CallReceiverMock.mockFunctionWithArgs, (argA, argB))
         });
 
-        // Create user operation with batch execution
-        PackedUserOperation memory userOp = _prepareUserOperation(nonce);
+        PackedUserOperation memory userOp = _prepareUserOperation(nonce, initCode);
         userOp.callData = abi.encodeCall(
             AccountERC7579.execute,
             (
@@ -181,213 +160,188 @@ contract OpenAccountEnableModeTest is Test {
             )
         );
 
-        // Sign the user operation with the new validator's signer
         bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(_newValidatorPrivateKey, userOpHash);
-        bytes memory userOpSignature = abi.encodePacked(r, s, v);
+        userOp.signature = abi.encodePacked(r, s, v);
 
-        // Encode the enable mode signature
-        uint256[] memory moduleTypeIds = new uint256[](1);
-        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
-        address[] memory modules = new address[](1);
-        modules[0] = address(_newValidator);
-        bytes[] memory initDatas = new bytes[](1);
-        initDatas[0] = initData;
-
-        userOp.signature = abi.encode(
-            moduleTypeIds,
-            modules,
-            initDatas,
-            abi.encodePacked(_initialValidator, installationSignature),
-            userOpSignature
-        );
-
-        // Expect the batch execution events
         vm.expectEmit(true, true, true, false);
         emit CallReceiverMock.MockFunctionCalledExtra(address(_account), 1 ether);
         vm.expectEmit(true, true, true, false);
         emit CallReceiverMock.MockFunctionCalledWithArgs(argA, argB);
 
-        // Execute the user operation
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = userOp;
         vm.prank(bundler, bundler);
         ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
 
-        // Verify the module was installed
         assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
     }
 
-    function testEnableModeWithInvalidInstallationSignature(address bundler, uint256 wrongKey) public {
+    function testInitModeWithInvalidInstallationSignature(address bundler, uint256 wrongKey) public {
         vm.assume(bundler.code.length == 0);
         vm.assume(wrongKey != _initialValidatorPrivateKey);
-
-        // secp256k1 order
         wrongKey = bound(wrongKey, 1, 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141 - 1);
-        (uint256 nonce, bytes memory initData, bytes memory installationSignature) = _prepareInstallationSignature(
-            address(_newValidator),
-            _newValidatorSigner,
-            wrongKey
-        );
 
-        // Create user operation that will be validated by the newly installed validator
-        PackedUserOperation memory userOp = _prepareUserOperation(nonce);
+        uint256 nonce = _prepareNonce(address(_newValidator));
+        bytes memory initData = abi.encodePacked(_newValidatorSigner);
+        bytes memory initCode = _buildInitModeInitCode(nonce, address(_newValidator), initData, wrongKey);
 
-        // Sign the user operation with the new validator's signer
+        PackedUserOperation memory userOp = _prepareUserOperation(nonce, initCode);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(
             _newValidatorPrivateKey,
             IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp)
         );
-        bytes memory userOpSignature = abi.encodePacked(r, s, v);
+        userOp.signature = abi.encodePacked(r, s, v);
 
-        // Encode the enable mode signature
-        uint256[] memory moduleTypeIds = new uint256[](1);
-        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
-        address[] memory modules = new address[](1);
-        modules[0] = address(_newValidator);
-        bytes[] memory initDatas = new bytes[](1);
-        initDatas[0] = initData;
-
-        userOp.signature = abi.encode(
-            moduleTypeIds,
-            modules,
-            initDatas,
-            abi.encodePacked(_initialValidator, installationSignature),
-            userOpSignature
-        );
-
-        // Execute should fail due to invalid installation signature
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = userOp;
-
-        vm.expectRevert(); // Should revert due to signature validation failure
+        vm.expectRevert();
         vm.prank(bundler, bundler);
         ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
 
-        // Verify the module was NOT installed
         assertFalse(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
     }
 
-    function testEnableModeWithInvalidUserOpSignature(address bundler, uint256 wrongKey) public {
-        vm.assume(wrongKey != _newValidatorPrivateKey);
+    function testInitModeWithInvalidUserOpSignature(address bundler, uint256 wrongKey) public {
         vm.assume(bundler.code.length == 0);
-
-        // secp256k1 order
+        vm.assume(wrongKey != _newValidatorPrivateKey);
         wrongKey = bound(wrongKey, 1, 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141 - 1);
 
-        // Get a valid installation signature from the owner
-        (uint256 nonce, bytes memory initData, bytes memory installationSignature) = _prepareInstallationSignature(
+        uint256 nonce = _prepareNonce(address(_newValidator));
+        bytes memory initData = abi.encodePacked(_newValidatorSigner);
+        bytes memory initCode = _buildInitModeInitCode(
+            nonce,
             address(_newValidator),
-            _newValidatorSigner,
+            initData,
             _initialValidatorPrivateKey
         );
 
-        // Create user operation
-        PackedUserOperation memory userOp = _prepareUserOperation(nonce);
-
-        // Sign the user operation with wrong key
-        // This simulates an attacker trying to execute arbitrary calls with just an installation signature
+        PackedUserOperation memory userOp = _prepareUserOperation(nonce, initCode);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(
-            wrongKey, // WRONG KEY!
+            wrongKey,
             IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp)
         );
-        bytes memory userOpSignature = abi.encodePacked(r, s, v);
+        userOp.signature = abi.encodePacked(r, s, v);
 
-        // Encode the enable mode signature
-        uint256[] memory moduleTypeIds = new uint256[](1);
-        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
-        address[] memory modules = new address[](1);
-        modules[0] = address(_newValidator);
-        bytes[] memory initDatas = new bytes[](1);
-        initDatas[0] = initData;
-
-        userOp.signature = abi.encode(
-            moduleTypeIds,
-            modules,
-            initDatas,
-            abi.encodePacked(_initialValidator, installationSignature),
-            userOpSignature
-        );
-
-        // Execute should fail due to invalid UserOp signature
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = userOp;
-
-        vm.expectRevert(); // Should revert due to UserOp signature validation failure
+        vm.expectRevert();
         vm.prank(bundler, bundler);
         ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
 
-        // Verify the module was NOT installed
         assertFalse(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
     }
 
-    function testEnableModeWithMalformedSignature(address bundler, bytes memory malformedSignature) public {
+    function testInitModeWithMalformedInitCode(address bundler, bytes memory malformedPayload) public {
         vm.assume(bundler.code.length == 0);
 
-        // Create user operation with malformed signature (too short)
-        PackedUserOperation memory userOp = _prepareUserOperation(_prepareNonce(address(_newValidator)));
-        userOp.signature = malformedSignature;
+        // Prepend the magic so init mode is triggered, but ABI decoding will fail.
+        bytes memory initCode = abi.encodePacked(INIT_MODE_MAGIC_VALUE, malformedPayload);
 
-        // Execute should fail due to malformed signature
+        PackedUserOperation memory userOp = _prepareUserOperation(_prepareNonce(address(_newValidator)), initCode);
+        userOp.signature = bytes("irrelevant");
+
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = userOp;
-
-        vm.expectRevert(); // Should revert due to signature decoding failure
+        vm.expectRevert();
         vm.prank(bundler, bundler);
         ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
     }
 
-    function testNormalOperationWithoutEnableMode(address bundler, bytes1 prefix) public {
+    function testNormalOperationWithoutInitMode(address bundler) public {
         vm.assume(bundler.code.length == 0);
-        vm.assume(prefix != ENABLE_MODE_PREFIX);
 
-        // Create normal nonce (without enable mode prefix);
-        uint256 nonce = (uint256(uint8(prefix)) << 248) | (uint256(uint160(address(_initialValidator))) << 88);
+        // Empty initCode means init mode is not triggered; normal validation applies.
+        uint256 nonce = _prepareNonce(address(_initialValidator));
+        PackedUserOperation memory userOp = _prepareUserOperation(nonce, bytes(""));
 
-        // Create user operation
-        PackedUserOperation memory userOp = _prepareUserOperation(nonce);
-
-        // Sign with initial validator's signer
         bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(_initialValidatorPrivateKey, userOpHash);
         userOp.signature = abi.encodePacked(r, s, v);
 
-        // Expect the target function call event
         vm.expectEmit(true, true, true, false);
         emit CallReceiverMock.MockFunctionCalledExtra(address(_account), 1 ether);
 
-        // Execute the user operation
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = userOp;
         vm.prank(bundler, bundler);
         ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
 
-        // Verify the new validator was NOT installed (since enable mode wasn't triggered)
         assertFalse(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
     }
 
-    function testEnableModeWithMultipleModules(address bundler) public {
+    function testInitModeWithEmptyInstallationSignature(address bundler) public {
         vm.assume(bundler.code.length == 0);
 
-        // Deploy additional validators
+        // Route through the already-installed _initialValidator because _newValidator won't be installed.
+        uint256 nonce = _prepareNonce(address(_initialValidator));
+
+        uint256[] memory moduleTypeIds = new uint256[](1);
+        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
+        address[] memory modules = new address[](1);
+        modules[0] = address(_newValidator);
+        bytes[] memory initDatas = new bytes[](1);
+        initDatas[0] = abi.encodePacked(_newValidatorSigner);
+
+        // Empty installationSignature: installation block is skipped entirely.
+        bytes memory initCode = abi.encodePacked(
+            INIT_MODE_MAGIC_VALUE,
+            abi.encode(moduleTypeIds, modules, initDatas, bytes(""))
+        );
+
+        PackedUserOperation memory userOp = _prepareUserOperation(nonce, initCode);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
+            _initialValidatorPrivateKey,
+            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp)
+        );
+        userOp.signature = abi.encodePacked(r, s, v);
+
+        vm.expectEmit(true, true, true, false);
+        emit CallReceiverMock.MockFunctionCalledExtra(address(_account), 1 ether);
+
+        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
+        ops[0] = userOp;
+        vm.prank(bundler, bundler);
+        ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
+
+        // No module was installed: empty installationSignature skips the installation block.
+        assertFalse(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
+    }
+
+    function testInitModeWithMultipleModules(address bundler) public {
+        vm.assume(bundler.code.length == 0);
+
         ERC7579ValidatorMock validator2 = new ERC7579ValidatorMock();
         ERC7579ValidatorMock validator3 = new ERC7579ValidatorMock();
 
-        uint256 validator2PrivateKey = 0x9999;
-        address validator2Signer = vm.addr(validator2PrivateKey);
-
-        uint256 validator3PrivateKey = 0xaaaa;
-        address validator3Signer = vm.addr(validator3PrivateKey);
-
-        // Create nonce with enable mode prefix followed by the first validator address
         uint256 nonce = _prepareNonce(address(_newValidator));
+        bytes memory initCode = _buildMultiModuleInitModeInitCode(nonce, address(validator2), address(validator3));
 
-        // Create init data for all validators
-        bytes memory initData1 = abi.encodePacked(_newValidatorSigner);
-        bytes memory initData2 = abi.encodePacked(validator2Signer);
-        bytes memory initData3 = abi.encodePacked(validator3Signer);
+        PackedUserOperation memory userOp = _prepareUserOperation(nonce, initCode);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
+            _newValidatorPrivateKey,
+            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp)
+        );
+        userOp.signature = abi.encodePacked(r, s, v);
 
-        // Create arrays for multiple modules
+        vm.expectEmit(true, true, true, false);
+        emit CallReceiverMock.MockFunctionCalledExtra(address(_account), 1 ether);
+
+        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
+        ops[0] = userOp;
+        vm.prank(bundler, bundler);
+        ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
+
+        assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
+        assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(validator2), bytes("")));
+        assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(validator3), bytes("")));
+    }
+
+    function _buildMultiModuleInitModeInitCode(
+        uint256 nonce,
+        address validator2,
+        address validator3
+    ) private view returns (bytes memory) {
         uint256[] memory moduleTypeIds = new uint256[](3);
         moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
         moduleTypeIds[1] = MODULE_TYPE_VALIDATOR;
@@ -395,25 +349,22 @@ contract OpenAccountEnableModeTest is Test {
 
         address[] memory modules = new address[](3);
         modules[0] = address(_newValidator);
-        modules[1] = address(validator2);
-        modules[2] = address(validator3);
+        modules[1] = validator2;
+        modules[2] = validator3;
 
         bytes[] memory initDatas = new bytes[](3);
-        initDatas[0] = initData1;
-        initDatas[1] = initData2;
-        initDatas[2] = initData3;
+        initDatas[0] = abi.encodePacked(_newValidatorSigner);
+        initDatas[1] = abi.encodePacked(vm.addr(0x9999));
+        initDatas[2] = abi.encodePacked(vm.addr(0xaaaa));
 
-        // Create EIP-712 signature for multiple module installation
         bytes32[] memory initDataHashes = new bytes32[](3);
-        initDataHashes[0] = keccak256(initData1);
-        initDataHashes[1] = keccak256(initData2);
-        initDataHashes[2] = keccak256(initData3);
+        for (uint256 i = 0; i < 3; i++) initDataHashes[i] = keccak256(initDatas[i]);
 
         bytes32 typedDataHash = MessageHashUtils.toTypedDataHash(
             _accountDomainSeparator,
             keccak256(
                 abi.encode(
-                    ENABLE_MODULES_TYPEHASH,
+                    INIT_MODULES_TYPEHASH,
                     keccak256(abi.encodePacked(moduleTypeIds)),
                     keccak256(abi.encodePacked(modules)),
                     keccak256(abi.encodePacked(initDataHashes)),
@@ -422,63 +373,32 @@ contract OpenAccountEnableModeTest is Test {
             )
         );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(_initialValidatorPrivateKey, typedDataHash);
-        bytes memory installationSignature = abi.encodePacked(r, s, v);
+        bytes memory installationSignature = abi.encodePacked(address(_initialValidator), abi.encodePacked(r, s, v));
 
-        // Create user operation that will be validated by the first newly installed validator
-        PackedUserOperation memory userOp = _prepareUserOperation(nonce);
-
-        // Sign the user operation with the first new validator's signer
-        (uint8 v2, bytes32 r2, bytes32 s2) = vm.sign(
-            _newValidatorPrivateKey,
-            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp)
-        );
-        bytes memory userOpSignature = abi.encodePacked(r2, s2, v2);
-
-        // Encode the enable mode signature for multiple modules
-        userOp.signature = abi.encode(
-            moduleTypeIds,
-            modules,
-            initDatas,
-            abi.encodePacked(_initialValidator, installationSignature),
-            userOpSignature
-        );
-
-        // Expect the target function call event
-        vm.expectEmit(true, true, true, false);
-        emit CallReceiverMock.MockFunctionCalledExtra(address(_account), 1 ether);
-
-        // Execute the user operation
-        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
-        ops[0] = userOp;
-        vm.prank(bundler, bundler);
-        ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
-
-        // Verify all modules were installed
-        assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
-        assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(validator2), bytes("")));
-        assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(validator3), bytes("")));
+        return
+            abi.encodePacked(
+                INIT_MODE_MAGIC_VALUE,
+                abi.encode(moduleTypeIds, modules, initDatas, installationSignature)
+            );
     }
 
-    function _prepareNonce(address validator) internal pure returns (uint256 nonce) {
-        return (uint256(uint8(ENABLE_MODE_PREFIX)) << 248) | (uint256(uint160(address(validator))) << 88);
+    function _prepareNonce(address validator) internal pure returns (uint256) {
+        return uint256(uint160(validator)) << 96;
     }
 
-    function _prepareInstallationSignature(
+    function _buildInitModeInitCode(
+        uint256 nonce,
         address newValidator,
-        address newSigner,
-        uint256 signerPrivateKey
-    ) internal view returns (uint256 nonce, bytes memory initData, bytes memory installationSignature) {
-        // Create nonce with enable mode prefix followed by the userOp validator address
-        nonce = _prepareNonce(newValidator);
-
-        // Create init data for the new validator
-        initData = abi.encodePacked(newSigner);
-
-        // Create EIP-712 signature for module installation
+        bytes memory initData,
+        uint256 installationSignerKey
+    ) internal view returns (bytes memory) {
         uint256[] memory moduleTypeIds = new uint256[](1);
         moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
         address[] memory modules = new address[](1);
-        modules[0] = address(newValidator);
+        modules[0] = newValidator;
+        bytes[] memory initDatas = new bytes[](1);
+        initDatas[0] = initData;
+
         bytes32[] memory initDataHashes = new bytes32[](1);
         initDataHashes[0] = keccak256(initData);
 
@@ -486,7 +406,7 @@ contract OpenAccountEnableModeTest is Test {
             _accountDomainSeparator,
             keccak256(
                 abi.encode(
-                    ENABLE_MODULES_TYPEHASH,
+                    INIT_MODULES_TYPEHASH,
                     keccak256(abi.encodePacked(moduleTypeIds)),
                     keccak256(abi.encodePacked(modules)),
                     keccak256(abi.encodePacked(initDataHashes)),
@@ -494,16 +414,27 @@ contract OpenAccountEnableModeTest is Test {
                 )
             )
         );
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerPrivateKey, typedDataHash);
-        return (nonce, initData, abi.encodePacked(r, s, v));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(installationSignerKey, typedDataHash);
+
+        // Prefix with the validator module address so the account's `isValidSignature` routes correctly.
+        bytes memory installationSignature = abi.encodePacked(address(_initialValidator), abi.encodePacked(r, s, v));
+
+        return
+            abi.encodePacked(
+                INIT_MODE_MAGIC_VALUE,
+                abi.encode(moduleTypeIds, modules, initDatas, installationSignature)
+            );
     }
 
-    function _prepareUserOperation(uint256 nonce) internal view returns (PackedUserOperation memory userOp) {
+    function _prepareUserOperation(
+        uint256 nonce,
+        bytes memory initCode
+    ) internal view returns (PackedUserOperation memory) {
         return
             PackedUserOperation({
                 sender: address(_account),
                 nonce: nonce,
-                initCode: bytes(""),
+                initCode: initCode,
                 callData: abi.encodeCall(
                     AccountERC7579.execute,
                     (
@@ -537,7 +468,7 @@ contract OpenAccountEnableModeTest is Test {
         modules = new address[](1);
         initDatas = new bytes[](1);
         moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
-        modules[0] = address(validator);
+        modules[0] = validator;
         initDatas[0] = abi.encodePacked(validatorSigner);
     }
 }

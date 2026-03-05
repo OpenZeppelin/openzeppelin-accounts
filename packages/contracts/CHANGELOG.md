@@ -1,3 +1,11 @@
+## 04-03-2026
+
+- Renamed `OpenAccountEnableMode` to `OpenAccountERC8043`, now implementing atomic module installation and usage (_enable mode_) following ERC-8043. When `userOp.initCode` starts with the `0x80438043` magic value, the account installs one or more modules and validates the user operation in a single transaction.
+- `ERC7579ERC20Spender`: The underlying transfer revert is now bubbled up directly. For batch transfers, the revert reason of the first failed transfer is bubbled up directly.
+- `ERC7579ERC20Spender`: Removed `_decodeERC20SpenderInitData` from the internal interface.
+- `ERC7579NativeSpender`: Removed `_decodeNativeSpenderInitData` from the internal interface.
+- `ERC7579NativeSpender`: The underlying transfer revert is now bubbled up directly.
+
 ## 28-02-2026
 
 - `ERC7579Multisig`: `isSigner`, `addSigners`, `removeSigners`, `_addSigners`, and `_removeSigners` now use `calldata` instead of `memory` for `bytes` parameters.
