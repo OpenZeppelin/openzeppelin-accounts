@@ -5,7 +5,7 @@
   "pages": [
     "index",
     "erc7579",
-    "cross-chain-signatures",
+    "erc7964",
     "erc7913",
     "erc8043",
     "---Modules---",

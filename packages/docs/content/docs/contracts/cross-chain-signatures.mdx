@@ -1,11 +1,13 @@
 ---
-title: Crosschain signatures
-description: Crosschain signature verification utility for ERC-7964 compliant signatures
+title: ERC-7964
+description: Crosschain signature verification for ERC-7964 compliant signatures
 ---
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-## A brief on signatures
+[ERC-7964](https://eips.ethereum.org/EIPS/eip-7964) enables a single EIP-712 signature to be valid across multiple chains simultaneously. Rather than asking users to sign one message per chain, it omits `chainId` from the top-level domain and encodes chain-specific operations as an array of nested structs — one per chain — so wallets display all authorized operations in a single, fully human-readable signing prompt.
+
+## Background
 
 Interacting with a chain requires the signature of a private key to validate the account's identity. Natively, the EVM supports ECDSA signature validation for EOAs, while smart accounts often validate signatures using [ERC-1271](https://eips.ethereum.org/EIPS/eip-1271) to provide a `hash` and a `bytes` buffer representing the signature to be validated.
 
@@ -13,7 +15,7 @@ Smart contracts are able to execute functionality on behalf of the signing accou
 
 In practice, signing a simple Ethereum message is not enough for more complex applications that require structured data to be represented by the signature while still being readable for the end user. To solve this, [EIP-712](https://eips.ethereum.org/EIPS/eip-712) standardizes signing messages whose content is a struct of values that can be used by the EVM. Each message is bound to a `domainSeparator` hash by design, which includes the `verifyingContract` and a `chainId` to avoid replayability attacks (i.e., the same signature used in different chains or contracts).
 
-### Selective replayability
+### Selective Replayability
 
 As a consequence of the EIP-712 domain, to coordinate signatures across different chains applications must decide whether they ask users to sign one EIP-712 message per chain to preserve readability (degrading UX), or request a single signature with a different encoding scheme, sacrificing readability and introducing trust assumptions on the UI that requests the signature.
 
@@ -22,9 +24,9 @@ Ideally, users should sign a single human-readable message that is selectively r
 - All domain fields are optional and can be omitted at convenience, enabling developers to create signatures that are not bound by either `chainId` or `verifyingContract` and can be reused in a different chain.
 - Nested structs are supported
 
-### ERC-7964
+### How ERC-7964 Works
 
-Considering the UX goals of having only one signature and preserving a standard way to interpret the data signed, [ERC-7964](https://eips.ethereum.org/EIPS/eip-7964) offers a unique approach that omits the `chainId` and `verifyingContract` from the domain and defines an array of operations that include its own nested domain.
+ERC-7964 omits `chainId` and `verifyingContract` from the outer domain and instead encodes them inside a `ChainOperation` struct that also carries the chain-specific parameters:
 
 ```solidity
 ChainOperation(EIP712ChainDomain domain,...)
@@ -53,23 +55,47 @@ Smart contracts that support this signature verification scheme request the user
 
 While several solutions exist for enabling crosschain signatures, ERC-7964 provides **full transparency**. Users see all chain operations in any EIP-712 compatible wallet without custom support, prioritizing readability, security and widespread wallet compatibility.
 
-### Signature encoding and verification
+## Signature Encoding and Verification
 
-Smart contracts must be able to include metadata to reconstruct the final type hash and detect when a signature is intended for crosschain validation. To solve this, ERC-7964 defines a standard encoding for crosschain signatures.
+Smart contracts must be able to include metadata to reconstruct the final type hash and detect when a signature is intended for crosschain validation. To solve this, ERC-7964 defines a standard encoding that packs all metadata into the leading 32 bytes of the signature:
 
 ```solidity
-bytes9 internal constant ERC7964_MAGIC = 0x796479647964796479;
-bytes1 fields = 0x03 // Per ERC-5267; only `name` and `version`;
-uint16 structIndex = <...>; // Index of the current chain operation in the array
-address application = "0x..."; // Address to query the current domain using ERC-5267
+bytes9  ERC7964_MAGIC = 0x796479647964796479; // bytes 0–8
+bytes1  fields        = 0x03;                  // byte 9   (ERC-5267 domain field flags)
+uint16  structIndex   = <...>;                 // bytes 10–11 (index of this chain's operation)
+address application   = 0x...;                 // bytes 12–31 (ERC-5267 provider for the domain)
+
 bytes32 header = bytes32(abi.encodePacked(ERC7964_MAGIC, fields, structIndex, application));
 
-bytes memory signature = abi.encode(header, structsArray, actualSignature); // (bytes32, bytes, bytes32[])
+bytes memory erc7964Signature = abi.encode(header, structsArray, actualSignature);
 ```
 
-The `CrossChainSignatureChecker` library provides utilities for parsing and verifying ERC-7964 signatures in your contracts.
+The `fields` byte follows [ERC-5267](https://eips.ethereum.org/EIPS/eip-5267): each bit signals which domain fields (`name`, `version`, `chainId`, `verifyingContract`, `salt`) the domain separator includes. The `application` address is queried at verification time via `IERC5267.eip712Domain()` to reconstruct the chain-specific domain separator on the fly.
 
-## Writing crosschain applications
+The `CrossChainSignatureChecker` library provides utilities for parsing and verifying ERC-7964 signatures in your contracts. The full verification sequence is:
+
+```mermaid
+sequenceDiagram
+    participant Caller
+    participant Contract
+    participant CrossChainSignatureChecker
+    participant Application
+
+    Caller->>Contract: setValue(signer, value, erc7964Signature)
+    Contract->>CrossChainSignatureChecker: isValidCrossChainSignatureNowCalldata(signer, currentOpHash, sig, structHashFn)
+    CrossChainSignatureChecker->>CrossChainSignatureChecker: parse header (magic, fields, structIndex, application)
+    CrossChainSignatureChecker->>CrossChainSignatureChecker: assert structsArray[structIndex] == currentOpHash
+    CrossChainSignatureChecker->>Application: eip712Domain() [ERC-5267]
+    Application-->>CrossChainSignatureChecker: name, version, chainId, verifyingContract, ...
+    CrossChainSignatureChecker->>CrossChainSignatureChecker: domainSeparator = toDomainSeparator(fields, ...)
+    CrossChainSignatureChecker->>CrossChainSignatureChecker: structHash = structHashFn(keccak256(structsArray))
+    CrossChainSignatureChecker->>CrossChainSignatureChecker: digest = toTypedDataHash(domainSeparator, structHash)
+    CrossChainSignatureChecker->>CrossChainSignatureChecker: isValidSignatureNow(signer, digest, actualSig)
+    CrossChainSignatureChecker-->>Contract: bool
+    Contract-->>Caller: success or revert
+```
+
+## Writing Crosschain Applications
 
 Smart contracts can support ERC-7964 signatures using the `CrossChainSignatureChecker` library. Here's how to implement an application that accepts crosschain signatures:
 
@@ -218,7 +244,7 @@ contract CrossChainApp is EIP712 {
 }
 ```
 
-<Callout>OpenZeppelin's EIP712 contract already supports ERC-5267</Callout>
+<Callout>OpenZeppelin's EIP712 contract already implements ERC-5267, so it can be passed directly as the `application` address in the signature header.</Callout>
 
 ## Message Structure for Users
 
@@ -266,12 +292,22 @@ When users sign crosschain messages, the EIP-712 structure should look like this
 
 The operations array encodes to a single `bytes32` hash per EIP-712, and users can see all operations in their wallet. Each chain validates only its relevant operation from the signature.
 
+## In This Framework
+
+`CrossChainSignatureChecker` is a standalone library that any contract can import. It is used by the ERC-7579 validators included in this framework to support ERC-7964 signatures natively, so smart account users can authorize operations on multiple chains with a single signature through their installed validator.
+
+See [Validators](/docs/contracts/validators) for usage details.
+
 ## Security Considerations
 
 ### Signature Replay
 
-ERC-7964 intentionally enables replay across chains—the same signature is designed to be used on multiple chains. The `verifyingContract` field binds the signature to specific contract addresses. However, applications must implement their own replay protection mechanisms such as including nonces and deadlines in the message.
+ERC-7964 intentionally enables replay across chains, the same signature is designed to be used on multiple chains. The `verifyingContract` field inside each `ChainOperation` binds that operation to a specific contract address, but the outer signature itself has no chain binding. Applications must implement their own replay protection mechanisms such as including nonces and deadlines in the chain-specific operation struct.
 
 ### Partial Execution
 
-Crosschain signatures do not guarantee atomic execution. A signature may be successfully validated on some chains but not others, resulting in partial fulfillment. Applications should implement refund mechanisms to allow users to recover from failed partial executions.
+Crosschain signatures do not guarantee atomic execution across chains. A signature may be successfully validated on some chains but not others, resulting in partial fulfillment. Applications that require atomicity should implement complementary mechanisms such as refund paths or escrow patterns to allow users to recover from failed partial executions.
+
+### Verifier Trust
+
+The `application` address embedded in the signature header is queried at verification time via `IERC5267.eip712Domain()` to reconstruct the domain separator. If the contract at that address is upgradeable or mutable, it could return a different domain on a later call, potentially allowing a signature to verify against an unintended domain. Prefer immutable contracts as the `application` address, or validate that the returned domain matches the expected values before accepting the signature.
