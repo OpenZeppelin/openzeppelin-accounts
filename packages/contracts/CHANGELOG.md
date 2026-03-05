@@ -1,8 +1,7 @@
-<<<<<<< HEAD
-## 12-01-2026
+## XX-03-2026
 
 - Add `CrossChainSignatureChecker` utility library to verify cross-chain signatures following ERC-7964.
-=======
+
 ## 04-03-2026
 
 - Renamed `OpenAccountEnableMode` to `OpenAccountERC8043`, now implementing atomic module installation and usage (_enable mode_) following ERC-8043. When `userOp.initCode` starts with the `0x80438043` magic value, the account installs one or more modules and validates the user operation in a single transaction.
@@ -37,7 +36,6 @@
 ## 06-02-2026
 
 - `ERC7579ERC20Spender` and `ERC7579NativeSpender`: `newStart` can now be set to `0` as a sentinel value that resolves to the current timepoint. Previously, the current timepoint had to be passed explicitly for immediate-start configurations.
->>>>>>> main
 
 ## 09-01-2026
 
