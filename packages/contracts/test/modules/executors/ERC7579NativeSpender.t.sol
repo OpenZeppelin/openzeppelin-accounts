@@ -426,12 +426,17 @@ contract ERC7579NativeSpenderTest is Test {
         assertEq(available, 0);
     }
 
-    function testMultipleSpendersIndependence(uint160 limit, uint160 amount1, uint160 amount2) public {
+    function testMultipleSpendersIndependence(
+        uint160 limit,
+        uint160 amount1,
+        uint160 amount2,
+        address spender2
+    ) public {
+        vm.assume(spender2 != _spenderAddress);
         limit = uint160(bound(limit, 1, MAX_ETH / 2));
         amount1 = uint160(bound(amount1, 1, limit));
         amount2 = uint160(bound(amount2, 1, limit));
 
-        address spender2 = makeAddr("spender2");
 
         // Avoid stack too deep
         {
