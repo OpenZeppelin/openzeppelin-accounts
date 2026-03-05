@@ -270,6 +270,44 @@ contract OpenAccountERC8043Test is Test {
         assertFalse(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
     }
 
+    function testInitModeWithEmptyInstallationSignature(address bundler) public {
+        vm.assume(bundler.code.length == 0);
+
+        // Route through the already-installed _initialValidator because _newValidator won't be installed.
+        uint256 nonce = _prepareNonce(address(_initialValidator));
+
+        uint256[] memory moduleTypeIds = new uint256[](1);
+        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
+        address[] memory modules = new address[](1);
+        modules[0] = address(_newValidator);
+        bytes[] memory initDatas = new bytes[](1);
+        initDatas[0] = abi.encodePacked(_newValidatorSigner);
+
+        // Empty installationSignature: installation block is skipped entirely.
+        bytes memory initCode = abi.encodePacked(
+            INIT_MODE_MAGIC_VALUE,
+            abi.encode(moduleTypeIds, modules, initDatas, bytes(""))
+        );
+
+        PackedUserOperation memory userOp = _prepareUserOperation(nonce, initCode);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
+            _initialValidatorPrivateKey,
+            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp)
+        );
+        userOp.signature = abi.encodePacked(r, s, v);
+
+        vm.expectEmit(true, true, true, false);
+        emit CallReceiverMock.MockFunctionCalledExtra(address(_account), 1 ether);
+
+        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
+        ops[0] = userOp;
+        vm.prank(bundler, bundler);
+        ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
+
+        // No module was installed: empty installationSignature skips the installation block.
+        assertFalse(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
+    }
+
     function testInitModeWithMultipleModules(address bundler) public {
         vm.assume(bundler.code.length == 0);
 

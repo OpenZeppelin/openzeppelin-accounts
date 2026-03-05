@@ -93,8 +93,7 @@ abstract contract OpenAccountERC8043 is OpenAccount {
             return ERC4337Utils.SIG_VALIDATION_FAILED;
         }
 
-        // Avoid stack too deep
-        {
+        if (installationSignature.length > 0) {
             uint256 nonce = userOp.nonce;
             bytes32 structHash = _installModulesStructHash(moduleTypeIds, modules, initDatas, nonce);
             if (
@@ -103,10 +102,9 @@ abstract contract OpenAccountERC8043 is OpenAccount {
             ) {
                 return ERC4337Utils.SIG_VALIDATION_FAILED;
             }
-        }
-
-        for (uint256 i = 0; i < modules.length; i++) {
-            _installModule(moduleTypeIds[i], modules[i], initDatas[i]);
+            for (uint256 i = 0; i < modules.length; i++) {
+                _installModule(moduleTypeIds[i], modules[i], initDatas[i]);
+            }
         }
 
         return super._validateUserOp(userOp, userOpHash, userOp.signature);
