@@ -1,41 +1,9 @@
 ---
-title: Base Modules
-description: Reusable abstract modules for signer management and multisig
+title: Multisig
+description: Threshold and weighted multisignature modules with optional on-chain confidentiality
 ---
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
-
-The framework provides abstract base modules that implement common patterns for signer management and authorization. These modules are not tied to any specific module type and can be composed with validators, executors, or other contracts.
-
-## Signers
-
-These abstract modules handle signer storage, the installation lifecycle, and core signature validation primitives. See the [Validators](/docs/contracts/validators) page for the ready-to-use validator implementations built on top of them.
-
-### ERC7579ECDSA
-
-Manages a single EOA signer per account and exposes `_validateECDSA` for downstream validation logic. Installation data encodes the signer as a packed 20-byte address.
-
-```solidity
-address currentSigner = module.signer(account);
-module.setSigner(account, newSigner); // must be called by the account
-```
-
-### ERC7579P256
-
-Manages a single P256 (secp256r1) public key per account as `(qx, qy)` coordinates and exposes `_validateP256`. Installation data encodes the key as 64 packed bytes.
-
-```solidity
-(bytes32 qx, bytes32 qy) = module.signer(account);
-module.setSigner(account, newQx, newQy); // must be called by the account
-```
-
-### ERC7579WebAuthn
-
-Extends `ERC7579P256` with WebAuthn authentication by adding `_validateWebAuthn`. Signatures must be ABI-encoded [`WebAuthn.WebAuthnAuth`](https://docs.openzeppelin.com/contracts/5.x/api/utils/cryptography#WebAuthn) structs. Signer storage and management are inherited from `ERC7579P256`.
-
----
-
-## Multisig
 
 The framework provides multisignature (multisig) modules that enable accounts to require multiple signatures before executing operations. Unlike traditional accounts controlled by a single private key, multisigs distribute control among multiple parties, eliminating single points of failure.
 
@@ -61,7 +29,7 @@ The framework also provides confidential versions of the multisig modules that u
 
 **`ERC7579MultisigWeightedConfidential`**: A confidential weighted multisig module that keeps signer addresses, individual weights, and threshold values encrypted.
 
-### Understanding Confidential Multisig
+## Understanding Confidential Multisig
 
 Confidential multisig modules provide enhanced privacy by keeping critical multisig parameters encrypted on-chain using Fully Homomorphic Encryption (FHE). This approach offers several privacy properties:
 
@@ -85,7 +53,7 @@ Confidential multisig modules provide enhanced privacy by keeping critical multi
   operations where the signer update won't be immediately observable.
 </Callout>
 
-### As validators
+## As validators
 
 The framework provides validator implementations that combine the base multisig modules with validator functionality:
 
@@ -96,7 +64,7 @@ The framework provides validator implementations that combine the base multisig 
 
 These validators enable accounts to require multiple signatures before executing operations through ERC-4337 UserOperations.
 
-#### Multisig Validator
+### Multisig Validator
 
 To install a multisig validator on your account:
 
@@ -129,7 +97,7 @@ The `initData` must be encoded as:
 bytes memory initData = abi.encode(bytes[] signers, uint64 threshold);
 ```
 
-#### Multisig Weighted Validator
+### Multisig Weighted Validator
 
 To install a multisig validator that allows for weighted signers:
 
@@ -168,7 +136,7 @@ The `initData` must be encoded as:
 bytes memory initData = abi.encode(bytes[] signers, uint64 threshold, uint64[] weights);
 ```
 
-#### Multisig Confidential Validator
+### Multisig Confidential Validator
 
 The confidential validators use FHE to keep signer addresses and thresholds encrypted on-chain, providing enhanced privacy for multisig operations. Due to FHE's asynchronous decryption model, validating a UserOperation with confidential multisig requires a three-step process:
 
@@ -279,7 +247,7 @@ bytes memory initData = abi.encode(
 );
 ```
 
-#### Multisig Weighted Confidential Validator
+### Multisig Weighted Confidential Validator
 
 The weighted confidential validator extends the confidential validator to support weighted signatures while keeping weights encrypted:
 
@@ -348,7 +316,7 @@ bytes memory initData = abi.encode(
   execution. Even if setting the same addresses, new handles will be generated due to FHE's non-deterministic encryption.
 </Callout>
 
-### As executors
+## As executors
 
 The base multisig modules can also be extended to work with executors, enabling different execution patterns. For example:
 
@@ -358,7 +326,7 @@ The base multisig modules can also be extended to work with executors, enabling 
 
 This design pattern allows multisig to be used flexibly across different use cases, not just for signature validation. The framework provides `ERC7579SocialRecoveryExecutor` as a ready-to-use implementation of the delayed social recovery pattern. See [Executors](/docs/contracts/executors#erc7579socialrecoveryexecutor) for details.
 
-### Managing Signers
+## Managing Signers
 
 After installation, you can manage signers dynamically:
 
@@ -382,7 +350,7 @@ multisig.setThreshold(4); // Now requires 4-of-N signatures
   the threshold unreachable.
 </Callout>
 
-### Signature Format
+## Signature Format
 
 When signing a UserOperation or message, the signature must be encoded as:
 
@@ -395,7 +363,7 @@ bytes memory signature = abi.encode(
 
 The `signingSigners` array must be sorted in ascending order by `keccak256(signer)` to prevent duplicates and optimize verification.
 
-### Weighted Multisig Details
+## Weighted Multisig Details
 
 When using `ERC7579MultisigWeightedValidator`, each signer has a weight (default is 1). The threshold is based on total weight, not signer count.
 
@@ -408,12 +376,12 @@ When using `ERC7579MultisigWeightedValidator`, each signer has a weight (default
 Example:
 
 ```solidity
- // Signers with weights: Alice=1, Bob=2, Charlie=3
+// Signers with weights: Alice=1, Bob=2, Charlie=3
 // Total weight = 6
 // Threshold = 4 means: Bob+Charlie (5) or Alice+Bob+Charlie (6) or Alice+Charlie (4)
 ```
 
-### Querying Multisig State
+## Querying Multisig State
 
 You can query the multisig module to check signers and thresholds:
 
