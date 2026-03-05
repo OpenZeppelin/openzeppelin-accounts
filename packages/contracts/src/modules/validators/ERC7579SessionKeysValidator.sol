@@ -6,6 +6,7 @@ import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/draft-ERC4337U
 import {Time} from "@openzeppelin/contracts/utils/types/Time.sol";
 import {ERC7579SessionKeys} from "../ERC7579SessionKeys.sol";
 import {ERC7579Validator} from "./ERC7579Validator.sol";
+import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
 
 /**
  * @dev Implementation of {ERC7579SessionKeys} as an {ERC7579Validator}.
@@ -74,7 +75,13 @@ abstract contract ERC7579SessionKeysValidator is ERC7579SessionKeys, ERC7579Vali
             : ERC4337Utils.ValidationRange.TIMESTAMP;
         // We know from the resolution order that `super._validateUserOp` calls `ERC7579Validator._rawERC7579Validation`
         // which only returns SIG_VALIDATION_FAILED or SIG_VALIDATION_SUCCESS. Casting to address(uint160) is safe.
-        return address(uint160(super._validateUserOp(userOp, userOpHash))).packValidationData(from, until, range);
+        return
+            ERC4337Utils.packValidationData(
+                address(uint160(super._validateUserOp(userOp, userOpHash))),
+                from,
+                until,
+                range
+            );
     }
 
     /// @dev See {_validateSessionKey}.

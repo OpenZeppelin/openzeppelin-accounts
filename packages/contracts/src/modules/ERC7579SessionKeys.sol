@@ -69,8 +69,8 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
         uint48 until;
     }
 
-    mapping(address account => mapping(uint256 installation => EnumerableSet.BytesSet)) private _keys;
-    mapping(address account => mapping(uint256 installation => mapping(bytes32 keyId => Validity))) private _validity;
+    mapping(address account => mapping(uint256 installation => EnumerableSet.BytesSet)) private _sessionKeys;
+    mapping(address account => mapping(uint256 installation => mapping(bytes32 keyId => Validity))) private _validities;
 
     /**
      * @dev Clock used for flagging validity ranges. Defaults to timestamp but can be overridden
@@ -188,7 +188,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
 
     /// @dev Internal version of {isKey} that receives an `installation_` nonce.
     function _isKey(address account, uint256 installation_, bytes calldata key) internal view virtual returns (bool) {
-        return _keys[account][installation_].contains(key);
+        return _sessionKeys[account][installation_].contains(key);
     }
 
     /// @dev Internal version of {validity} that receives an `installation_` nonce.
@@ -198,14 +198,15 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
         bytes calldata key
     ) internal view virtual returns (uint48 from, uint48 until) {
         return (
-            _validity[account][installation_][_keyId(key)].from,
-            _validity[account][installation_][_keyId(key)].until
+            _validities[account][installation_][_keyId(key)].from,
+            _validities[account][installation_][_keyId(key)].until
         );
     }
 
     /// @dev Internal version of {isValid} that receives an `installation_` nonce.
     function _isValid(address account, uint256 installation_, bytes calldata key) internal view virtual returns (bool) {
         uint48 timepoint = clock();
+        (uint48 from, uint48 until) = _validity(account, installation_, key);
         return from <= timepoint && until >= timepoint;
     }
 
@@ -216,7 +217,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
         uint256 startIdx,
         uint256 endIdx
     ) internal view virtual returns (bytes[] memory) {
-        return _keys[account][installation_].values(startIdx, endIdx);
+        return _sessionKeys[account][installation_].values(startIdx, endIdx);
     }
 
     /**
@@ -248,11 +249,11 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
         uint256 installation_ = installation(account);
         for (uint256 i = 0; i < keys_.length; ++i) {
             bytes calldata key = keys_[i];
-            require(_keys[account][installation_].add(key), ERC7579SessionKeyssAlreadyRegisteredKey(key));
+            require(_sessionKeys[account][installation_].add(key), ERC7579SessionKeyssAlreadyRegisteredKey(key));
             bytes32 keyId = _keyId(key);
             uint48 start = uint48(Math.ternary(starts[i] == 0, clock(), starts[i])); // Safe cast. Both are uint48.
             uint48 end = uint48(Math.ternary(ends[i] == 0, type(uint48).max, ends[i])); // Safe cast. Both are uint48.
-            Validity storage validity_ = _validity[account][installation_][keyId];
+            Validity storage validity_ = _validities[account][installation_][keyId];
             validity_.from = start;
             validity_.until = end;
             emit ERC7579SessionKeyssERC7913KeySet(account, key, start, end);
@@ -274,9 +275,9 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
         uint256 installation_ = installation(account);
         for (uint256 i = 0; i < keys_.length; ++i) {
             bytes calldata key = keys_[i];
-            require(_keys[account][installation_].remove(key), ERC7579SessionKeyssNonexistentKey(key));
+            require(_sessionKeys[account][installation_].remove(key), ERC7579SessionKeyssNonexistentKey(key));
             bytes32 keyId = _keyId(key);
-            Validity storage validity_ = _validity[account][installation_][keyId];
+            Validity storage validity_ = _validities[account][installation_][keyId];
             validity_.from = 0;
             validity_.until = 0;
             emit ERC7579SessionKeyssERC7913KeyUnset(account, key);
