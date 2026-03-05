@@ -5,7 +5,7 @@ description: Crosschain signature verification for ERC-7964 compliant signatures
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-[ERC-7964](https://eips.ethereum.org/EIPS/eip-7964) enables a single EIP-712 signature to be valid across multiple chains simultaneously. Rather than asking users to sign one message per chain, it omits `chainId` from the top-level domain and encodes chain-specific operations as an array of nested structs — one per chain — so wallets display all authorized operations in a single, fully human-readable signing prompt.
+[ERC-7964](https://eips.ethereum.org/EIPS/eip-7964) enables a single EIP-712 signature to be valid across multiple chains simultaneously. Rather than asking users to sign one message per chain, it omits `chainId` from the top-level domain and encodes chain-specific operations as an array of nested structs (one per chain), so wallets display all authorized operations in a single, fully human-readable signing prompt.
 
 ## Background
 
@@ -302,7 +302,7 @@ See [Validators](/docs/contracts/validators) for usage details.
 
 ### Signature Replay
 
-ERC-7964 intentionally enables replay across chains — the same signature is designed to be used on multiple chains. The `verifyingContract` field inside each `ChainOperation` binds that operation to a specific contract address, but the outer signature itself has no chain binding. Applications must implement their own replay protection mechanisms such as including nonces and deadlines in the chain-specific operation struct.
+ERC-7964 intentionally enables replay across chains, the same signature is designed to be used on multiple chains. The `verifyingContract` field inside each `ChainOperation` binds that operation to a specific contract address, but the outer signature itself has no chain binding. Applications must implement their own replay protection mechanisms such as including nonces and deadlines in the chain-specific operation struct.
 
 ### Partial Execution
 
