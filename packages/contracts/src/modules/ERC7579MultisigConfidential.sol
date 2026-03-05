@@ -436,24 +436,30 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         uint256 lastId = uint256(0);
 
         for (uint256 i = 0; i < signingSigners.length; ++i) {
-            bytes calldata signer = signingSigners[i];
-            euint256 signerIdHandle = signerIdHandles[i];
-            uint256 signerId = _toId(signer);
-            bool isDuplicate = false;
+            uint256 signerId = _toId(signingSigners[i]);
+            // Avoid stack too deep
+            {
+                bool isDuplicate = false;
 
-            // If the current signer id is greater than all previous signer ids, then this is a new signer.
-            if (lastId < signerId) lastId = signerId;
-            else {
-                // If this signer is not greater than all the previous ones, verify that it is not a duplicate
-                // This loop is never executed if the signers are ordered by their uint256 representation.
-                for (uint256 j = 0; j < i && !isDuplicate; ++j) {
-                    isDuplicate = signerId == _toId(signingSigners[j]);
+                // If the current signer id is greater than all previous signer ids, then this is a new signer.
+                if (lastId < signerId) lastId = signerId;
+                else {
+                    // If this signer is not greater than all the previous ones, verify that it is not a duplicate
+                    // This loop is never executed if the signers are ordered by their uint256 representation.
+                    for (uint256 j = 0; j < i && !isDuplicate; ++j) {
+                        isDuplicate = signerId == _toId(signingSigners[j]);
+                    }
                 }
-            }
 
-            if (isDuplicate) continue;
-            ebool isValid = FHE.and(FHE.eq(signerIdHandle, signerId), signer.isValidSignatureNow(hash, signatures[i]));
-            euint16 weight = FHE.select(isValid, _signerWeight(account, signerIdHandle), FHE.asEuint16(0));
+                if (isDuplicate) continue;
+            }
+            bool isValidSignature = signingSigners[i].isValidSignatureNow(hash, signatures[i]);
+            euint16 signerWeight = _signerWeight(account, signerIdHandles[i]);
+            euint16 weight = FHE.select(
+                FHE.and(FHE.eq(signerIdHandles[i], signerId), isValidSignature),
+                signerWeight,
+                FHE.asEuint16(0)
+            );
             reachedThreshold = FHE.add(reachedThreshold, weight); // Can't overflow because the amount of signers is bounded to type(uint32).max
         }
 
