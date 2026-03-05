@@ -437,7 +437,6 @@ contract ERC7579NativeSpenderTest is Test {
         amount1 = uint160(bound(amount1, 1, limit));
         amount2 = uint160(bound(amount2, 1, limit));
 
-
         // Avoid stack too deep
         {
             // Install two spenders
