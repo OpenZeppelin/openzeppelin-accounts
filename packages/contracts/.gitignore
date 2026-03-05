@@ -16,6 +16,7 @@ scTopics
 coverage
 coverage.json
 coverageEnv
+coverage-fhe
 
 # node-waf configuration
 .lock-wscript
@@ -58,6 +59,10 @@ contracts-exposed
 
 # Foundry
 /out
+!/out/OpenAccountFactory.sol/OpenAccountFactory.json
+!/out/ERC7579ECDSAValidator.sol/ERC7579ECDSAValidator.json
+!/out/ERC7579WebAuthnValidator.sol/ERC7579WebAuthnValidator.json
+!/out/IERC1271.sol/IERC1271.json
 /cache_forge
 
 # Certora
@@ -65,3 +70,6 @@ contracts-exposed
 .last_confs
 certora_*
 .zip-output-url.txt
+
+# Zama
+fhevmTemp

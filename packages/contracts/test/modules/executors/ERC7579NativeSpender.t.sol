@@ -41,7 +41,7 @@ contract ERC7579NativeSpenderTest is Test {
     function testInstallation(uint48 start, uint160 limit, uint48 renewPeriod) public {
         vm.assume(renewPeriod > 0);
         vm.assume(limit > 0);
-        vm.assume(start >= block.timestamp);
+        vm.assume(start >= block.timestamp || start == 0);
 
         address[] memory spenders = new address[](1);
         spenders[0] = _spenderAddress;
@@ -67,7 +67,7 @@ contract ERC7579NativeSpenderTest is Test {
 
         assertTrue(_spender.isModuleType(MODULE_TYPE_EXECUTOR));
         assertEq(_spender.spendersCount(address(_account)), 1);
-        assertEq(_spender.start(address(_account), _spenderAddress), start);
+        assertEq(_spender.start(address(_account), _spenderAddress), start == 0 ? block.timestamp : start);
         assertEq(_spender.limit(address(_account), _spenderAddress), limit);
         assertEq(_spender.renewPeriod(address(_account), _spenderAddress), renewPeriod);
     }
@@ -262,7 +262,7 @@ contract ERC7579NativeSpenderTest is Test {
     function testSetSpendingConfig(uint48 newStart, uint160 newLimit, uint48 newRenewPeriod) public {
         vm.assume(newRenewPeriod > 0);
         vm.assume(newLimit > 0);
-        vm.assume(newStart >= block.timestamp);
+        vm.assume(newStart >= block.timestamp || newStart == 0);
 
         uint48 start = uint48(block.timestamp);
         _installSpender(start, 1 ether, 1 days);
@@ -270,7 +270,7 @@ contract ERC7579NativeSpenderTest is Test {
         vm.prank(address(_account));
         _spender.setSpendingConfig(_spenderAddress, newStart, newLimit, newRenewPeriod);
 
-        assertEq(_spender.start(address(_account), _spenderAddress), newStart);
+        assertEq(_spender.start(address(_account), _spenderAddress), newStart == 0 ? block.timestamp : newStart);
         assertEq(_spender.limit(address(_account), _spenderAddress), newLimit);
         assertEq(_spender.renewPeriod(address(_account), _spenderAddress), newRenewPeriod);
     }
@@ -426,43 +426,47 @@ contract ERC7579NativeSpenderTest is Test {
         assertEq(available, 0);
     }
 
-    function testMultipleSpendersIndependence(uint160 limit1, uint160 amount1, uint160 limit2, uint160 amount2) public {
-        limit1 = uint160(bound(limit1, 1, MAX_ETH / 2));
-        limit2 = uint160(bound(limit2, 1, MAX_ETH / 2));
-        amount1 = uint160(bound(amount1, 1, limit1));
-        amount2 = uint160(bound(amount2, 1, limit2));
+    function testMultipleSpendersIndependence(
+        uint160 limit,
+        uint160 amount1,
+        uint160 amount2,
+        address spender2
+    ) public {
+        vm.assume(spender2 != _spenderAddress);
+        limit = uint160(bound(limit, 1, MAX_ETH / 2));
+        amount1 = uint160(bound(amount1, 1, limit));
+        amount2 = uint160(bound(amount2, 1, limit));
 
-        uint48 start = uint48(block.timestamp);
-        uint48 renewPeriod = 1 days;
+        // Avoid stack too deep
+        {
+            // Install two spenders
+            address[] memory spenders = new address[](2);
+            spenders[0] = _spenderAddress;
+            spenders[1] = spender2;
 
-        address spender2 = makeAddr("spender2");
+            uint48 start = uint48(block.timestamp);
+            uint48[] memory starts = new uint48[](2);
+            starts[0] = start;
+            starts[1] = start;
 
-        // Install two spenders
-        address[] memory spenders = new address[](2);
-        spenders[0] = _spenderAddress;
-        spenders[1] = spender2;
+            uint160[] memory limits = new uint160[](2);
+            limits[0] = limit;
+            limits[1] = limit;
 
-        uint48[] memory starts = new uint48[](2);
-        starts[0] = start;
-        starts[1] = start;
+            uint48 renewPeriod = 1 days;
+            uint48[] memory renewPeriods = new uint48[](2);
+            renewPeriods[0] = renewPeriod;
+            renewPeriods[1] = renewPeriod;
 
-        uint160[] memory limits = new uint160[](2);
-        limits[0] = limit1;
-        limits[1] = limit2;
+            bytes memory initData = abi.encode(spenders, starts, limits, renewPeriods);
+            (
+                uint256[] memory moduleTypeIds,
+                address[] memory modules,
+                bytes[] memory initDatas
+            ) = _buildInstallationModules(initData);
 
-        uint48[] memory renewPeriods = new uint48[](2);
-        renewPeriods[0] = renewPeriod;
-        renewPeriods[1] = renewPeriod;
-
-        bytes memory initData = abi.encode(spenders, starts, limits, renewPeriods);
-
-        (
-            uint256[] memory moduleTypeIds,
-            address[] memory modules,
-            bytes[] memory initDatas
-        ) = _buildInstallationModules(initData);
-
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+            _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        }
 
         // Spend from both spenders
         vm.prank(_spenderAddress);

@@ -2,7 +2,7 @@
 
 This directory contains Foundry scripts for deploying the OpenAccountFramework contracts to multiple blockchain networks.
 
-The `OpenAccountFactory` is deployed using the [Arachnid deterministic deployment proxy](https://github.com/Arachnid/deterministic-deployment-proxy) at address `0x4e59b44847b379578588920cA78FbF26c0B4956C`. This approach ensures the factory has the same address across all EVM-compatible chains, making it easier for users and developers to interact with the system consistently.
+The `OpenAccountFactory` and other modules are deployed using the [Arachnid deterministic deployment proxy](https://github.com/Arachnid/deterministic-deployment-proxy) at address `0x4e59b44847b379578588920cA78FbF26c0B4956C`. This approach ensures the factory has the same address across all EVM-compatible chains, making it easier for users and developers to interact with the system consistently.
 
 According to [this research](https://ethereum-magicians.org/t/eip-7997-deterministic-factory-predeploy/24998/15), the Arachnid deployment proxy is the most widely adopted proxy available, and its prevalence suggests it as an effective approach for deterministic addresses across chains. This is further supported by proposals like [RIP-7740](https://github.com/ethereum/RIPs/blob/master/RIPS/rip-7740.md).
 
@@ -25,7 +25,7 @@ Test the deployment script without broadcasting transactions:
 
 ```bash
 # From the packages/contracts/ directory
-forge script ./scripts/deployments/OpenAccountFactory.s.sol:OpenAccountFactoryScript --rpc-url <RPC_NAME>
+forge script ./scripts/Deploy.s.sol:DeployScript --rpc-url <RPC_NAME>
 ```
 
 Replace `<RPC_NAME>` with any of the supported networks (see [Supported Networks](#supported-networks)).
@@ -33,7 +33,7 @@ Replace `<RPC_NAME>` with any of the supported networks (see [Supported Networks
 **Example:**
 
 ```bash
-forge script ./scripts/deployments/OpenAccountFactory.s.sol:OpenAccountFactoryScript --rpc-url sepolia
+forge script ./scripts/Deploy.s.sol:DeployScript --rpc-url sepolia
 ```
 
 ### Production Deployment
@@ -43,7 +43,7 @@ Deploy and verify the factory on a live network:
 ```bash
 ETHERSCAN_API_KEY=<API_KEY> \
 ETH_FROM=$(cast wallet address --account <ACCOUNT_NAME>) \
-forge script ./scripts/deployments/OpenAccountFactory.s.sol:OpenAccountFactoryScript \
+forge script ./scripts/Deploy.s.sol:DeployScript \
   --rpc-url <RPC_NAME> \
   --account <ACCOUNT_NAME> \
   --verify \
@@ -63,7 +63,7 @@ forge script ./scripts/deployments/OpenAccountFactory.s.sol:OpenAccountFactorySc
 ```bash
 ETHERSCAN_API_KEY=<API_KEY> \
 ETH_FROM=$(cast wallet address --account deployer) \
-forge script ./scripts/deployments/OpenAccountFactory.s.sol:OpenAccountFactoryScript \
+forge script ./scripts/Deploy.s.sol:DeployScript \
   --rpc-url base_sepolia \
   --account deployer \
   --verify \
@@ -78,7 +78,7 @@ If a contract was deployed but not verified, you can verify it separately:
 forge verify-contract \
   --rpc-url <RPC_NAME> \
   <CONTRACT_ADDRESS> \
-  src/OpenAccountFactory.sol:OpenAccountFactory \
+  src/Deploy.sol:DeployScript \
   --etherscan-api-key <API_KEY>
 ```
 
@@ -87,7 +87,7 @@ forge verify-contract \
 For chains with custom block explorers, specify the verifier URL:
 
 ```bash
-forge script ./scripts/deployments/OpenAccountFactory.s.sol:OpenAccountFactoryScript \
+forge script ./scripts/Deploy.s.sol:DeployScript \
   --rpc-url <RPC_NAME> \
   --broadcast \
   --verify \
@@ -108,7 +108,7 @@ To deploy to a new network:
 2. **Run the deployment script** with the new network name:
 
    ```bash
-   forge script ./scripts/deployments/OpenAccountFactory.s.sol:OpenAccountFactoryScript --rpc-url my_network --broadcast
+   forge script ./scripts/Deploy.s.sol:DeployScript --rpc-url my_network --broadcast
    ```
 
 3. **Update this README** with the new network in the [Supported Networks](#supported-networks) section
@@ -143,7 +143,6 @@ The following networks have RPC endpoints configured in `foundry.toml`:
 - `bnb_smart_chain`: BNB Smart Chain
 - `optimism`: Optimism
 - `polygon`: Polygon PoS
-- `zksync`: zkSync Era
 
 ### Testnets
 
@@ -154,4 +153,3 @@ The following networks have RPC endpoints configured in `foundry.toml`:
 - `bnb_smart_chain_testnet`: BNB Smart Chain Testnet
 - `optimism_sepolia`: Optimism Sepolia
 - `polygon_amoy`: Polygon Amoy
-- `zksync_sepolia`: zkSync Era Sepolia

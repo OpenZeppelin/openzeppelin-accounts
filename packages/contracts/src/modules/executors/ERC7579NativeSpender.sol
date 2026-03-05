@@ -219,25 +219,29 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
      * See {IERC7579Module-onInstall}. The `initData` encodes arrays of spenders and their
      * corresponding spending configurations.
      *
-     * See {_decodeNativeSpenderInitData} for the encoding details.
-     *
      * Requirements:
      *
      * * The account must have no spenders installed. Reverts with {ERC7579NativeSpenderAlreadyInstalled} if not.
      * * The `spenders_` array must not be empty. Reverts with {ERC7579NativeSpenderEmptySpenders} if not.
-     * * Those from {_decodeNativeSpenderInitData} for the decoding requirements.
+     * * The `initData` must be encoded as: `abi.encode(spenders, starts, limits, renewPeriods)`.
+     *   Reverts with {ERC7579NativeSpenderInvalidInitData} if not.
      * * All arrays must have equal length. Reverts with {ERC7579NativeSpenderMismatchedInitDataLengths} if not.
      * * Those from {_setSpendingConfig} for the configuration requirements.
+     *
+     * TIP: Each start will be set to the current timepoint if it's 0.
      */
     function onInstall(bytes calldata initData) public virtual {
         address account = msg.sender;
         require(!installed(account), ERC7579NativeSpenderAlreadyInstalled());
-        (
-            address[] calldata spenders_,
-            uint48[] calldata starts,
-            uint160[] calldata limits,
-            uint48[] calldata renewPeriods
-        ) = _decodeNativeSpenderInitData(initData);
+        // Minimum length:
+        // starts offset (32 bytes) + starts length (32 bytes) + spenders offset (32 bytes) +
+        // spenders length (32 bytes) + limits offset (32 bytes) + limits length (32 bytes) +
+        // renewPeriods offset (32 bytes) + renewPeriods length (32 bytes) = 256 bytes
+        require(initData.length > 0x99, ERC7579NativeSpenderInvalidInitData());
+        address[] calldata spenders_ = _decodeNativeSpenderInitDataSpenders(initData);
+        uint48[] calldata starts = _decodeNativeSpenderInitDataStarts(initData);
+        uint160[] calldata limits = _decodeNativeSpenderInitDataLimits(initData);
+        uint48[] calldata renewPeriods = _decodeNativeSpenderInitDataRenewPeriods(initData);
         require(
             spenders_.length == starts.length &&
                 spenders_.length == limits.length &&
@@ -312,6 +316,8 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
      *
      * * The module must be installed. Reverts with {ERC7579NativeSpenderUninstalled} if not.
      * * Those from {_setSpendingConfig}.
+     *
+     * TIP: Setting `newStart` to 0 will resolve to the current timepoint.
      */
     function setSpendingConfig(
         address spender,
@@ -325,7 +331,7 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
 
     /// @dev Same as {setSpendingConfig} but sets a configuration that starts immediately.
     function setSpendingConfig(address spender, uint160 newLimit, uint48 newRenewPeriod) public virtual {
-        setSpendingConfig(spender, clock(), newLimit, newRenewPeriod);
+        setSpendingConfig(spender, 0, newLimit, newRenewPeriod);
     }
 
     /**
@@ -470,9 +476,9 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
      *
      * * Each renewal period must be greater than zero. Reverts with {ERC7579NativeSpenderInvalidRenewPeriod} if not.
      * * Each limit must be greater than zero. Reverts with {ERC7579NativeSpenderInvalidLimit} if not.
-     * * If keeping the same start time (to update limit/renewPeriod), no timestamp validation is performed.
-     * * If changing the start time, the new start must be >= current timepoint. Reverts with
-     *   {ERC7579NativeSpenderInvalidStart} if attempting to set a different past start time
+     * * If `newStart` is non-zero, it must be >= current timepoint. Setting 0 would resolve
+     *   to the current timepoint. Reverts with {ERC7579NativeSpenderInvalidStart} if attempting
+     *   to set any other past start time.
      *   (this prevents reusing old start times that might have existing spending data).
      *
      * Emits a {ERC7579NativeSpendingConfigSet} event.
@@ -490,12 +496,14 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
     ) internal virtual {
         require(newRenewPeriod > 0, ERC7579NativeSpenderInvalidRenewPeriod(newRenewPeriod));
         require(newLimit > 0, ERC7579NativeSpenderInvalidLimit(newLimit));
-        require(newStart >= clock(), ERC7579NativeSpenderInvalidStart(newStart));
+        uint48 currentTimepoint = clock();
+        uint48 resolvedStart = uint48(Math.ternary(newStart == 0, currentTimepoint, newStart)); // Safe cast. Both are uint48.
+        require(resolvedStart >= currentTimepoint, ERC7579NativeSpenderInvalidStart(newStart));
         _spenders[account][installation_].add(spender);
-        _config[account][installation_][spender].start = newStart;
+        _config[account][installation_][spender].start = resolvedStart;
         _config[account][installation_][spender].renewPeriod = newRenewPeriod;
         _config[account][installation_][spender].limit = newLimit;
-        emit ERC7579NativeSpendingConfigSet(account, spender, newStart, newLimit, newRenewPeriod);
+        emit ERC7579NativeSpendingConfigSet(account, spender, resolvedStart, newLimit, newRenewPeriod);
     }
 
     /**
@@ -525,70 +533,105 @@ contract ERC7579NativeSpender is ERC7579Executor, Nonces {
     }
 
     /**
-     * @dev Internal function to decode the initialization data for the native spender module.
-     *
-     * The `initData` should be encoded as: `abi.encode(spenders, starts, limits, renewPeriods)`
-     * where each parameter is an array of equal length.
+     * @dev Internal function to decode the spenders from the initialization data.
      *
      * Requirements:
      *
-     * * `initData` must be at least 256 bytes (8 x 32 bytes for offsets and lengths)
-     * * All offsets must point within the `initData` bounds
-     *
-     * Reverts with {ERC7579NativeSpenderInvalidInitData} if the `initData` is invalid.
+     * * The `initData` must be at least 32 bytes (1 x 32 bytes for the offset)
+     * * The offset must point within the `initData` bounds
+     * * The offset must be greater than 0
+     * * The offset must be less than the length of the `initData`
      */
-    function _decodeNativeSpenderInitData(
+    function _decodeNativeSpenderInitDataSpenders(
         bytes calldata initData
-    )
-        internal
-        virtual
-        returns (
-            address[] calldata spenders_,
-            uint48[] calldata starts,
-            uint160[] calldata limits,
-            uint48[] calldata renewPeriods
-        )
-    {
-        // Minimum length:
-        // starts offset (32 bytes) + starts length (32 bytes) + spenders offset (32 bytes) +
-        // spenders length (32 bytes) + limits offset (32 bytes) + limits length (32 bytes) +
-        // renewPeriods offset (32 bytes) + renewPeriods length (32 bytes) = 256 bytes
-        require(initData.length > 0x99, ERC7579NativeSpenderInvalidInitData());
-
+    ) private pure returns (address[] calldata spenders_) {
         uint256 spendersOffset = uint256(bytes32(initData[0x00:0x20]));
-        uint256 startsOffset = uint256(bytes32(initData[0x20:0x40]));
-        uint256 limitsOffset = uint256(bytes32(initData[0x40:0x60]));
-        uint256 renewPeriodsOffset = uint256(bytes32(initData[0x60:0x80]));
-
         uint256 spendersDataOffset = spendersOffset + 0x20;
-        uint256 startsDataOffset = startsOffset + 0x20;
-        uint256 limitsDataOffset = limitsOffset + 0x20;
-        uint256 renewPeriodsDataOffset = renewPeriodsOffset + 0x20;
-
-        require(
-            spendersDataOffset <= initData.length &&
-                startsDataOffset <= initData.length &&
-                limitsDataOffset <= initData.length &&
-                renewPeriodsDataOffset <= initData.length,
-            ERC7579NativeSpenderInvalidInitData()
-        );
-
+        require(spendersDataOffset <= initData.length, ERC7579NativeSpenderInvalidInitData());
         uint256 spendersLength = uint256(bytes32(initData[spendersOffset:spendersDataOffset]));
-        uint256 startsLength = uint256(bytes32(initData[startsOffset:startsDataOffset]));
-        uint256 limitsLength = uint256(bytes32(initData[limitsOffset:limitsDataOffset]));
-        uint256 renewPeriodsLength = uint256(bytes32(initData[renewPeriodsOffset:renewPeriodsDataOffset]));
-
+        require(spendersDataOffset + spendersLength * 0x20 <= initData.length, ERC7579NativeSpenderInvalidInitData());
         assembly ("memory-safe") {
             spenders_.offset := add(initData.offset, spendersDataOffset)
             spenders_.length := spendersLength
+        }
+        return spenders_;
+    }
+
+    /**
+     * @dev Internal function to decode the starts from the initialization data.
+     *
+     * Requirements:
+     *
+     * * The `initData` must be at least 32 bytes (1 x 32 bytes for the offset)
+     * * The offset must point within the `initData` bounds
+     * * The offset must be greater than 0
+     * * The offset must be less than the length of the `initData`
+     */
+    function _decodeNativeSpenderInitDataStarts(
+        bytes calldata initData
+    ) private pure returns (uint48[] calldata starts) {
+        uint256 startsOffset = uint256(bytes32(initData[0x20:0x40]));
+        uint256 startsDataOffset = startsOffset + 0x20;
+        require(startsDataOffset <= initData.length, ERC7579NativeSpenderInvalidInitData());
+        uint256 startsLength = uint256(bytes32(initData[startsOffset:startsDataOffset]));
+        require(startsDataOffset + startsLength * 0x20 <= initData.length, ERC7579NativeSpenderInvalidInitData());
+        assembly ("memory-safe") {
             starts.offset := add(initData.offset, startsDataOffset)
             starts.length := startsLength
+        }
+        return starts;
+    }
+
+    /**
+     * @dev Internal function to decode the limits from the initialization data.
+     *
+     * Requirements:
+     *
+     * * The `initData` must be at least 32 bytes (1 x 32 bytes for the offset)
+     * * The offset must point within the `initData` bounds
+     * * The offset must be greater than 0
+     * * The offset must be less than the length of the `initData`
+     */
+    function _decodeNativeSpenderInitDataLimits(
+        bytes calldata initData
+    ) private pure returns (uint160[] calldata limits) {
+        uint256 limitsOffset = uint256(bytes32(initData[0x40:0x60]));
+        uint256 limitsDataOffset = limitsOffset + 0x20;
+        require(limitsDataOffset <= initData.length, ERC7579NativeSpenderInvalidInitData());
+        uint256 limitsLength = uint256(bytes32(initData[limitsOffset:limitsDataOffset]));
+        require(limitsDataOffset + limitsLength * 0x20 <= initData.length, ERC7579NativeSpenderInvalidInitData());
+        assembly ("memory-safe") {
             limits.offset := add(initData.offset, limitsDataOffset)
             limits.length := limitsLength
+        }
+        return limits;
+    }
+
+    /**
+     * @dev Internal function to decode the renew periods from the initialization data.
+     *
+     * Requirements:
+     *
+     * * The `initData` must be at least 32 bytes (1 x 32 bytes for the offset)
+     * * The offset must point within the `initData` bounds
+     * * The offset must be greater than 0
+     * * The offset must be less than the length of the `initData`
+     */
+    function _decodeNativeSpenderInitDataRenewPeriods(
+        bytes calldata initData
+    ) private pure returns (uint48[] calldata renewPeriods) {
+        uint256 renewPeriodsOffset = uint256(bytes32(initData[0x60:0x80]));
+        uint256 renewPeriodsDataOffset = renewPeriodsOffset + 0x20;
+        require(renewPeriodsDataOffset <= initData.length, ERC7579NativeSpenderInvalidInitData());
+        uint256 renewPeriodsLength = uint256(bytes32(initData[renewPeriodsOffset:renewPeriodsDataOffset]));
+        require(
+            renewPeriodsDataOffset + renewPeriodsLength * 0x20 <= initData.length,
+            ERC7579NativeSpenderInvalidInitData()
+        );
+        assembly ("memory-safe") {
             renewPeriods.offset := add(initData.offset, renewPeriodsDataOffset)
             renewPeriods.length := renewPeriodsLength
         }
-
-        return (spenders_, starts, limits, renewPeriods);
+        return renewPeriods;
     }
 }

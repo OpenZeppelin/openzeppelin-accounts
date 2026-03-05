@@ -1,5 +1,6 @@
 // - COMPILER:      compiler version (default: 0.8.27)
 // - HARDFORK:      hardfork version (default: prague)
+// - FHE:           enable FHE compilation (default: false)
 
 const { argv } = require('yargs/yargs')()
   .env('')
@@ -12,14 +13,19 @@ const { argv } = require('yargs/yargs')()
       type: 'string',
       default: 'prague',
     },
+    fhe: {
+      type: 'boolean',
+      default: false,
+    },
   });
 
+if (argv.fhe) require('@fhevm/hardhat-plugin');
 require('@nomicfoundation/hardhat-chai-matchers');
 require('@nomicfoundation/hardhat-ethers');
 require('hardhat-exposed');
 require('hardhat-predeploy');
 require('solidity-coverage');
-require('../../lib/@openzeppelin-contracts/hardhat/remappings');
+require('./hardhat/remappings');
 
 module.exports = {
   solidity: {
@@ -29,7 +35,6 @@ module.exports = {
         enabled: true,
         runs: 200,
       },
-      viaIR: true,
       evmVersion: argv.hardfork,
     },
   },
@@ -43,5 +48,6 @@ module.exports = {
   },
   paths: {
     sources: 'src',
+    tests: argv.fhe ? 'test-fhe' : 'test',
   },
 };

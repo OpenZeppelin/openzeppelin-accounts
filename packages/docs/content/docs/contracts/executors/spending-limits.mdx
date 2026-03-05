@@ -99,7 +99,7 @@ amounts[2] = 0.2 ether; // Total: 0.5 ether
 nativeSpender.batchTransferFrom(address(account), recipients, amounts);
 ```
 
-The `batchTransferFrom` relies on [ERC-7579 default execution type](../erc7579#execution-modes), which means that all transfers must succeed, otherwise the batch reverts completely.
+The `batchTransferFrom` relies on [ERC-7579 default execution type](/docs/contracts/erc7579#execution-modes), which means that all transfers must succeed, otherwise the batch reverts completely.
 
 The module tracks the spending every period defined by the `renewPeriod` duration after the specified `startTime`. Users can check a spender's configuration and its current spending:
 
@@ -245,7 +245,7 @@ amounts[2] = 20e6; // 20 USDC (Total: 50 USDC)
 erc20Spender.batchTransferFrom(address(account), token, recipients, amounts);
 ```
 
-The `batchTransferFrom` relies on [ERC-7579 default execution type](../erc7579#execution-modes), which means that all transfers must succeed, otherwise the batch reverts completely. The executor verifies that ERC20 transfers succeed by checking return values. Non-standard ERC20 tokens that don't return a boolean are supported (return value is optional).
+The `batchTransferFrom` relies on [ERC-7579 default execution type](/docs/contracts/erc7579#execution-modes), which means that all transfers must succeed, otherwise the batch reverts completely. The executor verifies that ERC20 transfers succeed by checking return values. Non-standard ERC20 tokens that don't return a boolean are supported (return value is optional).
 
 The module tracks the spending every period defined by the `renewPeriod` duration after the specified `startTime`. Users can check a spender's configuration and its current spending for a specific token:
 

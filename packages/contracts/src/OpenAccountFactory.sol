@@ -8,9 +8,11 @@ import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {Mode} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {OpenAccount} from "./OpenAccount.sol";
 import {ERC1967Clones} from "./utils/ERC1967Clones.sol";
+import {OpenAccountERC8043} from "./extensions/OpenAccountERC8043.sol";
+import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 
 /// @dev Implementation contract for the OpenAccount factory.
-contract OpenAccountImplementation is OpenAccount, UUPSUpgradeable {
+contract OpenAccountImplementation is OpenAccount, OpenAccountERC8043, UUPSUpgradeable {
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() EIP712("OpenAccount", "1") {
         _disableInitializers();
@@ -29,6 +31,16 @@ contract OpenAccountImplementation is OpenAccount, UUPSUpgradeable {
     ) public override {
         super.initialize(moduleTypeIds, modules, initDatas, configMode, configCalldata);
         emit IERC1967.Upgraded(OpenAccountFactory(msg.sender).implementation());
+    }
+
+    // Override required by Solidity
+
+    function _validateUserOp(
+        PackedUserOperation calldata userOp,
+        bytes32 userOpHash,
+        bytes calldata signature
+    ) internal override(OpenAccount, OpenAccountERC8043) returns (uint256) {
+        return super._validateUserOp(userOp, userOpHash, signature);
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyEntryPointOrSelf {}

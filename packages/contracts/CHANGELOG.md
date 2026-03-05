@@ -1,6 +1,43 @@
+<<<<<<< HEAD
 ## 12-01-2026
 
 - Add `CrossChainSignatureChecker` utility library to verify cross-chain signatures following ERC-7964.
+=======
+## 04-03-2026
+
+- Renamed `OpenAccountEnableMode` to `OpenAccountERC8043`, now implementing atomic module installation and usage (_enable mode_) following ERC-8043. When `userOp.initCode` starts with the `0x80438043` magic value, the account installs one or more modules and validates the user operation in a single transaction.
+- `ERC7579ERC20Spender`: The underlying transfer revert is now bubbled up directly. For batch transfers, the revert reason of the first failed transfer is bubbled up directly.
+- `ERC7579ERC20Spender`: Removed `_decodeERC20SpenderInitData` from the internal interface.
+- `ERC7579NativeSpender`: Removed `_decodeNativeSpenderInitData` from the internal interface.
+- `ERC7579NativeSpender`: The underlying transfer revert is now bubbled up directly.
+
+## 28-02-2026
+
+- `ERC7579Multisig`: `isSigner`, `addSigners`, `removeSigners`, `_addSigners`, and `_removeSigners` now use `calldata` instead of `memory` for `bytes` parameters.
+- `ERC7579MultisigWeighted`: `signerWeight`, `setSignerWeights`, `_setSignerWeights`, and `_addSigners` now use `calldata` instead of `memory` for `bytes` parameters.
+- `ERC7579SocialRecoveryExecutor`: `isGuardian`, `addGuardians`, and `removeGuardians` now use `calldata` instead of `memory` for `bytes` parameters.
+- `ERC7579MultisigWeightedValidator`: `_addSigners` and `_removeSigners` now use `calldata` instead of `memory` for `bytes` parameters.
+- Add `ERC7579ECDSA`, `ERC7579P256`, and `ERC7579WebAuthn` abstract contract modules, extracting the signer management and signature validation logic from their respective validator contracts into reusable primitives.
+- `ERC7579ECDSAValidator`, `ERC7579P256Validator`, and `ERC7579WebAuthnValidator` now extend these abstract primitives and compose them with `ERC7579Validator`.
+- `ERC7579WebAuthnValidator`: The `_rawERC7579Validation` function now returns `false` when the signature is not a valid WebAuthn authentication assertion. P256 fallback is removed.
+
+## 21-02-2026
+
+- `ERC7579MultisigConfidentialValidator`: User op validation now requires only 2 steps instead of 3. The explicit `discloseOperation` call is no longer needed: users can instead embed the FHE decryption proof directly in the user op signature (relayer address in the first 20 bytes, proof thereafter), and the validator verifies it inline during `validateUserOp`. The prior 3-step flow (request → disclose → submit) remains supported as a fallback via the `disclosed` flag.
+
+## 17-02-2026
+
+- `ERC7579MultisigConfidential`: Removed the `requestDisclosure` function that allowed submitting arbitrary encrypted booleans (`ebool`) for disclosure. The internal `_requestDisclosure` function has been renamed to `_requestDiscloseOperation`. Only `requestDiscloseOperation` is now supported for requesting decryption of validated operations.
+
+## 16-02-2026
+
+- Add `ERC7579MultisigConfidential` and `ERC7579MultisigWeightedConfidential` abstract contract modules, providing confidential multisignature validation using Fully Homomorphic Encryption (FHE). Signer identities and the approval threshold are kept encrypted on-chain, enabling privacy-preserving multisignature authorization for ERC-7579 accounts.
+- Add `ERC7579MultisigConfidentialValidator` and `ERC7579MultisigWeightedConfidentialValidator` contract modules, extending the confidential multisig abstract contracts with ERC-7579 validator module support.
+
+## 06-02-2026
+
+- `ERC7579ERC20Spender` and `ERC7579NativeSpender`: `newStart` can now be set to `0` as a sentinel value that resolves to the current timepoint. Previously, the current timepoint had to be passed explicitly for immediate-start configurations.
+>>>>>>> main
 
 ## 09-01-2026
 

@@ -15,8 +15,9 @@ const {
   NonNativeSigner,
   MultiERC7913SigningKey,
 } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/signers');
+const { getDomain, PackedUserOperation } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/eip712');
 
-const { shouldBehaveLikeERC7579Module } = require('../ERC7579Module.behavior');
+const { shouldBehaveLikeERC7579Module, shouldBehaveLikeERC7579Validator } = require('../ERC7579Module.behavior');
 const { shouldBehaveLikeERC7579MultisigWeighted } = require('../ERC7579Multisig.behavior');
 
 // Prepare signers in advance
@@ -26,6 +27,8 @@ const signerECDSA3 = ethers.Wallet.createRandom();
 const signerECDSA4 = ethers.Wallet.createRandom();
 
 async function fixture() {
+  const [other] = await ethers.getSigners();
+
   // Deploy ERC-7579 multisig weighted module
   const mock = await ethers.deployContract('$ERC7579MultisigWeightedValidator');
   const target = await ethers.deployContract('CallReceiverMock');
@@ -33,6 +36,7 @@ async function fixture() {
   // ERC-4337 env
   const helper = new ERC4337Helper();
   await helper.wait();
+  const entrypointDomain = await getDomain(predeploy.entrypoint.v09);
 
   // Prepare signers with weights
   const signers = [signerECDSA1.address, signerECDSA2.address, signerECDSA3.address];
@@ -40,9 +44,11 @@ async function fixture() {
   const threshold = 3; // Set to 3 to match the default weights during initialization (3 signers × 1 weight = 3)
 
   // Create multi-signer instance
-  const multiSigner = new NonNativeSigner(
-    new MultiERC7913SigningKey([signerECDSA1, signerECDSA2, signerECDSA3], weights),
-  );
+  const signer = new NonNativeSigner(new MultiERC7913SigningKey([signerECDSA1, signerECDSA2, signerECDSA3], weights));
+  const signUserOp = userOp =>
+    signer
+      .signTypedData(entrypointDomain, { PackedUserOperation }, userOp.packed)
+      .then(signature => Object.assign(userOp, { signature }));
 
   // Prepare module installation data
   const installData = ethers.AbiCoder.defaultAbiCoder().encode(
@@ -82,7 +88,9 @@ async function fixture() {
     nonSigner: signerECDSA4.address,
     weights,
     threshold,
-    multiSigner,
+    signer,
+    signUserOp,
+    other,
   };
 }
 
@@ -93,6 +101,7 @@ describe('ERC7579MultisigWeighted', function () {
 
   shouldBehaveLikeERC7579Module();
   shouldBehaveLikeERC7579MultisigWeighted();
+  shouldBehaveLikeERC7579Validator();
 
   describe('signature validation with weights', function () {
     beforeEach(async function () {
@@ -113,7 +122,7 @@ describe('ERC7579MultisigWeighted', function () {
         .eventually.be.true;
 
       // Also works with all signers (1+2+3=6 > threshold 3)
-      const sufficientSignature = await this.multiSigner.signMessage(testMessage);
+      const sufficientSignature = await this.signer.signMessage(testMessage);
 
       await expect(this.mock.$_rawERC7579Validation(this.mockAccount.address, messageHash, sufficientSignature)).to
         .eventually.be.true;

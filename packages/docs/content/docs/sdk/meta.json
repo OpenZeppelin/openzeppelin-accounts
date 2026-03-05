@@ -1,5 +1,11 @@
 {
   "title": "SDK",
   "root": true,
-  "icon": "Hammer"
+  "icon": "Hammer",
+  "pages": [
+    "index",
+    "actions",
+    "---Clients---",
+    "open-account"
+  ]
 }

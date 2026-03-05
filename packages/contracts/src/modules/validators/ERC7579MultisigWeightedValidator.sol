@@ -28,7 +28,7 @@ contract ERC7579MultisigWeightedValidator is ERC7579MultisigValidator, ERC7579Mu
     /// @inheritdoc ERC7579MultisigWeighted
     function _addSigners(
         address account,
-        bytes[] memory newSigners
+        bytes[] calldata newSigners
     ) internal virtual override(ERC7579Multisig, ERC7579MultisigWeighted) {
         super._addSigners(account, newSigners);
     }
@@ -36,7 +36,7 @@ contract ERC7579MultisigWeightedValidator is ERC7579MultisigValidator, ERC7579Mu
     /// @inheritdoc ERC7579MultisigWeighted
     function _removeSigners(
         address account,
-        bytes[] memory oldSigners
+        bytes[] calldata oldSigners
     ) internal virtual override(ERC7579Multisig, ERC7579MultisigWeighted) {
         super._removeSigners(account, oldSigners);
     }

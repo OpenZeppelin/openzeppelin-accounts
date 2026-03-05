@@ -48,15 +48,10 @@ abstract contract OpenAccount is
             moduleTypeIds.length == modules.length && modules.length == initDatas.length,
             OpenAccountModuleTypeIdsLengthMismatch()
         );
-        bool hasValidatorOrExecutor;
+        require(_validateInitializationModules(moduleTypeIds), OpenAccountNoValidatorOrExecutor());
         for (uint256 i = 0; i < moduleTypeIds.length; i++) {
             _installModule(moduleTypeIds[i], modules[i], initDatas[i]);
-            hasValidatorOrExecutor =
-                hasValidatorOrExecutor ||
-                moduleTypeIds[i] == MODULE_TYPE_VALIDATOR ||
-                moduleTypeIds[i] == MODULE_TYPE_EXECUTOR;
         }
-        require(hasValidatorOrExecutor, OpenAccountNoValidatorOrExecutor());
         if (configCalldata.length > 0) {
             _execute(configMode, configCalldata);
         }
@@ -69,5 +64,17 @@ abstract contract OpenAccount is
         bytes calldata signature
     ) internal virtual override(Account, AccountERC7579Upgradeable) returns (uint256) {
         return super._validateUserOp(userOp, userOpHash, signature);
+    }
+
+    /// @dev Validates the initialization modules and returns true if the account has a validator or executor module.
+    function _validateInitializationModules(uint256[] calldata moduleTypeIds) private pure returns (bool) {
+        bool hasValidatorOrExecutor;
+        for (uint256 i = 0; i < moduleTypeIds.length; i++) {
+            hasValidatorOrExecutor =
+                hasValidatorOrExecutor ||
+                moduleTypeIds[i] == MODULE_TYPE_VALIDATOR ||
+                moduleTypeIds[i] == MODULE_TYPE_EXECUTOR;
+        }
+        return hasValidatorOrExecutor;
     }
 }

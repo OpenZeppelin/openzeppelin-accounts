@@ -87,9 +87,6 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
     /// @dev The account has not installed the module.
     error ERC7579ERC20SpenderUninstalled();
 
-    /// @dev ERC20 transfer failed.
-    error ERC7579ERC20TransferFailed(address account, address token, address spender, address to, uint256 amount);
-
     /// @dev Emitted when all spending configurations are cleared for an account.
     event ERC7579ERC20SpendingConfigCleared(address indexed account);
 
@@ -279,24 +276,29 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
      * See {IERC7579Module-onInstall}. The `initData` encodes arrays of tokens, spenders and their
      * corresponding spending configurations.
      *
-     * See {_decodeERC20SpenderInitData} for the encoding details.
-     *
      * Requirements:
      *
-     * * Those from {_decodeERC20SpenderInitData} for the decoding requirements.
+     * * The `initData` must be encoded as: `abi.encode(tokens, spenders, starts, limits, renewPeriods)`.
+     *   Reverts with {ERC7579ERC20SpenderInvalidInitData} if not.
      * * All arrays must have equal length. Reverts with {ERC7579ERC20SpenderMismatchedInitDataLengths} if not.
      * * Those from {_setSpendingConfig} for the configuration requirements.
+     *
+     * TIP: Each start will be set to the current timepoint if it's 0.
      */
     function onInstall(bytes calldata initData) public virtual {
         address account = msg.sender;
         require(!installed(account), ERC7579ERC20SpenderAlreadyInstalled());
-        (
-            address[] calldata tokens_,
-            address[] calldata spenders_,
-            uint48[] calldata starts,
-            uint160[] calldata limits,
-            uint48[] calldata renewPeriods
-        ) = _decodeERC20SpenderInitData(initData);
+        // Minimum length:
+        // tokens offset (32 bytes) + tokens length (32 bytes) + spenders offset (32 bytes) +
+        // spenders length (32 bytes) + starts offset (32 bytes) + starts length (32 bytes) +
+        // limits offset (32 bytes) + limits length (32 bytes) + renewPeriods offset (32 bytes) +
+        // renewPeriods length (32 bytes) = 320 bytes
+        require(initData.length > 0x13f, ERC7579ERC20SpenderInvalidInitData());
+        address[] calldata tokens_ = _decodeERC20SpenderInitDataTokens(initData);
+        address[] calldata spenders_ = _decodeERC20SpenderInitDataSpenders(initData);
+        uint48[] calldata starts = _decodeERC20SpenderInitDataStarts(initData);
+        uint160[] calldata limits = _decodeERC20SpenderInitDataLimits(initData);
+        uint48[] calldata renewPeriods = _decodeERC20SpenderInitDataRenewPeriods(initData);
         require(
             tokens_.length == spenders_.length &&
                 spenders_.length == starts.length &&
@@ -342,7 +344,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
      *
      * * The `amount` must not exceed the available spending limit for the current period.
      *   Reverts with {ERC7579ERC20InsufficientAvailable} if it does.
-     * * The `account` must have sufficient token balance. Reverts with {ERC7579ERC20TransferFailed} if transfer fails.
+     * * The `account` must have sufficient token balance. Bubbles the revert reason if transfer fails.
      * * Those of {_periodAt} for the current timepoint.
      */
     function transferFrom(address account, address token, address to, uint256 amount) public virtual {
@@ -361,7 +363,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
      * * The sum of all `amounts` must not exceed the available spending limit for the current period.
      *   Reverts with {ERC7579ERC20InsufficientAvailable} if it does.
      * * The `account` must have sufficient token balance for all transfers. Reverts with
-     *   {ERC7579ERC20TransferFailed} if any transfer fails.
+     *   Bubbles the revert reason of the first failed transfer, if any.
      * * Those of {_periodAt} for the current timepoint.
      */
     function batchTransferFrom(
@@ -383,6 +385,8 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
      *
      * * The module must be installed. Reverts with {ERC7579ERC20SpenderUninstalled} if not.
      * * Those from {_setSpendingConfig}.
+     *
+     * TIP: Setting `newStart` to 0 will resolve to the current timepoint.
      */
     function setSpendingConfig(
         address token,
@@ -397,7 +401,7 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
 
     /// @dev Same as {setSpendingConfig} but sets a configuration that starts immediately.
     function setSpendingConfig(address token, address spender, uint160 newLimit, uint48 newRenewPeriod) public virtual {
-        setSpendingConfig(token, spender, clock(token), newLimit, newRenewPeriod);
+        setSpendingConfig(token, spender, 0, newLimit, newRenewPeriod);
     }
 
     /**
@@ -519,10 +523,13 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
             Mode.unwrap(mode),
             abi.encodePacked(token, uint256(0), abi.encodeCall(IERC20.transfer, (to, amount)))
         );
-        require(
-            returndatas[0].length == 0 || (returndatas[0].length == 32 && _toBool(bytes32(returndatas[0]))),
-            ERC7579ERC20TransferFailed(account, token, spender, to, amount)
-        );
+        if (returndatas[0].length != 0 && returndatas[0].length != 32 && !_toBool(bytes32(returndatas[0]))) {
+            bytes memory returndata = returndatas[0];
+            assembly ("memory-safe") {
+                // Bubble the revert reason
+                revert(add(returndata, 0x20), mload(returndata))
+            }
+        }
     }
 
     /// @dev Internal version of {batchTransferFrom} without access control.
@@ -564,12 +571,15 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
             ERC7579Utils.encodeBatch(executions)
         );
         for (uint256 i = 0; i < returndatas.length; ++i) {
-            require(
-                // This check relaxes the requirement on the return value from a transfer with
-                // non-standard ERC20 implementations.
-                returndatas[i].length == 0 || (returndatas[i].length == 32 && _toBool(bytes32(returndatas[i]))),
-                ERC7579ERC20TransferFailed(account, token, spender, tos[i], amounts[i])
-            );
+            // This check relaxes the requirement on the return value from a transfer with
+            // non-standard ERC20 implementations.
+            if (returndatas[i].length != 0 && returndatas[i].length != 32 && !_toBool(bytes32(returndatas[i]))) {
+                bytes memory returndata = returndatas[i];
+                assembly ("memory-safe") {
+                    // Bubble the revert reason
+                    revert(add(returndata, 0x20), mload(returndata))
+                }
+            }
         }
     }
 
@@ -585,9 +595,9 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
      * * Each renewal period must be greater than zero. Reverts with {ERC7579ERC20SpenderInvalidRenewPeriod} if not.
      * * Each limit must be greater than zero. Reverts with {ERC7579ERC20SpenderInvalidLimit} if not.
      * * The token must be a contract address. Reverts with {ERC7579ERC20SpenderInvalidToken} if not.
-     * * If keeping the same start time (to update limit/renewPeriod), no timepoint validation is performed.
-     * * If changing the start time, the new start must be >= current timepoint. Reverts with
-     *   {ERC7579ERC20SpenderInvalidStart} if attempting to set a different past start time
+     * * If `newStart` is non-zero, it must be >= current timepoint. Setting 0 would resolve
+     *   to the current timepoint. Reverts with {ERC7579ERC20SpenderInvalidStart} if attempting
+     *   to set any other past start time.
      *   (this prevents reusing old start times that might have existing spending data).
      *
      * Emits a {ERC7579ERC20SpendingConfigSet} event.
@@ -607,13 +617,15 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
         require(newRenewPeriod > 0, ERC7579ERC20SpenderInvalidRenewPeriod(newRenewPeriod));
         require(newLimit > 0, ERC7579ERC20SpenderInvalidLimit(newLimit));
         require(address(token).code.length > 0, ERC7579ERC20SpenderInvalidToken(token));
-        require(newStart >= clock(token), ERC7579ERC20SpenderInvalidStart(newStart));
+        uint48 currentTimepoint = clock(token);
+        uint48 resolvedStart = uint48(Math.ternary(newStart == 0, currentTimepoint, newStart)); // Safe cast. Both are uint48.
+        require(resolvedStart >= currentTimepoint, ERC7579ERC20SpenderInvalidStart(newStart));
         _spenders[account][installation_][token].add(spender);
         _tokens[account][installation_].add(token);
-        _config[account][installation_][token][spender].start = newStart;
+        _config[account][installation_][token][spender].start = resolvedStart;
         _config[account][installation_][token][spender].renewPeriod = newRenewPeriod;
         _config[account][installation_][token][spender].limit = newLimit;
-        emit ERC7579ERC20SpendingConfigSet(account, token, spender, newStart, newLimit, newRenewPeriod);
+        emit ERC7579ERC20SpendingConfigSet(account, token, spender, resolvedStart, newLimit, newRenewPeriod);
     }
 
     /**
@@ -653,79 +665,131 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
     }
 
     /**
-     * @dev Internal function to decode the initialization data for the ERC20 spender module.
-     *
-     * The `initData` should be encoded as: `abi.encode(tokens, spenders, starts, limits, renewPeriods)`
-     * where each parameter is an array of equal length.
+     * @dev Internal function to decode the tokens from the initialization data.
      *
      * Requirements:
      *
-     * * `initData` must be at least 320 bytes (10 x 32 bytes for offsets and lengths)
-     * * All offsets must point within the `initData` bounds
-     *
-     * Reverts with {ERC7579ERC20SpenderInvalidInitData} if the `initData` is invalid.
+     * * The `initData` must be at least 32 bytes (1 x 32 bytes for the offset)
+     * * The offset must point within the `initData` bounds
+     * * The offset must be greater than 0
+     * * The offset must be less than the length of the `initData`
      */
-    function _decodeERC20SpenderInitData(
+    function _decodeERC20SpenderInitDataTokens(
         bytes calldata initData
-    )
-        internal
-        virtual
-        returns (
-            address[] calldata tokens_,
-            address[] calldata spenders_,
-            uint48[] calldata starts,
-            uint160[] calldata limits,
-            uint48[] calldata renewPeriods
-        )
-    {
-        // Minimum length:
-        // tokens offset (32 bytes) + tokens length (32 bytes) + spenders offset (32 bytes) +
-        // spenders length (32 bytes) + starts offset (32 bytes) + starts length (32 bytes) +
-        // limits offset (32 bytes) + limits length (32 bytes) + renewPeriods offset (32 bytes) +
-        // renewPeriods length (32 bytes) = 320 bytes
-        require(initData.length > 0x13f, ERC7579ERC20SpenderInvalidInitData());
-
+    ) private pure returns (address[] calldata tokens_) {
         uint256 tokensOffset = uint256(bytes32(initData[0x00:0x20]));
-        uint256 spendersOffset = uint256(bytes32(initData[0x20:0x40]));
-        uint256 startsOffset = uint256(bytes32(initData[0x40:0x60]));
-        uint256 limitsOffset = uint256(bytes32(initData[0x60:0x80]));
-        uint256 renewPeriodsOffset = uint256(bytes32(initData[0x80:0xa0]));
-
         uint256 tokensDataOffset = tokensOffset + 0x20;
-        uint256 spendersDataOffset = spendersOffset + 0x20;
-        uint256 startsDataOffset = startsOffset + 0x20;
-        uint256 limitsDataOffset = limitsOffset + 0x20;
-        uint256 renewPeriodsDataOffset = renewPeriodsOffset + 0x20;
-
-        require(
-            tokensDataOffset <= initData.length &&
-                spendersDataOffset <= initData.length &&
-                startsDataOffset <= initData.length &&
-                limitsDataOffset <= initData.length &&
-                renewPeriodsDataOffset <= initData.length,
-            ERC7579ERC20SpenderInvalidInitData()
-        );
-
+        require(tokensDataOffset <= initData.length, ERC7579ERC20SpenderInvalidInitData());
         uint256 tokensLength = uint256(bytes32(initData[tokensOffset:tokensDataOffset]));
-        uint256 spendersLength = uint256(bytes32(initData[spendersOffset:spendersDataOffset]));
-        uint256 startsLength = uint256(bytes32(initData[startsOffset:startsDataOffset]));
-        uint256 limitsLength = uint256(bytes32(initData[limitsOffset:limitsDataOffset]));
-        uint256 renewPeriodsLength = uint256(bytes32(initData[renewPeriodsOffset:renewPeriodsDataOffset]));
-
+        require(tokensDataOffset + tokensLength * 0x20 <= initData.length, ERC7579ERC20SpenderInvalidInitData());
         assembly ("memory-safe") {
             tokens_.offset := add(initData.offset, tokensDataOffset)
             tokens_.length := tokensLength
+        }
+        return tokens_;
+    }
+
+    /**
+     * @dev Internal function to decode the spenders from the initialization data.
+     *
+     * Requirements:
+     *
+     * * The `initData` must be at least 32 bytes (1 x 32 bytes for the offset)
+     * * The offset must point within the `initData` bounds
+     * * The offset must be greater than 0
+     * * The offset must be less than the length of the `initData`
+     */
+    function _decodeERC20SpenderInitDataSpenders(
+        bytes calldata initData
+    ) private pure returns (address[] calldata spenders_) {
+        uint256 spendersOffset = uint256(bytes32(initData[0x20:0x40]));
+        uint256 spendersDataOffset = spendersOffset + 0x20;
+        require(spendersDataOffset <= initData.length, ERC7579ERC20SpenderInvalidInitData());
+        uint256 spendersLength = uint256(bytes32(initData[spendersOffset:spendersDataOffset]));
+        require(spendersDataOffset + spendersLength * 0x20 <= initData.length, ERC7579ERC20SpenderInvalidInitData());
+        assembly ("memory-safe") {
             spenders_.offset := add(initData.offset, spendersDataOffset)
             spenders_.length := spendersLength
+        }
+        return spenders_;
+    }
+
+    /**
+     * @dev Internal function to decode the starts from the initialization data.
+     *
+     * Requirements:
+     *
+     * * The `initData` must be at least 32 bytes (1 x 32 bytes for the offset)
+     * * The offset must point within the `initData` bounds
+     * * The offset must be greater than 0
+     * * The offset must be less than the length of the `initData`
+     */
+    function _decodeERC20SpenderInitDataStarts(
+        bytes calldata initData
+    ) private pure returns (uint48[] calldata starts) {
+        uint256 startsOffset = uint256(bytes32(initData[0x40:0x60]));
+        uint256 startsDataOffset = startsOffset + 0x20;
+        require(startsDataOffset <= initData.length, ERC7579ERC20SpenderInvalidInitData());
+        uint256 startsLength = uint256(bytes32(initData[startsOffset:startsDataOffset]));
+        require(startsDataOffset + startsLength * 0x20 <= initData.length, ERC7579ERC20SpenderInvalidInitData());
+        assembly ("memory-safe") {
             starts.offset := add(initData.offset, startsDataOffset)
             starts.length := startsLength
+        }
+        return starts;
+    }
+
+    /**
+     * @dev Internal function to decode the limits from the initialization data.
+     *
+     * Requirements:
+     *
+     * * The `initData` must be at least 32 bytes (1 x 32 bytes for the offset)
+     * * The offset must point within the `initData` bounds
+     * * The offset must be greater than 0
+     * * The offset must be less than the length of the `initData`
+     */
+    function _decodeERC20SpenderInitDataLimits(
+        bytes calldata initData
+    ) private pure returns (uint160[] calldata limits) {
+        uint256 limitsOffset = uint256(bytes32(initData[0x60:0x80]));
+        uint256 limitsDataOffset = limitsOffset + 0x20;
+        require(limitsDataOffset <= initData.length, ERC7579ERC20SpenderInvalidInitData());
+        uint256 limitsLength = uint256(bytes32(initData[limitsOffset:limitsDataOffset]));
+        require(limitsDataOffset + limitsLength * 0x20 <= initData.length, ERC7579ERC20SpenderInvalidInitData());
+        assembly ("memory-safe") {
             limits.offset := add(initData.offset, limitsDataOffset)
             limits.length := limitsLength
+        }
+        return limits;
+    }
+
+    /**
+     * @dev Internal function to decode the renew periods from the initialization data.
+     *
+     * Requirements:
+     *
+     * * The `initData` must be at least 32 bytes (1 x 32 bytes for the offset)
+     * * The offset must point within the `initData` bounds
+     * * The offset must be greater than 0
+     * * The offset must be less than the length of the `initData`
+     */
+    function _decodeERC20SpenderInitDataRenewPeriods(
+        bytes calldata initData
+    ) private pure returns (uint48[] calldata renewPeriods) {
+        uint256 renewPeriodsOffset = uint256(bytes32(initData[0x80:0xa0]));
+        uint256 renewPeriodsDataOffset = renewPeriodsOffset + 0x20;
+        require(renewPeriodsDataOffset <= initData.length, ERC7579ERC20SpenderInvalidInitData());
+        uint256 renewPeriodsLength = uint256(bytes32(initData[renewPeriodsOffset:renewPeriodsDataOffset]));
+        require(
+            renewPeriodsDataOffset + renewPeriodsLength * 0x20 <= initData.length,
+            ERC7579ERC20SpenderInvalidInitData()
+        );
+        assembly ("memory-safe") {
             renewPeriods.offset := add(initData.offset, renewPeriodsDataOffset)
             renewPeriods.length := renewPeriodsLength
         }
-
-        return (tokens_, spenders_, starts, limits, renewPeriods);
+        return renewPeriods;
     }
 
     function _toBool(bytes32 result) private pure returns (bool success) {

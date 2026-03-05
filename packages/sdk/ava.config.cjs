@@ -5,6 +5,6 @@ module.exports = {
     rewritePaths: {
       'src/': 'dist/',
     },
-    compile: false,
+    compile: 'tsc',
   },
 };

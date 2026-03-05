@@ -155,21 +155,25 @@ describe('ERC7579ERC20Spender', function () {
             [
               [this.token1.target, this.token2.target],
               [this.spender1.address, this.spender2.address],
-              [this.start, this.start + 100n],
+              [0n, this.start],
               [this.limit, ethers.parseEther('5')],
               [this.renewPeriod, time.duration.days(30)],
             ],
           );
 
-          await expect(
-            this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, multiSpenderInstallData),
-          )
+          const receipt = await this.mockAccountFromEntrypoint.installModule(
+            this.moduleType,
+            this.mock.target,
+            multiSpenderInstallData,
+          );
+          const currentTime = await time.clockFromReceipt[this.mode](receipt);
+          expect(receipt)
             .to.emit(this.mock, 'ERC7579ERC20SpendingConfigSet')
             .withArgs(
               this.mockAccount.address,
               this.token1.target,
               this.spender1.address,
-              this.start,
+              currentTime,
               this.limit,
               this.renewPeriod,
             )
@@ -178,7 +182,7 @@ describe('ERC7579ERC20Spender', function () {
               this.mockAccount.address,
               this.token2.target,
               this.spender2.address,
-              this.start + 100n,
+              this.start,
               ethers.parseEther('5'),
               time.duration.days(30),
             );
@@ -295,8 +299,9 @@ describe('ERC7579ERC20Spender', function () {
         it('clears spending configurations', async function () {
           const installationBefore = await this.mock.installation(this.mockAccount.address);
 
-          const tx = await this.mockAccountFromEntrypoint.uninstallModule(this.moduleType, this.mock.target, '0x');
-          await expect(tx).to.emit(this.mock, 'ERC7579ERC20SpendingConfigCleared').withArgs(this.mockAccount.address);
+          await expect(this.mockAccountFromEntrypoint.uninstallModule(this.moduleType, this.mock.target, '0x'))
+            .to.emit(this.mock, 'ERC7579ERC20SpendingConfigCleared')
+            .withArgs(this.mockAccount.address);
 
           const installationAfter = await this.mock.installation(this.mockAccount.address);
           expect(installationAfter).to.equal(installationBefore + 1n);
@@ -704,14 +709,15 @@ describe('ERC7579ERC20Spender', function () {
           const newLimit = ethers.parseEther('15');
           const newRenewPeriod = time.duration.days(14);
 
-          const tx = await this.mockFromAccount.setSpendingConfig(
-            this.token1.target,
-            this.spender1.address,
-            this.start + time.duration.days(3),
-            newLimit,
-            ethers.Typed.uint48(newRenewPeriod),
-          );
-          await expect(tx)
+          await expect(
+            this.mockFromAccount.setSpendingConfig(
+              this.token1.target,
+              this.spender1.address,
+              this.start + time.duration.days(3),
+              newLimit,
+              ethers.Typed.uint48(newRenewPeriod),
+            ),
+          )
             .to.emit(this.mock, 'ERC7579ERC20SpendingConfigSet')
             .withArgs(
               this.mockAccount.address,
@@ -748,6 +754,20 @@ describe('ERC7579ERC20Spender', function () {
           ).to.eventually.equal(futureStart);
         });
 
+        it('allows setting 0 start time resolving to current time', async function () {
+          const receipt = await this.mockFromAccount.setSpendingConfig(
+            this.token1.target,
+            this.spender1.address,
+            0,
+            this.limit,
+            ethers.Typed.uint48(this.renewPeriod),
+          );
+          const currentTime = await time.clockFromReceipt[this.mode](receipt);
+          expect(
+            this.mock.start(this.mockAccount.address, this.token1.target, this.spender1.address),
+          ).to.eventually.equal(currentTime);
+        });
+
         it('reverts when trying to set limit to 0', async function () {
           await time.increaseTo[this.mode](this.start);
           await expect(
@@ -764,8 +784,7 @@ describe('ERC7579ERC20Spender', function () {
           await expect(this.mock.spendersCount(this.mockAccount.address, this.token1.target)).to.eventually.equal(2n);
           await expect(this.mock.tokensCount(this.mockAccount.address)).to.eventually.equal(1n);
 
-          const tx = await this.mockFromAccount.unsetSpendingConfig(this.token1.target, this.spender1.address);
-          await expect(tx)
+          await expect(this.mockFromAccount.unsetSpendingConfig(this.token1.target, this.spender1.address))
             .to.emit(this.mock, 'ERC7579ERC20SpendingConfigUnset')
             .withArgs(this.mockAccount.address, this.token1.target, this.spender1.address);
 

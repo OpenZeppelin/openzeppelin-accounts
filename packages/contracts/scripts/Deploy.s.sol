@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.27;
 
-import {BaseScript} from "../Base.s.sol";
+import {BaseScript} from "./Base.s.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {console} from "forge-std/console.sol";
 import {LowLevelCall} from "@openzeppelin/contracts/utils/LowLevelCall.sol";
-import {OpenAccountFactory} from "../../src/OpenAccountFactory.sol";
-import {ERC7579ECDSAValidator} from "../../src/modules/validators/ERC7579ECDSAValidator.sol";
-import {ERC7579P256Validator} from "../../src/modules/validators/ERC7579P256Validator.sol";
-import {ERC7579WebAuthnValidator} from "../../src/modules/validators/ERC7579WebAuthnValidator.sol";
-import {ERC7579MultisigValidator} from "../../src/modules/validators/ERC7579MultisigValidator.sol";
-import {ERC7579MultisigWeightedValidator} from "../../src/modules/validators/ERC7579MultisigWeightedValidator.sol";
-import {ERC7579ERC20Spender} from "../../src/modules/executors/ERC7579ERC20Spender.sol";
-import {ERC7579NativeSpender} from "../../src/modules/executors/ERC7579NativeSpender.sol";
+import {OpenAccountFactory} from "../src/OpenAccountFactory.sol";
+import {ERC7579ECDSAValidator} from "../src/modules/validators/ERC7579ECDSAValidator.sol";
+import {ERC7579P256Validator} from "../src/modules/validators/ERC7579P256Validator.sol";
+import {ERC7579WebAuthnValidator} from "../src/modules/validators/ERC7579WebAuthnValidator.sol";
+import {ERC7579MultisigValidator} from "../src/modules/validators/ERC7579MultisigValidator.sol";
+import {ERC7579MultisigWeightedValidator} from "../src/modules/validators/ERC7579MultisigWeightedValidator.sol";
+import {ERC7579ERC20Spender} from "../src/modules/executors/ERC7579ERC20Spender.sol";
+import {ERC7579NativeSpender} from "../src/modules/executors/ERC7579NativeSpender.sol";
+import {ERC7579SocialRecoveryExecutor} from "../src/modules/executors/ERC7579SocialRecoveryExecutor.sol";
 
-contract OpenAccountFactoryScript is BaseScript {
+contract DeployScript is BaseScript {
     using Strings for *;
 
     // See https://github.com/Arachnid/deterministic-deployment-proxy
@@ -38,6 +38,7 @@ contract OpenAccountFactoryScript is BaseScript {
         _deployERC7579MultisigWeightedValidator(deployments);
         _deployERC7579ERC20Spender(deployments);
         _deployERC7579NativeSpender(deployments);
+        _deployERC7579SocialRecoveryExecutor(deployments);
     }
 
     function _deployOpenAccountFactory(string memory deployments) internal {
@@ -132,6 +133,19 @@ contract OpenAccountFactoryScript is BaseScript {
         address deployedAddress = _deploy(deployments, "ERC7579NativeSpender", type(ERC7579NativeSpender).creationCode);
         vm.writeJson(
             vm.serializeAddress("address", "ERC7579NativeSpender", deployedAddress),
+            "packages/contracts/deployments.json",
+            string.concat("$.", block.chainid.toString())
+        );
+    }
+
+    function _deployERC7579SocialRecoveryExecutor(string memory deployments) internal {
+        address deployedAddress = _deploy(
+            deployments,
+            "ERC7579SocialRecoveryExecutor",
+            type(ERC7579SocialRecoveryExecutor).creationCode
+        );
+        vm.writeJson(
+            vm.serializeAddress("address", "ERC7579SocialRecoveryExecutor", deployedAddress),
             "packages/contracts/deployments.json",
             string.concat("$.", block.chainid.toString())
         );

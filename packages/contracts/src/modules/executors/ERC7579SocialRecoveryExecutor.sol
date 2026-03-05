@@ -94,17 +94,17 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
     }
 
     /// @dev Returns whether the `guardian` is an authorized guardian for the specified account. See {isSigner}.
-    function isGuardian(address account, bytes memory guardian) public view returns (bool) {
+    function isGuardian(address account, bytes calldata guardian) public view returns (bool) {
         return isSigner(account, guardian);
     }
 
     /// @dev Adds new guardians to the authorized set for the calling account. See {addSigners}.
-    function addGuardians(bytes[] memory newGuardians) public {
+    function addGuardians(bytes[] calldata newGuardians) public {
         addSigners(newGuardians);
     }
 
     /// @dev Removes guardians from the authorized set for the calling account. See {removeSigners}.
-    function removeGuardians(bytes[] memory oldGuardians) public {
+    function removeGuardians(bytes[] calldata oldGuardians) public {
         removeSigners(oldGuardians);
     }
 
@@ -187,14 +187,8 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
         if (!valid) {
             (bool success, bytes[] calldata signers, bytes[] calldata signatures) = Multisig
                 .tryDecodeMultisignatureCalldata(multisignature);
-            valid =
-                success &&
-                _validateMultisig(
-                    account,
-                    _getTypedHash(CANCEL_RECOVER_TYPEHASH, account, salt, mode, recoveryData),
-                    signers,
-                    signatures
-                );
+            bytes32 cancelTypedHash = _getTypedHash(CANCEL_RECOVER_TYPEHASH, account, salt, mode, recoveryData);
+            valid = success && _validateMultisig(account, cancelTypedHash, signers, signatures);
         }
         require(valid, ERC7579SocialRecoveryExecutorInvalidCancel());
         _cancel(account, salt, mode, recoveryData);

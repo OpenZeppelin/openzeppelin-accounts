@@ -49,14 +49,17 @@ contract ERC7579ERC20SpenderTest is Test {
     function testInstallation(uint48 start, uint160 limit, uint48 renewPeriod) public {
         vm.assume(renewPeriod > 0);
         vm.assume(limit > 0);
-        vm.assume(start >= block.timestamp);
+        vm.assume(start >= block.timestamp || start == 0);
 
         _installSpender(address(_token1), start, limit, renewPeriod);
 
         assertTrue(_spender.isModuleType(MODULE_TYPE_EXECUTOR));
         assertEq(_spender.spendersCount(address(_account), address(_token1)), 1);
         assertEq(_spender.tokensCount(address(_account)), 1);
-        assertEq(_spender.start(address(_account), address(_token1), _spenderAddress), start);
+        assertEq(
+            _spender.start(address(_account), address(_token1), _spenderAddress),
+            start == 0 ? block.timestamp : start
+        );
         assertEq(_spender.limit(address(_account), address(_token1), _spenderAddress), limit);
         assertEq(_spender.renewPeriod(address(_account), address(_token1), _spenderAddress), renewPeriod);
     }
@@ -302,7 +305,7 @@ contract ERC7579ERC20SpenderTest is Test {
     function testSetSpendingConfig(uint48 newStart, uint160 newLimit, uint48 newRenewPeriod) public {
         vm.assume(newRenewPeriod > 0);
         vm.assume(newLimit > 0);
-        vm.assume(newStart >= block.timestamp);
+        vm.assume(newStart >= block.timestamp || newStart == 0);
 
         uint48 start = uint48(block.timestamp);
         _installSpender(address(_token1), start, 1 ether, 1 days);
@@ -310,7 +313,10 @@ contract ERC7579ERC20SpenderTest is Test {
         vm.prank(address(_account));
         _spender.setSpendingConfig(address(_token1), _spenderAddress, newStart, newLimit, newRenewPeriod);
 
-        assertEq(_spender.start(address(_account), address(_token1), _spenderAddress), newStart);
+        assertEq(
+            _spender.start(address(_account), address(_token1), _spenderAddress),
+            newStart == 0 ? block.timestamp : newStart
+        );
         assertEq(_spender.limit(address(_account), address(_token1), _spenderAddress), newLimit);
         assertEq(_spender.renewPeriod(address(_account), address(_token1), _spenderAddress), newRenewPeriod);
     }
@@ -483,47 +489,49 @@ contract ERC7579ERC20SpenderTest is Test {
         assertEq(available, 0);
     }
 
-    function testMultipleSpendersIndependence(uint160 limit1, uint160 amount1, uint160 limit2, uint160 amount2) public {
-        limit1 = uint160(bound(limit1, 1, MAX_TOKENS / 2));
-        limit2 = uint160(bound(limit2, 1, MAX_TOKENS / 2));
-        amount1 = uint160(bound(amount1, 1, limit1));
-        amount2 = uint160(bound(amount2, 1, limit2));
+    function testMultipleSpendersIndependence(uint160 limit, uint160 amount1, uint160 amount2) public {
+        limit = uint160(bound(limit, 1, MAX_TOKENS / 2));
+        amount1 = uint160(bound(amount1, 1, limit));
+        amount2 = uint160(bound(amount2, 1, limit));
 
         uint48 start = uint48(block.timestamp);
         uint48 renewPeriod = 1 days;
 
         address spender2 = makeAddr("spender2");
 
-        // Install two spenders for same token
-        address[] memory tokens = new address[](2);
-        tokens[0] = address(_token1);
-        tokens[1] = address(_token1);
+        // Avoid stack too deep
+        {
+            // Install two spenders for same token
+            address[] memory tokens = new address[](2);
+            tokens[0] = address(_token1);
+            tokens[1] = address(_token1);
 
-        address[] memory spenders = new address[](2);
-        spenders[0] = _spenderAddress;
-        spenders[1] = spender2;
+            address[] memory spenders = new address[](2);
+            spenders[0] = _spenderAddress;
+            spenders[1] = spender2;
 
-        uint48[] memory starts = new uint48[](2);
-        starts[0] = start;
-        starts[1] = start;
+            uint48[] memory starts = new uint48[](2);
+            starts[0] = start;
+            starts[1] = start;
 
-        uint160[] memory limits = new uint160[](2);
-        limits[0] = limit1;
-        limits[1] = limit2;
+            uint160[] memory limits = new uint160[](2);
+            limits[0] = limit;
+            limits[1] = limit;
 
-        uint48[] memory renewPeriods = new uint48[](2);
-        renewPeriods[0] = renewPeriod;
-        renewPeriods[1] = renewPeriod;
+            uint48[] memory renewPeriods = new uint48[](2);
+            renewPeriods[0] = renewPeriod;
+            renewPeriods[1] = renewPeriod;
 
-        bytes memory initData = abi.encode(tokens, spenders, starts, limits, renewPeriods);
+            bytes memory initData = abi.encode(tokens, spenders, starts, limits, renewPeriods);
 
-        (
-            uint256[] memory moduleTypeIds,
-            address[] memory modules,
-            bytes[] memory initDatas
-        ) = _buildInstallationModules(initData);
+            (
+                uint256[] memory moduleTypeIds,
+                address[] memory modules,
+                bytes[] memory initDatas
+            ) = _buildInstallationModules(initData);
 
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+            _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        }
 
         // Spend from both spenders
         vm.prank(_spenderAddress);
@@ -537,45 +545,47 @@ contract ERC7579ERC20SpenderTest is Test {
         assertEq(_spender.spent(address(_account), address(_token1), spender2, 0), amount2);
     }
 
-    function testMultipleTokensIndependence(uint160 limit1, uint160 amount1, uint160 limit2, uint160 amount2) public {
-        limit1 = uint160(bound(limit1, 1, MAX_TOKENS));
-        limit2 = uint160(bound(limit2, 1, MAX_TOKENS));
-        amount1 = uint160(bound(amount1, 1, limit1));
-        amount2 = uint160(bound(amount2, 1, limit2));
+    function testMultipleTokensIndependence(uint160 limit, uint160 amount1, uint160 amount2) public {
+        limit = uint160(bound(limit, 1, MAX_TOKENS));
+        amount1 = uint160(bound(amount1, 1, limit));
+        amount2 = uint160(bound(amount2, 1, limit));
 
         uint48 start = uint48(block.timestamp);
         uint48 renewPeriod = 1 days;
 
-        // Install same spender for two different tokens
-        address[] memory tokens = new address[](2);
-        tokens[0] = address(_token1);
-        tokens[1] = address(_token2);
+        // Avoid stack too deep
+        {
+            // Install same spender for two different tokens
+            address[] memory tokens = new address[](2);
+            tokens[0] = address(_token1);
+            tokens[1] = address(_token2);
 
-        address[] memory spenders = new address[](2);
-        spenders[0] = _spenderAddress;
-        spenders[1] = _spenderAddress;
+            address[] memory spenders = new address[](2);
+            spenders[0] = _spenderAddress;
+            spenders[1] = _spenderAddress;
 
-        uint48[] memory starts = new uint48[](2);
-        starts[0] = start;
-        starts[1] = start;
+            uint48[] memory starts = new uint48[](2);
+            starts[0] = start;
+            starts[1] = start;
 
-        uint160[] memory limits = new uint160[](2);
-        limits[0] = limit1;
-        limits[1] = limit2;
+            uint160[] memory limits = new uint160[](2);
+            limits[0] = limit;
+            limits[1] = limit;
 
-        uint48[] memory renewPeriods = new uint48[](2);
-        renewPeriods[0] = renewPeriod;
-        renewPeriods[1] = renewPeriod;
+            uint48[] memory renewPeriods = new uint48[](2);
+            renewPeriods[0] = renewPeriod;
+            renewPeriods[1] = renewPeriod;
 
-        bytes memory initData = abi.encode(tokens, spenders, starts, limits, renewPeriods);
+            bytes memory initData = abi.encode(tokens, spenders, starts, limits, renewPeriods);
 
-        (
-            uint256[] memory moduleTypeIds,
-            address[] memory modules,
-            bytes[] memory initDatas
-        ) = _buildInstallationModules(initData);
+            (
+                uint256[] memory moduleTypeIds,
+                address[] memory modules,
+                bytes[] memory initDatas
+            ) = _buildInstallationModules(initData);
 
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+            _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        }
 
         // Spend from both tokens
         vm.prank(_spenderAddress);
