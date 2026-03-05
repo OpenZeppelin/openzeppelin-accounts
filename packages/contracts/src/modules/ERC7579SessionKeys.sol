@@ -30,25 +30,25 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
     using EnumerableSet for EnumerableSet.BytesSet;
 
     /// @dev The `keys`, `starts`, and `ends` arrays passed to {onInstall} have different lengths.
-    error ERC7579SessionKeyssMismatchedInitDataLengths();
+    error ERC7579SessionKeysMismatchedInitDataLengths();
 
     /// @dev The provided `initData` is invalid or malformed.
-    error ERC7579SessionKeyssInvalidInitData();
+    error ERC7579SessionKeysInvalidInitData();
 
     /// @dev The provided `key` is already registered.
-    error ERC7579SessionKeyssAlreadyRegisteredKey(bytes key);
+    error ERC7579SessionKeysAlreadyRegisteredKey(bytes key);
 
     /// @dev The provided `key` is not registered.
-    error ERC7579SessionKeyssNonexistentKey(bytes key);
+    error ERC7579SessionKeysNonexistentKey(bytes key);
 
     /// @dev Emitted when all session keys are cleared for an account on uninstall.
-    event ERC7579SessionKeyssCleared(address indexed account);
+    event ERC7579SessionKeysCleared(address indexed account);
 
     /// @dev Emitted when a session key is registered or updated for an account.
-    event ERC7579SessionKeyssERC7913KeySet(address indexed account, bytes indexed key, uint48 start, uint48 end);
+    event ERC7579SessionKeysERC7913KeySet(address indexed account, bytes indexed key, uint48 start, uint48 end);
 
     /// @dev Emitted when a session key is removed from an account.
-    event ERC7579SessionKeyssERC7913KeyUnset(address indexed account, bytes indexed key);
+    event ERC7579SessionKeysERC7913KeyUnset(address indexed account, bytes indexed key);
 
     /**
      * @dev Validity range for a session key.
@@ -147,7 +147,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      */
     function onUninstall(bytes calldata) public virtual {
         _useNonce(msg.sender);
-        emit ERC7579SessionKeyssCleared(msg.sender);
+        emit ERC7579SessionKeysCleared(msg.sender);
     }
 
     /**
@@ -161,7 +161,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
     function addKeys(bytes[] calldata newKeys, uint48[] calldata starts, uint48[] calldata ends) public virtual {
         require(
             newKeys.length == starts.length && newKeys.length == ends.length,
-            ERC7579SessionKeyssMismatchedInitDataLengths()
+            ERC7579SessionKeysMismatchedInitDataLengths()
         );
         _addKeys(msg.sender, newKeys, starts, ends);
     }
@@ -220,13 +220,13 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      *
      * Requirements:
      *
-     * * All arrays must have equal length. Reverts with {ERC7579SessionKeyssMismatchedInitDataLengths} if not.
-     * * Each of `keys_` must not be registered. Reverts with {ERC7579SessionKeyssAlreadyRegisteredKey} if it is.
+     * * All arrays must have equal length. Reverts with {ERC7579SessionKeysMismatchedInitDataLengths} if not.
+     * * Each of `keys_` must not be registered. Reverts with {ERC7579SessionKeysAlreadyRegisteredKey} if it is.
      *
      * TIP: Setting `starts[i]` to `0` resolves to the current timepoint.
      * TIP: Setting `ends[i]` to `0` stores `type(uint48).max`, meaning no expiry.
      *
-     * Emits an {ERC7579SessionKeyssERC7913KeySet} event for each key.
+     * Emits an {ERC7579SessionKeysERC7913KeySet} event for each key.
      */
     function _addKeys(
         address account,
@@ -236,19 +236,19 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
     ) internal {
         require(
             keys_.length == starts.length && keys_.length == ends.length,
-            ERC7579SessionKeyssMismatchedInitDataLengths()
+            ERC7579SessionKeysMismatchedInitDataLengths()
         );
         uint256 installation_ = installation(account);
         for (uint256 i = 0; i < keys_.length; ++i) {
             bytes calldata key = keys_[i];
-            require(_sessionKeys[account][installation_].add(key), ERC7579SessionKeyssAlreadyRegisteredKey(key));
+            require(_sessionKeys[account][installation_].add(key), ERC7579SessionKeysAlreadyRegisteredKey(key));
             bytes32 keyId = _keyId(key);
             Validity storage validity_ = _validities[account][installation_][keyId];
             uint48 start = uint48(Math.ternary(starts[i] == 0, clock(), starts[i])); // Safe cast. Both are uint48.
             uint48 end = uint48(Math.ternary(ends[i] == 0, type(uint48).max, ends[i])); // Safe cast. Both are uint48.
             validity_.from = start;
             validity_.until = end;
-            emit ERC7579SessionKeyssERC7913KeySet(account, key, start, end);
+            emit ERC7579SessionKeysERC7913KeySet(account, key, start, end);
         }
     }
 
@@ -259,20 +259,20 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      *
      * Requirements:
      *
-     * * Each of `keys_` must be registered. Reverts with {ERC7579SessionKeyssNonexistentKey} if not.
+     * * Each of `keys_` must be registered. Reverts with {ERC7579SessionKeysNonexistentKey} if not.
      *
-     * Emits an {ERC7579SessionKeyssERC7913KeyUnset} event for each key.
+     * Emits an {ERC7579SessionKeysERC7913KeyUnset} event for each key.
      */
     function _removeKeys(address account, bytes[] calldata keys_) internal {
         uint256 installation_ = installation(account);
         for (uint256 i = 0; i < keys_.length; ++i) {
             bytes calldata key = keys_[i];
-            require(_sessionKeys[account][installation_].remove(key), ERC7579SessionKeyssNonexistentKey(key));
+            require(_sessionKeys[account][installation_].remove(key), ERC7579SessionKeysNonexistentKey(key));
             bytes32 keyId = _keyId(key);
             Validity storage validity_ = _validities[account][installation_][keyId];
             validity_.from = 0;
             validity_.until = 0;
-            emit ERC7579SessionKeyssERC7913KeyUnset(account, key);
+            emit ERC7579SessionKeysERC7913KeyUnset(account, key);
         }
     }
 
@@ -353,7 +353,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      * * `initData` must be at least 192 bytes (6 × 32 bytes for the 3 ABI offsets and 3 array lengths).
      * * All offsets must point within the `initData` bounds.
      *
-     * Reverts with {ERC7579SessionKeyssInvalidInitData} if the encoding is invalid.
+     * Reverts with {ERC7579SessionKeysInvalidInitData} if the encoding is invalid.
      */
     function _decodeKeysInitData(
         bytes calldata initData
@@ -361,7 +361,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
         // Minimum length:
         // keys offset (32 bytes) + starts offset (32 bytes) + ends offset (32 bytes) +
         // keys length (32 bytes) + starts length (32 bytes) + ends length (32 bytes) = 192 bytes
-        require(initData.length > 0xbf, ERC7579SessionKeyssInvalidInitData());
+        require(initData.length > 0xbf, ERC7579SessionKeysInvalidInitData());
 
         return (
             _decodeKeysInitDataKeys(initData),
@@ -373,9 +373,9 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
     function _decodeKeysInitDataKeys(bytes calldata initData) private pure returns (bytes[] calldata keys_) {
         uint256 keysOffset = uint256(bytes32(initData[0x00:0x20]));
         uint256 keysDataOffset = keysOffset + 0x20;
-        require(keysDataOffset <= initData.length, ERC7579SessionKeyssInvalidInitData());
+        require(keysDataOffset <= initData.length, ERC7579SessionKeysInvalidInitData());
         uint256 keysLength = uint256(bytes32(initData[keysOffset:keysDataOffset]));
-        require(keysDataOffset + keysLength * 0x20 <= initData.length, ERC7579SessionKeyssInvalidInitData());
+        require(keysDataOffset + keysLength * 0x20 <= initData.length, ERC7579SessionKeysInvalidInitData());
         assembly ("memory-safe") {
             keys_.offset := add(initData.offset, keysDataOffset)
             keys_.length := keysLength
@@ -386,9 +386,9 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
     function _decodeKeysInitDataStarts(bytes calldata initData) private pure returns (uint48[] calldata starts) {
         uint256 startsOffset = uint256(bytes32(initData[0x20:0x40]));
         uint256 startsDataOffset = startsOffset + 0x20;
-        require(startsDataOffset <= initData.length, ERC7579SessionKeyssInvalidInitData());
+        require(startsDataOffset <= initData.length, ERC7579SessionKeysInvalidInitData());
         uint256 startsLength = uint256(bytes32(initData[startsOffset:startsDataOffset]));
-        require(startsDataOffset + startsLength * 0x20 <= initData.length, ERC7579SessionKeyssInvalidInitData());
+        require(startsDataOffset + startsLength * 0x20 <= initData.length, ERC7579SessionKeysInvalidInitData());
         assembly ("memory-safe") {
             starts.offset := add(initData.offset, startsDataOffset)
             starts.length := startsLength
@@ -399,9 +399,9 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
     function _decodeKeysInitDataEnds(bytes calldata initData) private pure returns (uint48[] calldata ends) {
         uint256 endsOffset = uint256(bytes32(initData[0x40:0x60]));
         uint256 endsDataOffset = endsOffset + 0x20;
-        require(endsDataOffset <= initData.length, ERC7579SessionKeyssInvalidInitData());
+        require(endsDataOffset <= initData.length, ERC7579SessionKeysInvalidInitData());
         uint256 endsLength = uint256(bytes32(initData[endsOffset:endsDataOffset]));
-        require(endsDataOffset + endsLength * 0x20 <= initData.length, ERC7579SessionKeyssInvalidInitData());
+        require(endsDataOffset + endsLength * 0x20 <= initData.length, ERC7579SessionKeysInvalidInitData());
         assembly ("memory-safe") {
             ends.offset := add(initData.offset, endsDataOffset)
             ends.length := endsLength
