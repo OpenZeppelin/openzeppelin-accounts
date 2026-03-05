@@ -71,7 +71,7 @@ abstract contract OpenAccountERC8043 is OpenAccount {
     function _validateEnableMode(
         PackedUserOperation calldata userOp,
         bytes32 userOpHash
-    ) internal virtual returns (uint256 validationResult) {
+    ) internal virtual returns (uint256) {
         // Minimum length to hold 4 offset pointers and 4 length words: 4 * 32 + 4 * 32 = 256 bytes (0x100)
         bytes calldata data = userOp.initCode[4:];
         if (data.length < 0x100) {
@@ -105,9 +105,8 @@ abstract contract OpenAccountERC8043 is OpenAccount {
             }
         }
 
-        // Use `validationResult` as the loop index to avoid stack too deep
-        for (validationResult = 0; validationResult < modules.length; validationResult++) {
-            _installModule(moduleTypeIds[validationResult], modules[validationResult], initDatas[validationResult]);
+        for (uint256 i = 0; i < modules.length; i++) {
+            _installModule(moduleTypeIds[i], modules[i], initDatas[i]);
         }
 
         return super._validateUserOp(userOp, userOpHash, userOp.signature);
