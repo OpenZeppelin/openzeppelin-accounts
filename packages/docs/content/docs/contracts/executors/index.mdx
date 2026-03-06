@@ -355,7 +355,7 @@ When guardians need to recover the account:
 
 A production-ready implementation of the delayed social recovery pattern. It combines `ERC7579MultisigWeighted` with `ERC7579DelayedExecutor`, exposing dedicated `startRecovery`, `executeRecovery`, and `cancelRecovery` functions. Guardian signing uses EIP-712 typed data over the account's domain separator.
 
-See [Multisig as Executors](/docs/contracts/base#as-executors) for the underlying pattern.
+See [Multisig as Executors](/docs/contracts/multisig#as-executors) for the underlying pattern.
 
 Installation data is length-prefixed to separate the two components:
 

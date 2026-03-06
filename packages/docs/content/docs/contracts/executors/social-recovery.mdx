@@ -14,9 +14,9 @@ Social recovery fundamentally combines two features:
 1. **Multisignature validation**: Require multiple guardians to approve a recovery operation
 2. **Execution scheme**: Define how and when approved operations execute
 
-While you can compose these features in various ways (combining [`ERC7579Multisig`](/docs/contracts/base#multisig) or [`ERC7579MultisigWeighted`](/docs/contracts/base#multisig) with [`ERC7579Executor`](/docs/contracts/executors#base-executor), [`ERC7579DelayedExecutor`](/docs/contracts/executors#erc7579delayedexecutor), or even `ERC7579Validator` for ERC-4337-based execution), the framework provides **`ERC7579SocialRecoveryExecutor`** as the recommended implementation with the following features:
+While you can compose these features in various ways (combining [`ERC7579Multisig`](/docs/contracts/multisig) or [`ERC7579MultisigWeighted`](/docs/contracts/multisig) with [`ERC7579Executor`](/docs/contracts/executors#base-executor), [`ERC7579DelayedExecutor`](/docs/contracts/executors#erc7579delayedexecutor), or even `ERC7579Validator` for ERC-4337-based execution), the framework provides **`ERC7579SocialRecoveryExecutor`** as the recommended implementation with the following features:
 
-- Uses [`ERC7579MultisigWeighted`](/docs/contracts/base#multisig) to implement a weighted list of guardians
+- Uses [`ERC7579MultisigWeighted`](/docs/contracts/multisig) to implement a weighted list of guardians
 - Uses [`ERC7579DelayedExecutor`](/docs/contracts/executors#erc7579delayedexecutor) to enforce a security window in which the recovery operations can be cancelled
 - Defines an EIP-712 type that needs to be signed using the account's domain by the account guardians
 - Allows executing arbitrary calldata from the account
@@ -68,7 +68,7 @@ sequenceDiagram
 
 ### Weighted Guardians
 
-Unlike simple threshold-based multisigs (N-of-M), [weighted multisigs](/docs/contracts/base#weighted-multisig-details) may support more sophisticated recovery setups. For example, social recovery could involve not only your friends and family but also other multisig. A recovery setup in which an external multisig has the same weight as 3 of your friends or 2 members of your family would be a valid configuration.
+Unlike simple threshold-based multisigs (N-of-M), [weighted multisigs](/docs/contracts/multisig#weighted-multisig-details) may support more sophisticated recovery setups. For example, social recovery could involve not only your friends and family but also other multisig. A recovery setup in which an external multisig has the same weight as 3 of your friends or 2 members of your family would be a valid configuration.
 
 ### Delayed Execution
 
@@ -238,7 +238,7 @@ bytes memory recoveryCalldata = abi.encodeCall(
 // - Values: random salt, execution mode, recovery calldata
 
 // The multisignature is automatically sorted and encoded by guardian wallets
-// See: /docs/contracts/base#signature-format
+// See: /docs/contracts/multisig#signature-format
 bytes memory multisignature = /* ... guardian signatures ... */;
 
 // Submit the recovery operation
@@ -251,7 +251,7 @@ socialRecovery.startRecovery(
 );
 ```
 
-<Callout>See [multisignature format](/docs/contracts/base#signature-format)</Callout>
+<Callout>See [multisignature format](/docs/contracts/multisig#signature-format)</Callout>
 
 The operation enters the **Scheduled** state and cannot execute until the delay period elapses.
 
