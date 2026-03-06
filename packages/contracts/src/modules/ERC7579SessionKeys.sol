@@ -93,7 +93,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
 
     /// @dev Returns the validity range `(from, until)` for a `key` on an `account`.
     function validity(address account, bytes calldata key) public view virtual returns (uint48 from, uint48 until) {
-        return _validity(account, installation(account), key);
+        return _validity(account, installation(account), _keyId(key));
     }
 
     /// @dev Returns whether a `key` is valid for an `account` at the current timepoint.
@@ -187,18 +187,15 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
     function _validity(
         address account,
         uint256 installation_,
-        bytes calldata key
+        bytes32 keyId
     ) internal view virtual returns (uint48 from, uint48 until) {
-        return (
-            _validities[account][installation_][_keyId(key)].from,
-            _validities[account][installation_][_keyId(key)].until
-        );
+        return (_validities[account][installation_][keyId].from, _validities[account][installation_][keyId].until);
     }
 
     /// @dev Internal version of {isValid} that receives an `installation_` nonce.
     function _isValid(address account, uint256 installation_, bytes calldata key) internal view virtual returns (bool) {
         uint48 timepoint = clock();
-        (uint48 from, uint48 until) = _validity(account, installation_, key);
+        (uint48 from, uint48 until) = _validity(account, installation_, _keyId(key));
         return from <= timepoint && until >= timepoint;
     }
 
