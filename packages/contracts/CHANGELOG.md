@@ -1,3 +1,8 @@
+## 09-03-2026
+
+- Add `ERC7579SessionKeys` abstract contract module, providing per-account registration of ERC-7913 session keys with configurable validity ranges. Supports arbitrary key types (EOA, P256, WebAuthn, etc.). Concrete implementations must add policy enforcement (e.g., selector whitelist, spending limits).
+- Add `ERC7579SessionKeysValidator` abstract contract, extending `ERC7579SessionKeys` with ERC-4337 user-operation validation and ERC-1271 message signing. Packs session key validity range into `validationData` for EntryPoint enforcement. Developers extend it to enforce custom policies (e.g., by overriding `_validateUserOp` to inspect `userOp.callData`).
+
 ## 04-03-2026
 
 - Renamed `OpenAccountEnableMode` to `OpenAccountERC8043`, now implementing atomic module installation and usage (_enable mode_) following ERC-8043. When `userOp.initCode` starts with the `0x80438043` magic value, the account installs one or more modules and validates the user operation in a single transaction.
