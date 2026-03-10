@@ -6,7 +6,7 @@ import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/draft-ERC4337U
 import {Time} from "@openzeppelin/contracts/utils/types/Time.sol";
 import {ERC7579SessionKeys} from "../ERC7579SessionKeys.sol";
 import {ERC7579Validator} from "./ERC7579Validator.sol";
-import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";s
+import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
