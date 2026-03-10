@@ -55,9 +55,9 @@ abstract contract ERC7579SessionKeysValidator is ERC7579SessionKeys, ERC7579Vali
      * requiring an explicit timestamp check in the validator.
      * See {_tryDecodeSignature} for the signature encoding details.
      *
-     * NOTE: Returns {ERC4337Utils.SIG_VALIDATION_FAILED} immediately if {clock} returns a value
-     * that is neither the current block timestamp nor the current block number, as the EntryPoint
-     * does not support other validity range formats.
+     * NOTE: Returns {ERC4337Utils.SIG_VALIDATION_FAILED} immediately if {CLOCK_MODE} returns a mode
+     * other than timestamp or blocknumber from the same chain (default), as the EntryPoint does not support 
+     * other validity range formats.
      */
     function _validateUserOp(
         PackedUserOperation calldata userOp,
