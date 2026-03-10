@@ -7,6 +7,7 @@ import {Time} from "@openzeppelin/contracts/utils/types/Time.sol";
 import {ERC7579SessionKeys} from "../ERC7579SessionKeys.sol";
 import {ERC7579Validator} from "./ERC7579Validator.sol";
 import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
  * @dev Implementation of {ERC7579SessionKeys} as an {ERC7579Validator}.
@@ -28,6 +29,7 @@ import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/draft-ERC4337U
  * ```
  */
 abstract contract ERC7579SessionKeysValidator is ERC7579SessionKeys, ERC7579Validator {
+    using Strings for string;
     /**
      * @dev See {IERC7579Validator-isValidSignatureWithSender}.
      *
@@ -53,17 +55,17 @@ abstract contract ERC7579SessionKeysValidator is ERC7579SessionKeys, ERC7579Vali
      * requiring an explicit timestamp check in the validator.
      * See {_tryDecodeSignature} for the signature encoding details.
      *
-     * NOTE: Returns {ERC4337Utils.SIG_VALIDATION_FAILED} immediately if {clock} returns a value
-     * that is neither the current block timestamp nor the current block number, as the EntryPoint
-     * does not support other validity range formats.
+     * NOTE: Returns {ERC4337Utils.SIG_VALIDATION_FAILED} immediately if {CLOCK_MODE} returns a mode
+     * other than timestamp or blocknumber from the same chain (default), as the EntryPoint does not support
+     * other validity range formats.
      */
     function _validateUserOp(
         PackedUserOperation calldata userOp,
         bytes32 userOpHash
     ) internal virtual override returns (uint256) {
-        uint48 timepoint = clock();
-        bool blockRange = timepoint == Time.blockNumber();
-        bool timestampRange = timepoint == Time.timestamp();
+        string memory clockMode = CLOCK_MODE();
+        bool blockRange = clockMode.equal("mode=blocknumber&from=default");
+        bool timestampRange = clockMode.equal("mode=timestamp");
         if (!blockRange && !timestampRange) {
             return ERC4337Utils.SIG_VALIDATION_FAILED; // Unrecognized validity range.
         }
