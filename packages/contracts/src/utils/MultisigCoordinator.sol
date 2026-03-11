@@ -59,10 +59,18 @@ import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/Messa
  *
  * === Setup
  *
- * This is a standalone contract where multiple accounts can register against a single
- * deployment, each identified by their address. Before using {allowHandle} or
- * {allowHandleTransient}, an account must register its associated {ERC7579Multisig} module by
- * calling {setMultisig} from the account itself (e.g. via a UserOperation's `execute` call).
+ * This is an abstract contract. Concrete deployments must also inherit an fhEVM coprocessor
+ * configuration. For Zama's fhEVM this is done by inheriting `ZamaEthereumConfig` from the
+ * `@fhevm/solidity` config package alongside this contract:
+ *
+ * ```solidity
+ * contract MyMultisigCoordinator is MultisigCoordinator, ZamaEthereumConfig {}
+ * ```
+ *
+ * A single deployment can serve multiple accounts: each account is identified by its address.
+ * Before using {allowHandle} or {allowHandleTransient}, an account must register its associated
+ * {ERC7579Multisig} module by calling {setMultisig} from the account itself (e.g. via a
+ * UserOperation's `execute` call).
  *
  * === Signature scheme
  *
