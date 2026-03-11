@@ -74,7 +74,7 @@ import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/Messa
  * NOTE: The `as**` functions do not require prior registration; they grant ACL permissions to
  * any address provided as `account`, regardless of whether a multisig has been configured.
  */
-contract MultisigCoordinator {
+abstract contract MultisigCoordinator {
     using MessageHashUtils for *;
 
     /// @dev EIP-712 typehash for `AllowHandle` operations (permanent ACL grant).
