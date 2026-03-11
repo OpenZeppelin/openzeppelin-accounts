@@ -139,66 +139,42 @@ contract MultisigCoordinator {
      * and the caller has no ability to revoke them, so there is no griefing risk.
      */
     function asEbool(address account, externalEbool value, bytes memory inputProof) external returns (ebool) {
-        ebool evalue = FHE.fromExternal(value, inputProof);
-        FHE.allowThis(evalue);
-        FHE.allow(evalue, account);
-        return evalue;
+        return _asEbool(account, value, inputProof);
     }
 
     /// @dev Same as {asEbool} but for `euint8` externally-encrypted values.
     function asEuint8(address account, externalEuint8 value, bytes memory inputProof) external returns (euint8) {
-        euint8 evalue = FHE.fromExternal(value, inputProof);
-        FHE.allowThis(evalue);
-        FHE.allow(evalue, account);
-        return evalue;
+        return _asEuint8(account, value, inputProof);
     }
 
     /// @dev Same as {asEbool} but for `euint16` externally-encrypted values.
     function asEuint16(address account, externalEuint16 value, bytes memory inputProof) external returns (euint16) {
-        euint16 evalue = FHE.fromExternal(value, inputProof);
-        FHE.allowThis(evalue);
-        FHE.allow(evalue, account);
-        return evalue;
+        return _asEuint16(account, value, inputProof);
     }
 
     /// @dev Same as {asEbool} but for `euint32` externally-encrypted values.
     function asEuint32(address account, externalEuint32 value, bytes memory inputProof) external returns (euint32) {
-        euint32 evalue = FHE.fromExternal(value, inputProof);
-        FHE.allowThis(evalue);
-        FHE.allow(evalue, account);
-        return evalue;
+        return _asEuint32(account, value, inputProof);
     }
 
     /// @dev Same as {asEbool} but for `euint64` externally-encrypted values.
     function asEuint64(address account, externalEuint64 value, bytes memory inputProof) external returns (euint64) {
-        euint64 evalue = FHE.fromExternal(value, inputProof);
-        FHE.allowThis(evalue);
-        FHE.allow(evalue, account);
-        return evalue;
+        return _asEuint64(account, value, inputProof);
     }
 
     /// @dev Same as {asEbool} but for `euint128` externally-encrypted values.
     function asEuint128(address account, externalEuint128 value, bytes memory inputProof) external returns (euint128) {
-        euint128 evalue = FHE.fromExternal(value, inputProof);
-        FHE.allowThis(evalue);
-        FHE.allow(evalue, account);
-        return evalue;
+        return _asEuint128(account, value, inputProof);
     }
 
     /// @dev Same as {asEbool} but for `euint256` externally-encrypted values.
     function asEuint256(address account, externalEuint256 value, bytes memory inputProof) external returns (euint256) {
-        euint256 evalue = FHE.fromExternal(value, inputProof);
-        FHE.allowThis(evalue);
-        FHE.allow(evalue, account);
-        return evalue;
+        return _asEuint256(account, value, inputProof);
     }
 
     /// @dev Same as {asEbool} but for `eaddress` externally-encrypted values.
     function asEaddress(address account, externalEaddress value, bytes memory inputProof) external returns (eaddress) {
-        eaddress evalue = FHE.fromExternal(value, inputProof);
-        FHE.allowThis(evalue);
-        FHE.allow(evalue, account);
-        return evalue;
+        return _asEaddress(account, value, inputProof);
     }
 
     /**
@@ -206,11 +182,17 @@ contract MultisigCoordinator {
      *
      * `msg.sender` must be `account` itself or a registered signer EOA. Use the overload
      * when authorizing via an explicit signer and signature (e.g. an ERC-7913 key or an
-     *off-chain EIP-712 signature).
+     * off-chain EIP-712 signature).
+     *
+     * WARNING: This grant is permanent and irrevocable. If `to` is later removed from the
+     * multisig, they will still be able to decrypt any handle they were previously allowed. To
+     * remove a former signer's access, re-encrypt the sensitive values using fresh FHE inputs
+     * and grant access only to current signers. Consider using {allowHandleTransient} instead
+     * when persistent decryption rights are not required.
      *
      * Requirements:
      *
-     * * `account` must have a multisig registered via {setMultisig}.
+     * * `account` must have a multisig registered via {setMultisig} and installed as a validator.
      * * `account` must implement {IERC5267}.
      */
     function allowHandle(address account, bytes32 handle, address to) public virtual {
@@ -226,6 +208,12 @@ contract MultisigCoordinator {
      *
      * Once authorization is confirmed, the `handle` is permanently allowed to `to` via the FHE
      * ACL. This enables `to` (typically an EOA) to request off-chain decryption of the value.
+     *
+     * WARNING: This grant is permanent and irrevocable. If `to` is later removed from the
+     * multisig, they will still be able to decrypt any handle they were previously allowed. To
+     * remove a former signer's access, re-encrypt the sensitive values using fresh FHE inputs
+     * and grant access only to current signers. Consider using {allowHandleTransient} instead
+     * when persistent decryption rights are not required.
      *
      * Requirements:
      *
@@ -293,6 +281,70 @@ contract MultisigCoordinator {
         Impl.allowTransient(handle, to);
     }
 
+    /// @dev Internal version of {asEbool}
+    function _asEbool(address account, externalEbool value, bytes memory inputProof) internal returns (ebool) {
+        ebool evalue = FHE.fromExternal(value, inputProof);
+        FHE.allowThis(evalue);
+        FHE.allow(evalue, account);
+        return evalue;
+    }
+
+    /// @dev Internal version of {asEuint8}
+    function _asEuint8(address account, externalEuint8 value, bytes memory inputProof) internal returns (euint8) {
+        euint8 evalue = FHE.fromExternal(value, inputProof);
+        FHE.allowThis(evalue);
+        FHE.allow(evalue, account);
+        return evalue;
+    }
+
+    /// @dev Internal version of {asEuint16}
+    function _asEuint16(address account, externalEuint16 value, bytes memory inputProof) internal returns (euint16) {
+        euint16 evalue = FHE.fromExternal(value, inputProof);
+        FHE.allowThis(evalue);
+        FHE.allow(evalue, account);
+        return evalue;
+    }
+
+    /// @dev Internal version of {asEuint32}
+    function _asEuint32(address account, externalEuint32 value, bytes memory inputProof) internal returns (euint32) {
+        euint32 evalue = FHE.fromExternal(value, inputProof);
+        FHE.allowThis(evalue);
+        FHE.allow(evalue, account);
+        return evalue;
+    }
+
+    /// @dev Internal version of {asEuint64}
+    function _asEuint64(address account, externalEuint64 value, bytes memory inputProof) internal returns (euint64) {
+        euint64 evalue = FHE.fromExternal(value, inputProof);
+        FHE.allowThis(evalue);
+        FHE.allow(evalue, account);
+        return evalue;
+    }
+
+    /// @dev Internal version of {asEuint128}
+    function _asEuint128(address account, externalEuint128 value, bytes memory inputProof) internal returns (euint128) {
+        euint128 evalue = FHE.fromExternal(value, inputProof);
+        FHE.allowThis(evalue);
+        FHE.allow(evalue, account);
+        return evalue;
+    }
+
+    /// @dev Internal version of {asEuint256}
+    function _asEuint256(address account, externalEuint256 value, bytes memory inputProof) internal returns (euint256) {
+        euint256 evalue = FHE.fromExternal(value, inputProof);
+        FHE.allowThis(evalue);
+        FHE.allow(evalue, account);
+        return evalue;
+    }
+
+    /// @dev Internal version of {asEaddress}
+    function _asEaddress(address account, externalEaddress value, bytes memory inputProof) internal returns (eaddress) {
+        eaddress evalue = FHE.fromExternal(value, inputProof);
+        FHE.allowThis(evalue);
+        FHE.allow(evalue, account);
+        return evalue;
+    }
+
     /**
      * @dev Validates that `signer` is authorized to act for `account` over the given `hash`.
      *
@@ -306,6 +358,10 @@ contract MultisigCoordinator {
      * - If `signer` is more than 20 bytes: treated as an ERC-7913 signer (`verifier || key`);
      *   must be a registered signer and `signature` is forwarded to the verifier via
      *   {IERC7913SignatureVerifier-verify}.
+     *
+     * Requirements:
+     *
+     * * `account` must have a multisig registered via {setMultisig} and installed as a validator.
      */
     function _validateAccess(
         address account,
