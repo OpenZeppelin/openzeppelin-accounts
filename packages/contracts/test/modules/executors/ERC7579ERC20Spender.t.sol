@@ -3,6 +3,7 @@ pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC7579ERC20Spender} from "../../../src/modules/executors/ERC7579ERC20Spender.sol";
 import {ERC20Mock} from "../../../../../lib/@openzeppelin-contracts/contracts/mocks/token/ERC20Mock.sol";
 import {ERC7579Utils, Mode} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
@@ -685,6 +686,61 @@ contract ERC7579ERC20SpenderTest is Test {
         _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
     }
 
+    // =========================================================================
+    // PoC: ERC20 returning `false` silently drains the spender's period allowance
+    // =========================================================================
+    function testPoc_FalseReturnConsumesAllowanceWithoutMovingTokens() public {
+        uint160 limit = 100 ether;
+
+        ERC20MockFalseReturn _badToken = new ERC20MockFalseReturn();
+        _badToken.mint(address(_account), 1_000 ether);
+
+        {
+            address[] memory tokens      = new address[](1);  tokens[0]      = address(_badToken);
+            address[] memory spenders_   = new address[](1);  spenders_[0]   = _spenderAddress;
+            uint48[]  memory starts      = new uint48[](1);   starts[0]      = uint48(block.timestamp);
+            uint160[] memory limits      = new uint160[](1);  limits[0]      = limit;
+            uint48[]  memory renewPeriods = new uint48[](1);  renewPeriods[0] = 1 days;
+    
+            bytes memory initData = abi.encode(tokens, spenders_, starts, limits, renewPeriods);
+            (uint256[] memory moduleTypeIds, address[] memory modules, bytes[] memory initDatas) =
+                _buildInstallationModules(initData);
+            _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        }
+
+        // Allowance is not consumed yet
+        assertEq(_spender.spent(address(_account), address(_badToken), _spenderAddress, 0), 0);
+
+        uint256 accountBalanceBefore   = _badToken.balanceOf(address(_account));
+        uint256 recipientBalanceBefore = _badToken.balanceOf(_recipient);
+
+        vm.prank(_spenderAddress);
+        _spender.transferFrom(address(_account), address(_badToken), _recipient, limit);
+
+        uint256 accountBalanceAfter = _badToken.balanceOf(address(_account));
+        uint256 recipientBalanceAfter = _badToken.balanceOf(_recipient);
+
+        // No tokens moved
+        assertEq(accountBalanceAfter, accountBalanceBefore);
+        assertEq(recipientBalanceAfter, recipientBalanceBefore);
+
+        // Allowance is fully consumed
+        assertEq(_spender.spent(address(_account), address(_badToken), _spenderAddress, 0), limit);
+
+        // Allowance is now exhausted for the whole period.
+        vm.prank(_spenderAddress);
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "ERC7579ERC20InsufficientAvailable(address,address,address,uint256)",
+                address(_account),
+                address(_badToken),
+                _spenderAddress,
+                1
+            )
+        );
+        _spender.transferFrom(address(_account), address(_badToken), _recipient, 1);
+    }
+
     function _buildInstallationModules(
         bytes memory initData
     ) private view returns (uint256[] memory, address[] memory, bytes[] memory) {
@@ -699,4 +755,17 @@ contract ERC7579ERC20SpenderTest is Test {
 
         return (moduleTypeIds, modules, initDatas);
     }
+}
+
+contract ERC20MockFalseReturn is ERC20 {
+    constructor() ERC20("FalseReturnToken", "FALSE") {}
+
+    function mint(address to, uint256 amount) public {
+        _mint(to, amount);
+    }
+
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        return false;
+    }
+
 }
