@@ -259,13 +259,7 @@ contract MultisigCoordinator {
      * * `account` must implement {IERC5267}.
      */
     function allowHandleTransient(address account, bytes32 handle, address to) public virtual {
-        _validateAccess(
-            account,
-            Calldata.emptyBytes(),
-            Calldata.emptyBytes(),
-            _getTypedHash(ALLOW_HANDLE_TRANSIENT_TYPEHASH, account, handle, to)
-        );
-        Impl.allowTransient(handle, to);
+        allowHandleTransient(account, Calldata.emptyBytes(), Calldata.emptyBytes(), handle, to);
     }
 
     /**
