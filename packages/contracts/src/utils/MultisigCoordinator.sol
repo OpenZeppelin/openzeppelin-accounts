@@ -146,42 +146,66 @@ abstract contract MultisigCoordinator {
      * NOTE: Anyone can call this function for any `account` address. ACL permissions are additive
      * and the caller has no ability to revoke them, so there is no griefing risk.
      */
-    function asEbool(address account, externalEbool value, bytes memory inputProof) external returns (ebool) {
+    function asEbool(address account, externalEbool value, bytes memory inputProof) public virtual returns (ebool) {
         return _asEbool(account, value, inputProof);
     }
 
     /// @dev Same as {asEbool} but for `euint8` externally-encrypted values.
-    function asEuint8(address account, externalEuint8 value, bytes memory inputProof) external returns (euint8) {
+    function asEuint8(address account, externalEuint8 value, bytes memory inputProof) public virtual returns (euint8) {
         return _asEuint8(account, value, inputProof);
     }
 
     /// @dev Same as {asEbool} but for `euint16` externally-encrypted values.
-    function asEuint16(address account, externalEuint16 value, bytes memory inputProof) external returns (euint16) {
+    function asEuint16(
+        address account,
+        externalEuint16 value,
+        bytes memory inputProof
+    ) public virtual returns (euint16) {
         return _asEuint16(account, value, inputProof);
     }
 
     /// @dev Same as {asEbool} but for `euint32` externally-encrypted values.
-    function asEuint32(address account, externalEuint32 value, bytes memory inputProof) external returns (euint32) {
+    function asEuint32(
+        address account,
+        externalEuint32 value,
+        bytes memory inputProof
+    ) public virtual returns (euint32) {
         return _asEuint32(account, value, inputProof);
     }
 
     /// @dev Same as {asEbool} but for `euint64` externally-encrypted values.
-    function asEuint64(address account, externalEuint64 value, bytes memory inputProof) external returns (euint64) {
+    function asEuint64(
+        address account,
+        externalEuint64 value,
+        bytes memory inputProof
+    ) public virtual returns (euint64) {
         return _asEuint64(account, value, inputProof);
     }
 
     /// @dev Same as {asEbool} but for `euint128` externally-encrypted values.
-    function asEuint128(address account, externalEuint128 value, bytes memory inputProof) external returns (euint128) {
+    function asEuint128(
+        address account,
+        externalEuint128 value,
+        bytes memory inputProof
+    ) public virtual returns (euint128) {
         return _asEuint128(account, value, inputProof);
     }
 
     /// @dev Same as {asEbool} but for `euint256` externally-encrypted values.
-    function asEuint256(address account, externalEuint256 value, bytes memory inputProof) external returns (euint256) {
+    function asEuint256(
+        address account,
+        externalEuint256 value,
+        bytes memory inputProof
+    ) public virtual returns (euint256) {
         return _asEuint256(account, value, inputProof);
     }
 
     /// @dev Same as {asEbool} but for `eaddress` externally-encrypted values.
-    function asEaddress(address account, externalEaddress value, bytes memory inputProof) external returns (eaddress) {
+    function asEaddress(
+        address account,
+        externalEaddress value,
+        bytes memory inputProof
+    ) public virtual returns (eaddress) {
         return _asEaddress(account, value, inputProof);
     }
 
@@ -290,7 +314,7 @@ abstract contract MultisigCoordinator {
     }
 
     /// @dev Internal version of {asEbool}
-    function _asEbool(address account, externalEbool value, bytes memory inputProof) internal returns (ebool) {
+    function _asEbool(address account, externalEbool value, bytes memory inputProof) internal virtual returns (ebool) {
         ebool evalue = FHE.fromExternal(value, inputProof);
         FHE.allowThis(evalue);
         FHE.allow(evalue, account);
@@ -298,7 +322,11 @@ abstract contract MultisigCoordinator {
     }
 
     /// @dev Internal version of {asEuint8}
-    function _asEuint8(address account, externalEuint8 value, bytes memory inputProof) internal returns (euint8) {
+    function _asEuint8(
+        address account,
+        externalEuint8 value,
+        bytes memory inputProof
+    ) internal virtual returns (euint8) {
         euint8 evalue = FHE.fromExternal(value, inputProof);
         FHE.allowThis(evalue);
         FHE.allow(evalue, account);
@@ -306,7 +334,11 @@ abstract contract MultisigCoordinator {
     }
 
     /// @dev Internal version of {asEuint16}
-    function _asEuint16(address account, externalEuint16 value, bytes memory inputProof) internal returns (euint16) {
+    function _asEuint16(
+        address account,
+        externalEuint16 value,
+        bytes memory inputProof
+    ) internal virtual returns (euint16) {
         euint16 evalue = FHE.fromExternal(value, inputProof);
         FHE.allowThis(evalue);
         FHE.allow(evalue, account);
@@ -314,7 +346,11 @@ abstract contract MultisigCoordinator {
     }
 
     /// @dev Internal version of {asEuint32}
-    function _asEuint32(address account, externalEuint32 value, bytes memory inputProof) internal returns (euint32) {
+    function _asEuint32(
+        address account,
+        externalEuint32 value,
+        bytes memory inputProof
+    ) internal virtual returns (euint32) {
         euint32 evalue = FHE.fromExternal(value, inputProof);
         FHE.allowThis(evalue);
         FHE.allow(evalue, account);
@@ -322,7 +358,11 @@ abstract contract MultisigCoordinator {
     }
 
     /// @dev Internal version of {asEuint64}
-    function _asEuint64(address account, externalEuint64 value, bytes memory inputProof) internal returns (euint64) {
+    function _asEuint64(
+        address account,
+        externalEuint64 value,
+        bytes memory inputProof
+    ) internal virtual returns (euint64) {
         euint64 evalue = FHE.fromExternal(value, inputProof);
         FHE.allowThis(evalue);
         FHE.allow(evalue, account);
@@ -330,7 +370,11 @@ abstract contract MultisigCoordinator {
     }
 
     /// @dev Internal version of {asEuint128}
-    function _asEuint128(address account, externalEuint128 value, bytes memory inputProof) internal returns (euint128) {
+    function _asEuint128(
+        address account,
+        externalEuint128 value,
+        bytes memory inputProof
+    ) internal virtual returns (euint128) {
         euint128 evalue = FHE.fromExternal(value, inputProof);
         FHE.allowThis(evalue);
         FHE.allow(evalue, account);
@@ -338,7 +382,11 @@ abstract contract MultisigCoordinator {
     }
 
     /// @dev Internal version of {asEuint256}
-    function _asEuint256(address account, externalEuint256 value, bytes memory inputProof) internal returns (euint256) {
+    function _asEuint256(
+        address account,
+        externalEuint256 value,
+        bytes memory inputProof
+    ) internal virtual returns (euint256) {
         euint256 evalue = FHE.fromExternal(value, inputProof);
         FHE.allowThis(evalue);
         FHE.allow(evalue, account);
@@ -346,7 +394,11 @@ abstract contract MultisigCoordinator {
     }
 
     /// @dev Internal version of {asEaddress}
-    function _asEaddress(address account, externalEaddress value, bytes memory inputProof) internal returns (eaddress) {
+    function _asEaddress(
+        address account,
+        externalEaddress value,
+        bytes memory inputProof
+    ) internal virtual returns (eaddress) {
         eaddress evalue = FHE.fromExternal(value, inputProof);
         FHE.allowThis(evalue);
         FHE.allow(evalue, account);
