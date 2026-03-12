@@ -420,6 +420,11 @@ abstract contract MultisigCoordinator {
      *   must be a registered signer and `signature` is forwarded to the verifier via
      *   {IERC7913SignatureVerifier-verify}.
      *
+     * NOTE: Existing FHE ACL permissions (`FHE.isAllowed`) are intentionally not checked here.
+     * Authorization is strictly tied to the account's multisig membership. Callers that already
+     * hold ACL access to a handle and wish to extend it to another address can do so directly via
+     * the FHE ACL (e.g. `FHE.allow`) without involving this coordinator.
+     *
      * Requirements:
      *
      * * `account` must have a multisig registered via {setMultisig} and installed as a validator.
