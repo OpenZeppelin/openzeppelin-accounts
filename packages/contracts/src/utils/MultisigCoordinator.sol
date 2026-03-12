@@ -61,7 +61,8 @@ import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/Messa
  *
  * This is an abstract contract. Concrete deployments must also inherit an fhEVM coprocessor
  * configuration. For Zama's fhEVM this is done by inheriting `ZamaEthereumConfig` from the
- * https://www.npmjs.com/package/@fhevm/solidity[FHEVM Solidity package] alongside this contract:
+ * https://github.com/zama-ai/fhevm/tree/main/library-solidity[FHEVM Solidity package] alongside
+ * this contract:
  *
  * ```solidity
  * contract MyMultisigCoordinator is MultisigCoordinator, ZamaEthereumConfig {}

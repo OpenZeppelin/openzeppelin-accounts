@@ -485,7 +485,7 @@ AllowHandle(address account, bytes32 handle, address to)
 Once `allowHandle` is called, `signerEOA` can request off-chain decryption of the FHE value through the Zama gateway.
 
 <Callout type="idea">
-  Combine `asEuint64` + `allowHandle` in a single UserOperation so that the encrypted transfer amount is registered and immediately accessible to the relevant signer EOAs within the same transaction.
+  If the party preparing the encrypted input is a smart account, it can batch `asEuint64` and `allowHandle` into a single UserOperation. Because `asEuint64` is not tied to `msg.sender`, any caller can register the encrypted value, meaning this batching does not require a multisig proposal from the target account itself: it is just a convenience for whoever is constructing the input.
 </Callout>
 
 <Callout type="warn">
