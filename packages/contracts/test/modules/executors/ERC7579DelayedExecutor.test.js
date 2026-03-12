@@ -177,7 +177,7 @@ describe('ERC7579DelayedExecutor', function () {
       .withArgs(this.mockAccount.address, 0);
   });
 
-  it('enforces minSetback when reinstalling before delay reset completes', async function () {
+  it('enforces delayChangeWindow when reinstalling before delay reset completes', async function () {
     const delay = time.duration.days(7);
     const installData = solidityPacked(['uint32', 'uint32'], [delay, this.expiration]);
 
@@ -185,18 +185,18 @@ describe('ERC7579DelayedExecutor', function () {
     const [initialDelay] = await this.mock.getDelay(this.mockAccount.address);
     expect(initialDelay).to.equal(delay);
 
-    // Uninstall schedules delay reset to 0 after minSetback
+    // Uninstall schedules delay reset to 0 after delayChangeWindow
     await this.mockAccountFromEntrypoint.uninstallModule(this.moduleType, this.mock.target, '0x');
 
     // Immediately reinstall with a shorter delay before the reset completes
-    const minSetback = await this.mock.minSetback();
+    const delayChangeWindow = await this.mock.delayChangeWindow();
     const newDelay = time.duration.days(4);
     const newInstallData = solidityPacked(['uint32', 'uint32'], [newDelay, this.expiration]);
 
     const tx = await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, newInstallData);
 
     const now = await time.latest();
-    const expectedEffectTime = BigInt(now) + minSetback; // Instead of 7 - 4 = 3 days, it is 5 days
+    const expectedEffectTime = BigInt(now) + delayChangeWindow; // Instead of 7 - 4 = 3 days, it is 5 days
     await expect(tx)
       .to.emit(this.mock, 'ERC7579ExecutorDelayUpdated')
       .withArgs(this.mockAccount.address, newDelay, expectedEffectTime);
@@ -204,10 +204,10 @@ describe('ERC7579DelayedExecutor', function () {
     await expect(this.mock.getDelay(this.mockAccount.address)).to.eventually.deep.equal([
       initialDelay, // Still the old 10 day delay
       newDelay, // New 4 day delay pending
-      expectedEffectTime, // Takes effect after max(minSetback, delay difference)
+      expectedEffectTime, // Takes effect after max(delayChangeWindow, delay difference)
     ]);
 
-    await time.increase(minSetback);
+    await time.increase(delayChangeWindow);
     await expect(this.mock.getDelay(this.mockAccount.address)).to.eventually.deep.equal([
       newDelay, // New 4 day delay
       0, // No pending delay
@@ -220,11 +220,11 @@ describe('ERC7579DelayedExecutor', function () {
     const installData = solidityPacked(['uint32', 'uint32'], [initialDelay, this.expiration]);
     await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, installData);
 
-    const minSetback = await this.mock.minSetback();
+    const delayChangeWindow = await this.mock.delayChangeWindow();
     const newDelay = time.duration.days(3);
     const tx = await this.mockFromAccount.setDelay(newDelay);
     const now = await time.latest();
-    const effect = BigInt(now) + (BigInt(newDelay) < minSetback ? BigInt(newDelay) : minSetback);
+    const effect = BigInt(now) + (BigInt(newDelay) < delayChangeWindow ? BigInt(newDelay) : delayChangeWindow);
 
     await expect(tx)
       .to.emit(this.mock, 'ERC7579ExecutorDelayUpdated')
@@ -244,11 +244,11 @@ describe('ERC7579DelayedExecutor', function () {
     const installData = solidityPacked(['uint32', 'uint32'], [initialDelay, this.expiration]);
     await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, installData);
 
-    const minSetback = await this.mock.minSetback();
+    const delayChangeWindow = await this.mock.delayChangeWindow();
     const newDelay = time.duration.days(10);
     const tx = await this.mockFromAccount.setDelay(newDelay);
     const now = await time.latest();
-    const effect = BigInt(now) + minSetback; // min(10d, 5d) = minSetback
+    const effect = BigInt(now) + delayChangeWindow; // min(10d, 5d) = delayChangeWindow
 
     await expect(tx)
       .to.emit(this.mock, 'ERC7579ExecutorDelayUpdated')

@@ -213,7 +213,7 @@ if (operationState == ERC7579DelayedExecutor.OperationState.Scheduled ||
 You can update the delay and expiration settings for scheduled operations, allowing you to control how long actions must wait before execution and how long they remain valid.
 
 ```solidity
-// Update the delay (takes effect after transition period)
+// Update the delay (takes effect after a transition period)
 executor.setDelay(14 days); // New delay will be 14 days
 
 // Update the expiration (takes effect immediately)
@@ -225,6 +225,11 @@ uint32 expiration = executor.getExpiration(account);
 ```
 
 <Callout>
+  The transition period for `setDelay` depends on the direction of the change:
+
+  - **Increasing** the delay: takes effect after `min(newDelay, delayChangeWindow())` (defaults to 5 days). This means small increases apply proportionally faster, while very large increases are capped at `delayChangeWindow()` to guard against accidental lock-out (e.g. passing milliseconds instead of seconds).
+  - **Decreasing** the delay: takes effect after `currentDelay - newDelay`. This ensures no already-scheduled operation can execute under a shorter window than was active when the change was requested.
+
   Changing the expiration or delay settings only affects new operations scheduled after the update. Operations that were
   already scheduled retain their original delay and expiration times—they are not retroactively updated.
 </Callout>

@@ -1,6 +1,7 @@
 ## 12-03-2026
 
-- `ERC7579DelayedExecutor`: `setDelay` now uses an asymmetric transition period depending on the direction of the change. When increasing the delay, the new value takes effect after `min(newDelay, minSetback())`, so small increases apply proportionally faster while large increases are still capped at `minSetback()`. When decreasing the delay, the new value takes effect after `currentDelay - newDelay`, guaranteeing that no operation can execute under a shorter window than was in place when the change was scheduled.
+- `ERC7579DelayedExecutor`: Renamed `minSetback` to `delayChangeWindow` to better reflect its dual role as a cap on delay increases and a floor on uninstall/reinstall transitions.
+- `ERC7579DelayedExecutor`: `setDelay` now uses an asymmetric transition period depending on the direction of the change. When increasing the delay, the new value takes effect after `min(newDelay, delayChangeWindow())`, so small increases apply proportionally faster while large increases are still capped at `delayChangeWindow()`. When decreasing the delay, the new value takes effect after `currentDelay - newDelay`, guaranteeing that no operation can execute under a shorter window than was in place when the change was scheduled.
 
 ## 09-03-2026
 
@@ -55,7 +56,7 @@
 
 ## 06-01-2026
 
-- `ERC7579DelayedExecutor`: The `onInstall` function now enforces `minSetback()` when reinstalling the module with a prior delay configuration still present. This ensures consistent delay transition behavior whether updating via `setDelay` or through module reinstallation.
+- `ERC7579DelayedExecutor`: The `onInstall` function now enforces `delayChangeWindow()` when reinstalling the module with a prior delay configuration still present. This ensures consistent delay transition behavior whether updating via `setDelay` or through module reinstallation.
 - `ERC7579DelayedExecutor`: The `_scheduleAt` internal function does not return an `Schedule` struct anymore. Previously, the returned struct was empty.
 
 ## 30-12-2025

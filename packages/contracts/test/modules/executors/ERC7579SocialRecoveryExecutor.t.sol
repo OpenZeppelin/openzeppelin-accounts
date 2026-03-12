@@ -74,7 +74,7 @@ contract ERC7579SocialRecoveryExecutorTest is Test {
         emit ERC7579DelayedExecutor.ERC7579ExecutorDelayUpdated(
             address(_account),
             0,
-            uint48(block.timestamp) + uint48(Math.max(delay, _executor.minSetback()))
+            uint48(block.timestamp) + uint48(Math.max(delay, _executor.delayChangeWindow()))
         );
 
         vm.expectEmit(true, true, true, true);

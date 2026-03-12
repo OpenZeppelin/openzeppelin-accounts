@@ -90,7 +90,7 @@ contract ERC7579DelayedExecutorTest is Test {
             uint256[] memory moduleTypeIds,
             address[] memory modules,
             bytes[] memory initDatas
-        ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
+        ) = _buildInstallationModules(_delayedExecutor.delayChangeWindow(), _delayedExecutor.defaultExpiration());
         _account = OpenAccount(
             payable(
                 _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
@@ -98,7 +98,7 @@ contract ERC7579DelayedExecutorTest is Test {
         );
 
         (uint32 delay, , ) = _delayedExecutor.getDelay(address(_account));
-        assertEq(delay, _delayedExecutor.minSetback());
+        assertEq(delay, _delayedExecutor.delayChangeWindow());
         assertEq(_delayedExecutor.getExpiration(address(_account)), _delayedExecutor.defaultExpiration());
     }
 
@@ -118,7 +118,7 @@ contract ERC7579DelayedExecutorTest is Test {
         emit ERC7579DelayedExecutor.ERC7579ExecutorDelayUpdated(
             address(_account),
             0,
-            uint48(block.timestamp) + uint48(Math.max(initialDelay, _delayedExecutor.minSetback()))
+            uint48(block.timestamp) + uint48(Math.max(initialDelay, _delayedExecutor.delayChangeWindow()))
         );
 
         vm.expectEmit(true, true, true, true);
@@ -158,8 +158,13 @@ contract ERC7579DelayedExecutorTest is Test {
         assertEq(
             effectTime,
             reinstallTime +
-                // At least minSetback is used
-                uint32(Math.max(_delayedExecutor.minSetback(), initialDelay > newDelay ? initialDelay - newDelay : 0))
+                // At least delayChangeWindow is used
+                uint32(
+                    Math.max(
+                        _delayedExecutor.delayChangeWindow(),
+                        initialDelay > newDelay ? initialDelay - newDelay : 0
+                    )
+                )
         );
     }
 
@@ -251,7 +256,7 @@ contract ERC7579DelayedExecutorTest is Test {
             uint256[] memory moduleTypeIds,
             address[] memory modules,
             bytes[] memory initDatas
-        ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
+        ) = _buildInstallationModules(_delayedExecutor.delayChangeWindow(), _delayedExecutor.defaultExpiration());
         _account = OpenAccount(
             payable(
                 _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
@@ -290,7 +295,7 @@ contract ERC7579DelayedExecutorTest is Test {
             uint256[] memory moduleTypeIds,
             address[] memory modules,
             bytes[] memory initDatas
-        ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
+        ) = _buildInstallationModules(_delayedExecutor.delayChangeWindow(), _delayedExecutor.defaultExpiration());
         _account = OpenAccount(
             payable(
                 _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
@@ -306,7 +311,7 @@ contract ERC7579DelayedExecutorTest is Test {
             salt,
             mode,
             data,
-            uint48(block.timestamp + _delayedExecutor.minSetback())
+            uint48(block.timestamp + _delayedExecutor.delayChangeWindow())
         );
 
         vm.prank(address(_account));
@@ -319,8 +324,11 @@ contract ERC7579DelayedExecutorTest is Test {
             data
         );
         assertEq(scheduledAt, block.timestamp);
-        assertEq(executableAt, block.timestamp + _delayedExecutor.minSetback());
-        assertEq(expiresAt, block.timestamp + _delayedExecutor.minSetback() + _delayedExecutor.defaultExpiration());
+        assertEq(executableAt, block.timestamp + _delayedExecutor.delayChangeWindow());
+        assertEq(
+            expiresAt,
+            block.timestamp + _delayedExecutor.delayChangeWindow() + _delayedExecutor.defaultExpiration()
+        );
 
         // Try to schedule again
         vm.expectRevert();
@@ -334,7 +342,7 @@ contract ERC7579DelayedExecutorTest is Test {
             uint256[] memory moduleTypeIds,
             address[] memory modules,
             bytes[] memory initDatas
-        ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
+        ) = _buildInstallationModules(_delayedExecutor.delayChangeWindow(), _delayedExecutor.defaultExpiration());
         _account = OpenAccount(
             payable(
                 _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
@@ -350,7 +358,7 @@ contract ERC7579DelayedExecutorTest is Test {
         _delayedExecutor.execute(address(_account), salt, mode, data);
 
         // Wait for delay
-        vm.warp(block.timestamp + _delayedExecutor.minSetback());
+        vm.warp(block.timestamp + _delayedExecutor.delayChangeWindow());
 
         // Execute operation
         vm.expectEmit(true, true, true, true);
@@ -370,7 +378,7 @@ contract ERC7579DelayedExecutorTest is Test {
             uint256[] memory moduleTypeIds,
             address[] memory modules,
             bytes[] memory initDatas
-        ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
+        ) = _buildInstallationModules(_delayedExecutor.delayChangeWindow(), _delayedExecutor.defaultExpiration());
         _account = OpenAccount(
             payable(
                 _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
@@ -382,7 +390,7 @@ contract ERC7579DelayedExecutorTest is Test {
         _delayedExecutor.schedule(address(_account), salt, mode, data);
 
         // Wait for delay + expiration
-        vm.warp(block.timestamp + _delayedExecutor.minSetback() + _delayedExecutor.defaultExpiration());
+        vm.warp(block.timestamp + _delayedExecutor.delayChangeWindow() + _delayedExecutor.defaultExpiration());
 
         // Try to execute expired operation
         vm.expectRevert();
@@ -403,7 +411,7 @@ contract ERC7579DelayedExecutorTest is Test {
         );
 
         uint48 expectedEffectTime = newDelay > initialDelay
-            ? uint48(block.timestamp) + uint48(Math.min(newDelay, _delayedExecutor.minSetback()))
+            ? uint48(block.timestamp) + uint48(Math.min(newDelay, _delayedExecutor.delayChangeWindow()))
             : uint48(block.timestamp) + uint48(initialDelay - newDelay);
 
         vm.expectEmit(true, true, true, true);
@@ -429,7 +437,7 @@ contract ERC7579DelayedExecutorTest is Test {
             uint256[] memory moduleTypeIds,
             address[] memory modules,
             bytes[] memory initDatas
-        ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
+        ) = _buildInstallationModules(_delayedExecutor.delayChangeWindow(), _delayedExecutor.defaultExpiration());
         _account = OpenAccount(
             payable(
                 _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
@@ -454,7 +462,7 @@ contract ERC7579DelayedExecutorTest is Test {
             uint256[] memory moduleTypeIds,
             address[] memory modules,
             bytes[] memory initDatas
-        ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
+        ) = _buildInstallationModules(_delayedExecutor.delayChangeWindow(), _delayedExecutor.defaultExpiration());
         _account = OpenAccount(
             payable(
                 _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
@@ -487,7 +495,7 @@ contract ERC7579DelayedExecutorTest is Test {
             uint256[] memory moduleTypeIds,
             address[] memory modules,
             bytes[] memory initDatas
-        ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
+        ) = _buildInstallationModules(_delayedExecutor.delayChangeWindow(), _delayedExecutor.defaultExpiration());
         _account = OpenAccount(
             payable(
                 _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
@@ -499,7 +507,7 @@ contract ERC7579DelayedExecutorTest is Test {
         _delayedExecutor.schedule(address(_account), salt, mode, data);
 
         // Wait for delay
-        vm.warp(block.timestamp + _delayedExecutor.minSetback());
+        vm.warp(block.timestamp + _delayedExecutor.delayChangeWindow());
 
         // Cancel operation while ready
         vm.prank(address(_account));

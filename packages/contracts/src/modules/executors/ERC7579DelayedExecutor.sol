@@ -34,7 +34,7 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * Accounts can set their own delay periods during installation or via {setDelay}.
  * The delay period is enforced even between installs and uninstalls to prevent
  * immediate downgrades. When setting a new delay period, the new delay takes effect
- * after a transition period defined by the current delay or {minSetback}, whichever
+ * after a transition period defined by the current delay or {delayChangeWindow}, whichever
  * is longer.
  *
  * TIP: Use {_scheduleAt} to schedule operations at specific points in time. This is
@@ -139,7 +139,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      * @dev Minimum delay after which {setDelay} takes effect.
      * Set as default delay if not provided during {onInstall}.
      */
-    function minSetback() public view virtual returns (uint32) {
+    function delayChangeWindow() public view virtual returns (uint32) {
         return 5 days; // Up to ~136 years
     }
 
@@ -195,7 +195,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      *
      * The `initData` must be `abi.encodePacked(uint32(initialDelay), uint32(initialExpiration))`.
      * The delay will be set to the maximum of this value and the minimum delay if provided.
-     * Otherwise, the delay will be set to {minSetback} and {defaultExpiration} respectively.
+     * Otherwise, the delay will be set to {delayChangeWindow} and {defaultExpiration} respectively.
      *
      * Requirements:
      *
@@ -207,7 +207,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
         _configs[msg.sender].installed = true;
         (uint32 initialDelay, uint32 initialExpiration) = _decodeDelayedExecutorInitData(initData);
         (uint32 currentDelay, , ) = getDelay(msg.sender); // An old delay might be still present after uninstallation
-        _setDelay(msg.sender, initialDelay, uint32(Math.ternary(currentDelay > 0, minSetback(), 0)));
+        _setDelay(msg.sender, initialDelay, uint32(Math.ternary(currentDelay > 0, delayChangeWindow(), 0)));
         _setExpiration(msg.sender, initialExpiration);
     }
 
@@ -216,9 +216,9 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      *
      * The transition period before the new delay takes effect depends on the direction of the change:
      *
-     * * When _increasing_ the delay, the new value takes effect after `min(newDelay, minSetback())`.
+     * * When _increasing_ the delay, the new value takes effect after `min(newDelay, delayChangeWindow())`.
      *   For example, increasing from 1 day to 3 days takes effect after 3 days. Increasing from
-     *   1 day to 10 days takes effect after {minSetback} (5 days). This cap prevents the account
+     *   1 day to 10 days takes effect after {delayChangeWindow} (5 days). This cap prevents the account
      *   from being locked out by an accidental large increase (e.g. using milliseconds instead of
      *   seconds).
      * * When _decreasing_ the delay, the new value takes effect after `currentDelay - newDelay`.
@@ -230,7 +230,9 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      */
     function setDelay(uint32 newDelay) public virtual {
         (uint32 currentDelay, , ) = getDelay(msg.sender);
-        uint32 setback = newDelay > currentDelay ? uint32(Math.min(newDelay, minSetback())) : currentDelay - newDelay;
+        uint32 setback = newDelay > currentDelay
+            ? uint32(Math.min(newDelay, delayChangeWindow()))
+            : currentDelay - newDelay;
         _setDelay(msg.sender, newDelay, setback);
     }
 
@@ -248,14 +250,14 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      * design choice for efficiency, but module implementations may want to override this behavior
      * to clear scheduled operations during uninstallation for their specific use cases.
      *
-     * NOTE: Uninstalling the module schedules the delay to reset to `0` after {minSetback}, and
+     * NOTE: Uninstalling the module schedules the delay to reset to `0` after {delayChangeWindow}, and
      * immediately removes the expiration. If the module is reinstalled before the delay reset
-     * completes, the new delay will be subject to {minSetback} protection to prevent bypassing
+     * completes, the new delay will be subject to {delayChangeWindow} protection to prevent bypassing
      * the minimum security window for delay reductions.
      */
     function onUninstall(bytes calldata) public virtual {
         _configs[msg.sender].installed = false;
-        _setDelay(msg.sender, 0, minSetback()); // Avoids immediate downgrades
+        _setDelay(msg.sender, 0, delayChangeWindow()); // Avoids immediate downgrades
         _setExpiration(msg.sender, 0);
     }
 
@@ -381,7 +383,7 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
         return
             initData.length > 7
                 ? (uint32(bytes4(initData[:4])), uint32(bytes4(initData[4:8])))
-                : (minSetback(), defaultExpiration());
+                : (delayChangeWindow(), defaultExpiration());
     }
 
     /**
