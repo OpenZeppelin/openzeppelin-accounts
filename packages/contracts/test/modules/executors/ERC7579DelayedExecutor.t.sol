@@ -389,20 +389,22 @@ contract ERC7579DelayedExecutorTest is Test {
         _delayedExecutor.execute(address(_account), salt, mode, data);
     }
 
-    function testSetDelay() public {
+    function testSetDelay(uint32 initialDelay, uint32 newDelay) public {
+        vm.assume(newDelay > initialDelay);
         (
             uint256[] memory moduleTypeIds,
             address[] memory modules,
             bytes[] memory initDatas
-        ) = _buildInstallationModules(_delayedExecutor.minSetback(), _delayedExecutor.defaultExpiration());
+        ) = _buildInstallationModules(initialDelay, _delayedExecutor.defaultExpiration());
         _account = OpenAccount(
             payable(
                 _factory.createAndInitialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""), bytes32(0))
             )
         );
 
-        uint32 newDelay = 5 days;
-        uint48 expectedEffectTime = uint48(block.timestamp + _delayedExecutor.minSetback());
+        uint48 expectedEffectTime = newDelay > initialDelay
+            ? uint48(block.timestamp) + uint48(Math.min(newDelay, _delayedExecutor.minSetback()))
+            : uint48(block.timestamp) + uint48(initialDelay - newDelay);
 
         vm.expectEmit(true, true, true, true);
         emit ERC7579DelayedExecutor.ERC7579ExecutorDelayUpdated(address(_account), newDelay, expectedEffectTime);
@@ -411,11 +413,10 @@ contract ERC7579DelayedExecutorTest is Test {
         _delayedExecutor.setDelay(newDelay);
 
         (uint32 currentDelay, uint32 pendingDelay, uint48 effectTime) = _delayedExecutor.getDelay(address(_account));
-        assertEq(currentDelay, _delayedExecutor.minSetback());
+        assertEq(currentDelay, initialDelay);
         assertEq(pendingDelay, newDelay);
         assertEq(effectTime, expectedEffectTime);
 
-        // After effect time, new delay should be active
         vm.warp(effectTime);
         (currentDelay, pendingDelay, effectTime) = _delayedExecutor.getDelay(address(_account));
         assertEq(currentDelay, newDelay);

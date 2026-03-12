@@ -215,23 +215,69 @@ describe('ERC7579DelayedExecutor', function () {
     ]);
   });
 
-  it('schedules a delay update', async function () {
-    await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
+  it('schedules a delay update (increase below cap)', async function () {
+    const initialDelay = time.duration.days(1);
+    const installData = solidityPacked(['uint32', 'uint32'], [initialDelay, this.expiration]);
+    await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, installData);
 
-    const newDelay = time.duration.days(5);
+    const minSetback = await this.mock.minSetback();
+    const newDelay = time.duration.days(3);
     const tx = await this.mockFromAccount.setDelay(newDelay);
     const now = await time.latest();
-    const effect = now + this.delay - newDelay;
+    const effect = BigInt(now) + (BigInt(newDelay) < minSetback ? BigInt(newDelay) : minSetback);
 
-    // Delay is scheduled, will take effect later
     await expect(tx)
       .to.emit(this.mock, 'ERC7579ExecutorDelayUpdated')
       .withArgs(this.mockAccount.address, newDelay, effect);
-    await expect(this.mock.getDelay(this.mockAccount.target)).to.eventually.deep.equal([this.delay, newDelay, effect]);
+    await expect(this.mock.getDelay(this.mockAccount.address)).to.eventually.deep.equal([
+      initialDelay,
+      newDelay,
+      effect,
+    ]);
 
-    // Later, it takes effect
     await time.increaseTo(effect);
-    await expect(this.mock.getDelay(this.mockAccount.target)).to.eventually.deep.equal([newDelay, 0, 0]);
+    await expect(this.mock.getDelay(this.mockAccount.address)).to.eventually.deep.equal([newDelay, 0, 0]);
+  });
+
+  it('schedules a delay update (increase above cap)', async function () {
+    const initialDelay = time.duration.days(1);
+    const installData = solidityPacked(['uint32', 'uint32'], [initialDelay, this.expiration]);
+    await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, installData);
+
+    const minSetback = await this.mock.minSetback();
+    const newDelay = time.duration.days(10);
+    const tx = await this.mockFromAccount.setDelay(newDelay);
+    const now = await time.latest();
+    const effect = BigInt(now) + minSetback; // min(10d, 5d) = minSetback
+
+    await expect(tx)
+      .to.emit(this.mock, 'ERC7579ExecutorDelayUpdated')
+      .withArgs(this.mockAccount.address, newDelay, effect);
+    await expect(this.mock.getDelay(this.mockAccount.address)).to.eventually.deep.equal([
+      initialDelay,
+      newDelay,
+      effect,
+    ]);
+
+    await time.increaseTo(effect);
+    await expect(this.mock.getDelay(this.mockAccount.address)).to.eventually.deep.equal([newDelay, 0, 0]);
+  });
+
+  it('schedules a delay update (decrease)', async function () {
+    await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
+
+    const newDelay = time.duration.days(3);
+    const tx = await this.mockFromAccount.setDelay(newDelay);
+    const now = await time.latest();
+    const effect = BigInt(now) + BigInt(this.delay) - BigInt(newDelay);
+
+    await expect(tx)
+      .to.emit(this.mock, 'ERC7579ExecutorDelayUpdated')
+      .withArgs(this.mockAccount.address, newDelay, effect);
+    await expect(this.mock.getDelay(this.mockAccount.address)).to.eventually.deep.equal([this.delay, newDelay, effect]);
+
+    await time.increaseTo(effect);
+    await expect(this.mock.getDelay(this.mockAccount.address)).to.eventually.deep.equal([newDelay, 0, 0]);
   });
 
   it('updates the expiration', async function () {

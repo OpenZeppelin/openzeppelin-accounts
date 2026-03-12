@@ -1,3 +1,7 @@
+## 12-03-2026
+
+- `ERC7579DelayedExecutor`: `setDelay` now uses an asymmetric transition period depending on the direction of the change. When increasing the delay, the new value takes effect after `min(newDelay, minSetback())`, so small increases apply proportionally faster while large increases are still capped at `minSetback()`. When decreasing the delay, the new value takes effect after `currentDelay - newDelay`, guaranteeing that no operation can execute under a shorter window than was in place when the change was scheduled.
+
 ## 09-03-2026
 
 - Add `ERC7579SessionKeys` abstract contract module, providing per-account registration of ERC-7913 session keys with configurable validity ranges. Supports arbitrary key types (EOA, P256, WebAuthn, etc.). Concrete implementations must add policy enforcement (e.g., selector whitelist, spending limits).

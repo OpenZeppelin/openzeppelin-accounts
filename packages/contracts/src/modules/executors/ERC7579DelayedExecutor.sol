@@ -214,12 +214,24 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
     /**
      * @dev Allows an account to update its execution delay (see {getDelay}).
      *
-     * The new delay will take effect after a transition period defined by the current delay
-     * or {minSetback}, whichever is longer. This prevents immediate security downgrades.
+     * The transition period before the new delay takes effect depends on the direction of the change:
+     *
+     * * When _increasing_ the delay, the new value takes effect after `min(newDelay, minSetback())`.
+     *   For example, increasing from 1 day to 3 days takes effect after 3 days. Increasing from
+     *   1 day to 10 days takes effect after {minSetback} (5 days). This cap prevents the account
+     *   from being locked out by an accidental large increase (e.g. using milliseconds instead of
+     *   seconds).
+     * * When _decreasing_ the delay, the new value takes effect after `currentDelay - newDelay`.
+     *   This guarantees that a recovery operation cannot execute faster than the delay that was
+     *   active at the moment the change was scheduled. For example, decreasing from 10 days to
+     *   3 days takes effect after 7 days.
+     *
      * Can only be called by the account itself.
      */
     function setDelay(uint32 newDelay) public virtual {
-        _setDelay(msg.sender, newDelay, minSetback());
+        (uint32 currentDelay, , ) = getDelay(msg.sender);
+        uint32 setback = newDelay > currentDelay ? uint32(Math.min(newDelay, minSetback())) : currentDelay - newDelay;
+        _setDelay(msg.sender, newDelay, setback);
     }
 
     /// @dev Allows an account to update its execution expiration (see {getExpiration}).
