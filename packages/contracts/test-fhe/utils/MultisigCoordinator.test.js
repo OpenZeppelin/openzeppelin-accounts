@@ -58,7 +58,7 @@ describe('MultisigCoordinator', function () {
     await mockAccountFromEntrypoint.installModule(MODULE_TYPE_VALIDATOR, multisig.target, installData);
 
     // Register the multisig in the coordinator
-    await coordinator.connect(accountAsSigner).setMultisig(multisig.target);
+    await coordinator.connect(accountAsSigner).setERC7579Multisig(multisig.target);
 
     // Account's EIP-712 domain
     const accountDomain = await getDomain(mockAccount);
@@ -93,21 +93,21 @@ describe('MultisigCoordinator', function () {
     });
   });
 
-  describe('setMultisig', function () {
+  describe('setERC7579Multisig', function () {
     it('registers the multisig for the calling account', async function () {
       expect(await this.coordinator.erc7579Multisig(this.mockAccount.address)).to.equal(this.multisig.target);
     });
 
     it('emits MultisigCoordinatorMultisigSet', async function () {
       const newMultisig = await ethers.deployContract('$ERC7579MultisigValidator');
-      await expect(this.coordinator.connect(this.accountAsSigner).setMultisig(newMultisig.target))
+      await expect(this.coordinator.connect(this.accountAsSigner).setERC7579Multisig(newMultisig.target))
         .to.emit(this.coordinator, 'MultisigCoordinatorMultisigSet')
         .withArgs(this.mockAccount.address, newMultisig.target);
     });
 
     it('reverts for the zero address', async function () {
       await expect(
-        this.coordinator.connect(this.accountAsSigner).setMultisig(ethers.ZeroAddress),
+        this.coordinator.connect(this.accountAsSigner).setERC7579Multisig(ethers.ZeroAddress),
       ).to.be.revertedWithCustomError(this.coordinator, 'MultisigCoordinatorInvalidMultisig');
     });
   });
@@ -364,7 +364,7 @@ describe('MultisigCoordinator', function () {
       const otherAccount = await helper.newAccount('$OpenAccount', ['OpenAccount', '1']);
       await otherAccount.deploy();
 
-      // otherAccount has no setMultisig call — multisig() returns address(0)
+      // otherAccount has no setERC7579Multisig call — multisig() returns address(0)
       await expect(
         this.coordinator.allowHandle(otherAccount.address, this.handle, signerECDSA2.address),
       ).to.be.revertedWithCustomError(this.coordinator, 'MultisigCoordinatorInvalidMultisigModule');

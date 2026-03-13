@@ -50,7 +50,7 @@ import {FheType} from "@fhevm/solidity/lib/FheType.sol";
  *
  * A single deployment can serve multiple accounts: each account is identified by its address.
  * Before using {allowHandle}, an account must register its associated
- * {ERC7579Multisig} module by calling {setMultisig} from the account itself (e.g. via a
+ * {ERC7579Multisig} module by calling {setERC7579Multisig} from the account itself (e.g. via a
  * UserOperation's `execute` call).
  *
  * === Signature scheme
@@ -108,7 +108,7 @@ abstract contract MultisigCoordinator {
      *
      * * `multisig_` must not be the zero address.
      */
-    function setMultisig(address multisig_) public virtual {
+    function setERC7579Multisig(address multisig_) public virtual {
         require(multisig_ != address(0), MultisigCoordinatorInvalidMultisig());
         _multisigs[msg.sender] = multisig_;
         emit MultisigCoordinatorMultisigSet(msg.sender, multisig_);
@@ -184,7 +184,7 @@ abstract contract MultisigCoordinator {
      *
      * Requirements:
      *
-     * * `account` must have a multisig registered via {setMultisig} and installed as a validator.
+     * * `account` must have a multisig registered via {setERC7579Multisig} and installed as a validator.
      * * `account` must implement {IERC5267}.
      */
     function allowHandle(
@@ -229,7 +229,7 @@ abstract contract MultisigCoordinator {
      *
      * Requirements:
      *
-     * * `account` must have a multisig registered via {setMultisig} and installed as a validator.
+     * * `account` must have a multisig registered via {setERC7579Multisig} and installed as a validator.
      */
     function _validateAccess(
         address account,
