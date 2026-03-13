@@ -161,11 +161,8 @@ abstract contract MultisigCoordinator {
      * @dev Grants ACL permission over an encrypted `handle` to address `to`.
      *
      * `msg.sender` must be `account` itself or a registered signer EOA.
-     *
-     * Requirements:
-     *
-     * * `account` must have a multisig registered via {setMultisig} and installed as a validator.
-     * * `account` must implement {IERC5267}.
+     * See {allowHandle-address-bytes-bytes-bytes32-address-} for the full authorization
+     * rules and requirements.
      */
     function allowHandle(address account, bytes32 handle, address to) public virtual {
         allowHandle(account, Calldata.emptyBytes(), Calldata.emptyBytes(), handle, to);
