@@ -7,25 +7,6 @@ import {IERC5267} from "@openzeppelin/contracts/interfaces/IERC5267.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {Calldata} from "@openzeppelin/contracts/utils/Calldata.sol";
 import {Impl} from "@fhevm/solidity/lib/Impl.sol";
-import {
-    FHE,
-    ebool,
-    externalEbool,
-    euint8,
-    externalEuint8,
-    euint16,
-    externalEuint16,
-    euint32,
-    externalEuint32,
-    euint64,
-    externalEuint64,
-    euint128,
-    externalEuint128,
-    euint256,
-    externalEuint256,
-    eaddress,
-    externalEaddress
-} from "@fhevm/solidity/lib/FHE.sol";
 import {ERC7579Multisig} from "../modules/ERC7579Multisig.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {FheType} from "@fhevm/solidity/lib/FheType.sol";
@@ -274,11 +255,13 @@ abstract contract MultisigCoordinator {
         } else if (signer.length == 20) {
             require(multisig_.isSigner(account, signer), MultisigCoordinatorInvalidSigner(account, signer));
             require(
+                // forge-lint: disable-next-line(unsafe-typecast)
                 SignatureChecker.isValidSignatureNow(address(bytes20(signer)), hash, signature),
                 MultisigCoordinatorInvalidSignature(account, signer, signature)
             );
         } else if (signer.length > 20) {
             require(multisig_.isSigner(account, signer), MultisigCoordinatorInvalidSigner(account, signer));
+            // forge-lint: disable-next-line(unsafe-typecast)
             (bool success, bytes memory result) = address(bytes20(signer)).staticcall(
                 abi.encodeCall(IERC7913SignatureVerifier.verify, (signer[20:], hash, signature))
             );
