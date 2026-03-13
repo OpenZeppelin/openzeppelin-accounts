@@ -14,6 +14,11 @@ module.exports = mapValues(
       mode: 'bytes32',
       recoveryCalldata: 'bytes',
     },
+    AllowHandle: {
+      account: 'address',
+      handle: 'bytes32',
+      to: 'address',
+    },
   },
   formatType,
 );

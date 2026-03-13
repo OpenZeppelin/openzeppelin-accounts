@@ -1,7 +1,11 @@
-## 12-03-2026
+## 13-03-2026
 
 - `ERC7579DelayedExecutor`: Renamed `minSetback` to `delayChangeWindow` to better reflect its dual role as a cap on delay increases and a floor on uninstall/reinstall transitions.
 - `ERC7579DelayedExecutor`: `setDelay` now uses an asymmetric transition period depending on the direction of the change. When increasing the delay, the new value takes effect after `min(newDelay, delayChangeWindow())`, so small increases apply proportionally faster while large increases are still capped at `delayChangeWindow()`. When decreasing the delay, the new value takes effect after `currentDelay - newDelay`, guaranteeing that no operation can execute under a shorter window than was in place when the change was scheduled.
+
+## 12-03-2026
+
+- Add `MultisigCoordinator` utility contract, bridging multisig accounts with Zama's Fully Homomorphic Encryption (FHE). It allows any caller to register externally-encrypted FHE values on behalf of an account (granting ACL access to both the coordinator and the account), and allows any authorized signer to permanently grant FHE ACL decryption rights over a handle to an EOA address.
 
 ## 09-03-2026
 
