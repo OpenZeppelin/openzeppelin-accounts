@@ -33,9 +33,11 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  *
  * Accounts can set their own delay periods during installation or via {setDelay}.
  * The delay period is enforced even between installs and uninstalls to prevent
- * immediate downgrades. When setting a new delay period, the new delay takes effect
- * after a transition period defined by the current delay or {delayChangeWindow}, whichever
- * is longer.
+ * immediate downgrades. When setting a new delay period, the transition period before
+ * the new delay takes effect depends on the direction of the change:
+ *
+ * * When _increasing_ the delay, the new value takes effect after `min(newDelay, delayChangeWindow())`.
+ * * When _decreasing_ the delay, the new value takes effect after `currentDelay - newDelay`.
  *
  * TIP: Use {_scheduleAt} to schedule operations at specific points in time. This is
  * useful to pre-schedule operations for non-deployed accounts (e.g. subscriptions).
