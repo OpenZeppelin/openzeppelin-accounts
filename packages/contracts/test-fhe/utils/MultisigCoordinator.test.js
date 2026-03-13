@@ -15,7 +15,7 @@ const {
   MAX_UINT64,
   MAX_UINT128,
 } = require('../../../../lib/@openzeppelin-contracts/test/helpers/constants');
-const { AllowHandle, AllowHandleTransient } = require('../../test/helpers/eip712');
+const { AllowHandle } = require('../../test/helpers/eip712');
 
 // Pre-generated wallets
 const signerECDSA1 = ethers.Wallet.createRandom();
@@ -74,8 +74,10 @@ describe('MultisigCoordinator', function () {
       } = await input.encrypt();
       const handle = await coordinator
         .connect(accountAsSigner)
-        .asEuint64.staticCall(mockAccount.address, encHandle, inputProof);
-      await coordinator.connect(accountAsSigner).asEuint64(mockAccount.address, encHandle, inputProof);
+        .fromExternal.staticCall(mockAccount.address, encHandle, inputProof, FhevmType.euint64);
+      await coordinator
+        .connect(accountAsSigner)
+        .fromExternal(mockAccount.address, encHandle, inputProof, FhevmType.euint64);
       return handle;
     };
 
@@ -93,7 +95,7 @@ describe('MultisigCoordinator', function () {
 
   describe('setMultisig', function () {
     it('registers the multisig for the calling account', async function () {
-      expect(await this.coordinator.multisig(this.mockAccount.address)).to.equal(this.multisig.target);
+      expect(await this.coordinator.erc7579Multisig(this.mockAccount.address)).to.equal(this.multisig.target);
     });
 
     it('emits MultisigCoordinatorMultisigSet', async function () {
@@ -110,7 +112,7 @@ describe('MultisigCoordinator', function () {
     });
   });
 
-  describe('as** functions', function () {
+  describe('fromExternal', function () {
     for (const [type, value] of [
       ['bool', true],
       ['uint8', 255n],
@@ -121,7 +123,7 @@ describe('MultisigCoordinator', function () {
       ['uint256', ethers.MaxUint256],
       ['address', ethers.Wallet.createRandom().address],
     ]) {
-      it(`asE${type}: verify the input proof and grants ACL to coordinator and account`, async function () {
+      it(`verifies the input proof and grants ACL to coordinator and account (${type})`, async function () {
         const input = fhevm.createEncryptedInput(this.coordinator.target, this.mockAccount.address);
         input[`add${capitalize(type.replace('uint', ''))}`](value);
         const {
@@ -129,14 +131,12 @@ describe('MultisigCoordinator', function () {
           inputProof,
         } = await input.encrypt();
 
-        const receipt = await this.coordinator
+        const handle = await this.coordinator
           .connect(this.accountAsSigner)
-          [`$_asE${type}`](this.mockAccount.address, encHandle, inputProof)
-          .then(tx => tx.wait());
-        const [[handle]] = receipt.logs
-          .map(log => this.coordinator.interface.parseLog(log))
-          .filter(log => log?.name === `return$_asE${type}`)
-          .map(log => log.args.map(arg => ethers.hexlify(arg)));
+          .fromExternal.staticCall(this.mockAccount.address, encHandle, inputProof, FhevmType[`e${type}`]);
+        await this.coordinator
+          .connect(this.accountAsSigner)
+          .fromExternal(this.mockAccount.address, encHandle, inputProof, FhevmType[`e${type}`]);
 
         await fheAllowHandle(this.accountAsSigner, signerECDSA1.address, handle);
         const isUint = type.startsWith('uint');
@@ -147,7 +147,7 @@ describe('MultisigCoordinator', function () {
     }
   });
 
-  describe.only('allowHandle', function () {
+  describe('allowHandle', function () {
     beforeEach(async function () {
       this.handle = await this.encryptHandle(42n);
     });
@@ -371,113 +371,5 @@ describe('MultisigCoordinator', function () {
     });
   });
 
-  describe('allowHandleTransient', function () {
-    beforeEach(async function () {
-      this.handle = await this.encryptHandle(99n);
-    });
-
-    it('succeeds when called by the account', async function () {
-      await expect(
-        this.coordinator
-          .connect(this.accountAsSigner)
-          .allowHandleTransient(this.mockAccount.address, this.handle, signerECDSA2.address),
-      ).to.not.be.reverted;
-    });
-
-    it('succeeds when called by a registered signer EOA', async function () {
-      const signerECDSA1AsSigner = await impersonate(signerECDSA1.address);
-      await expect(
-        this.coordinator
-          .connect(signerECDSA1AsSigner)
-          .allowHandleTransient(this.mockAccount.address, this.handle, signerECDSA2.address),
-      ).to.not.be.reverted;
-    });
-
-    it('succeeds with a registered EOA signer and EIP-712 signature', async function () {
-      const signerBytes = ethers.getBytes(signerECDSA1.address);
-      const signature = await signerECDSA1.signTypedData(
-        this.accountDomain,
-        { AllowHandleTransient },
-        {
-          account: this.mockAccount.address,
-          handle: this.handle,
-          to: signerECDSA2.address,
-        },
-      );
-
-      await expect(
-        this.coordinator.allowHandleTransient(
-          this.mockAccount.address,
-          signerBytes,
-          signature,
-          this.handle,
-          signerECDSA2.address,
-        ),
-      ).to.not.be.reverted;
-    });
-
-    it('succeeds with a registered ERC-7913 signer and P256 signature', async function () {
-      const signature = await aliceP256.signTypedData(
-        this.accountDomain,
-        { AllowHandleTransient },
-        {
-          account: this.mockAccount.address,
-          handle: this.handle,
-          to: signerECDSA2.address,
-        },
-      );
-
-      await expect(
-        this.coordinator.allowHandleTransient(
-          this.mockAccount.address,
-          aliceP256.bytes,
-          signature,
-          this.handle,
-          signerECDSA2.address,
-        ),
-      ).to.not.be.reverted;
-    });
-
-    it('reverts if msg.sender is neither the account nor a registered signer', async function () {
-      const [other] = await ethers.getSigners();
-      await expect(
-        this.coordinator
-          .connect(other)
-          .allowHandleTransient(this.mockAccount.address, this.handle, signerECDSA2.address),
-      ).to.be.revertedWithCustomError(this.coordinator, 'MultisigCoordinatorInvalidSigner');
-    });
-
-    it('reverts if the signature is invalid', async function () {
-      const signerBytes = ethers.getBytes(signerECDSA1.address);
-      const wrongSignature = await signerECDSA1.signTypedData(
-        this.accountDomain,
-        { AllowHandleTransient },
-        {
-          account: this.mockAccount.address,
-          handle: ethers.ZeroHash, // wrong handle
-          to: signerECDSA2.address,
-        },
-      );
-
-      await expect(
-        this.coordinator.allowHandleTransient(
-          this.mockAccount.address,
-          signerBytes,
-          wrongSignature,
-          this.handle,
-          signerECDSA2.address,
-        ),
-      ).to.be.revertedWithCustomError(this.coordinator, 'MultisigCoordinatorInvalidSignature');
-    });
-
-    it('reverts if the multisig module is not installed in the account', async function () {
-      await this.mockAccountFromEntrypoint.uninstallModule(MODULE_TYPE_VALIDATOR, this.multisig.target, '0x');
-
-      await expect(
-        this.coordinator
-          .connect(this.accountAsSigner)
-          .allowHandleTransient(this.mockAccount.address, this.handle, signerECDSA2.address),
-      ).to.be.revertedWithCustomError(this.coordinator, 'MultisigCoordinatorInvalidMultisigModule');
-    });
-  });
 });
+

@@ -28,6 +28,7 @@ import {
 } from "@fhevm/solidity/lib/FHE.sol";
 import {ERC7579Multisig} from "../modules/ERC7579Multisig.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import {FheType} from "@fhevm/solidity/lib/FheType.sol";
 
 /**
  * @dev Utility contract that bridges multisig accounts with Fully Homomorphic Encryption (FHE).
@@ -50,12 +51,10 @@ import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/Messa
  *    this coordinator and the target account can subsequently use or re-share the handle.
  *    The resulting handle is returned for use in downstream calls (e.g. `confidentialTransferFrom`).
  *
- * 2. **Handle allowance delegation**: Any authorized signer (or the account itself) can grant
+ * 2. **Handle allowance granting**: Any authorized signer (or the account itself) can grant
  *    ACL permission over an existing encrypted handle to an arbitrary EOA or contract address.
  *    This lets signers individually expose a confidential value to their own EOA for decryption,
- *    without the account contract having to approve anything. Two variants are provided:
- *    {allowHandle} for a permanent grant and {allowHandleTransient} for a transient grant that
- *    only persists for the duration of the current transaction.
+ *    without the account contract having to approve anything.
  *
  * === Setup
  *
@@ -69,7 +68,7 @@ import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/Messa
  * ```
  *
  * A single deployment can serve multiple accounts: each account is identified by its address.
- * Before using {allowHandle} or {allowHandleTransient}, an account must register its associated
+ * Before using {allowHandle}, an account must register its associated
  * {ERC7579Multisig} module by calling {setMultisig} from the account itself (e.g. via a
  * UserOperation's `execute` call).
  *
@@ -80,19 +79,15 @@ import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/Messa
  * call-time via {IERC5267-eip712Domain}, so no additional configuration of this coordinator
  * is needed.
  *
- * NOTE: The `as**` functions do not require prior registration; they grant ACL permissions to
+ * NOTE: {fromExternal} does not require prior registration; it grants ACL permissions to
  * any address provided as `account`, regardless of whether a multisig has been configured.
  */
 abstract contract MultisigCoordinator {
     using MessageHashUtils for *;
 
-    /// @dev EIP-712 typehash for `AllowHandle` operations (permanent ACL grant).
+    /// @dev EIP-712 typehash for {allowHandle} operations.
     bytes32 private constant ALLOW_HANDLE_TYPEHASH =
         keccak256("AllowHandle(address account,bytes32 handle,address to)");
-
-    /// @dev EIP-712 typehash for `AllowHandleTransient` operations (transient ACL grant).
-    bytes32 private constant ALLOW_HANDLE_TRANSIENT_TYPEHASH =
-        keccak256("AllowHandleTransient(address account,bytes32 handle,address to)");
 
     /// @dev Emitted when an account updates its associated multisig address.
     event MultisigCoordinatorMultisigSet(address indexed account, address indexed multisig);
@@ -109,13 +104,16 @@ abstract contract MultisigCoordinator {
     /// @dev The provided multisig module is not installed in the account.
     error MultisigCoordinatorInvalidMultisigModule();
 
+    /// @dev The provided sender is not allowed to use the handle.
+    error MultisigCoordinatorSenderNotAllowedToUseHandle(bytes32 handle, address sender);
+
     mapping(address account => address multisig) private _multisigs;
 
     /**
      * @dev Returns the address of the {ERC7579Multisig} module associated with `account`.
      * Returns `address(0)` if no multisig has been registered.
      */
-    function multisig(address account) public view virtual returns (address) {
+    function erc7579Multisig(address account) public view virtual returns (address) {
         return _multisigs[account];
     }
 
@@ -136,92 +134,52 @@ abstract contract MultisigCoordinator {
     }
 
     /**
-     * @dev Verifies an externally-encrypted `ebool` input proof and registers ACL permissions.
+     * @dev Verifies an externally-encrypted handle input proof and registers ACL permissions.
      *
      * The proof is validated by {FHE-fromExternal}, after which both this coordinator (`address(this)`)
      * and the target `account` are permanently allowed to use the resulting handle.
      *
-     * The returned handle can be passed directly to functions that accept an `ebool`, such as
-     * confidential token operations.
+     * The returned handle can be cast to the appropriate type using with `ebool.wrap(externalHandle)`
+     * for `ebool`, `eaddress.wrap(externalHandle)` for `eaddress`, `euint8.wrap(externalHandle)` for
+     * `euint8` and so on.
      *
      * NOTE: Anyone can call this function for any `account` address. ACL permissions are additive
      * and the caller has no ability to revoke them, so there is no griefing risk.
      */
-    function asEbool(address account, externalEbool value, bytes memory inputProof) public virtual returns (ebool) {
-        return _asEbool(account, value, inputProof);
-    }
-
-    /// @dev Same as {asEbool} but for `euint8` externally-encrypted values.
-    function asEuint8(address account, externalEuint8 value, bytes memory inputProof) public virtual returns (euint8) {
-        return _asEuint8(account, value, inputProof);
-    }
-
-    /// @dev Same as {asEbool} but for `euint16` externally-encrypted values.
-    function asEuint16(
+    function fromExternal(
         address account,
-        externalEuint16 value,
-        bytes memory inputProof
-    ) public virtual returns (euint16) {
-        return _asEuint16(account, value, inputProof);
+        bytes32 externalHandle,
+        bytes memory inputProof,
+        FheType fheType
+    ) public virtual returns (bytes32) {
+        return _fromExternal(account, externalHandle, inputProof, fheType);
     }
 
-    /// @dev Same as {asEbool} but for `euint32` externally-encrypted values.
-    function asEuint32(
+    /// @dev Internal version of {fromExternal}
+    function _fromExternal(
         address account,
-        externalEuint32 value,
-        bytes memory inputProof
-    ) public virtual returns (euint32) {
-        return _asEuint32(account, value, inputProof);
-    }
-
-    /// @dev Same as {asEbool} but for `euint64` externally-encrypted values.
-    function asEuint64(
-        address account,
-        externalEuint64 value,
-        bytes memory inputProof
-    ) public virtual returns (euint64) {
-        return _asEuint64(account, value, inputProof);
-    }
-
-    /// @dev Same as {asEbool} but for `euint128` externally-encrypted values.
-    function asEuint128(
-        address account,
-        externalEuint128 value,
-        bytes memory inputProof
-    ) public virtual returns (euint128) {
-        return _asEuint128(account, value, inputProof);
-    }
-
-    /// @dev Same as {asEbool} but for `euint256` externally-encrypted values.
-    function asEuint256(
-        address account,
-        externalEuint256 value,
-        bytes memory inputProof
-    ) public virtual returns (euint256) {
-        return _asEuint256(account, value, inputProof);
-    }
-
-    /// @dev Same as {asEbool} but for `eaddress` externally-encrypted values.
-    function asEaddress(
-        address account,
-        externalEaddress value,
-        bytes memory inputProof
-    ) public virtual returns (eaddress) {
-        return _asEaddress(account, value, inputProof);
+        bytes32 externalHandle,
+        bytes memory inputProof,
+        FheType fheType
+    ) internal virtual returns (bytes32 handle) {
+        if (inputProof.length != 0) {
+            handle = Impl.verify(externalHandle, inputProof, fheType);
+        } else {
+            require(
+                externalHandle != 0 && Impl.isAllowed(externalHandle, msg.sender),
+                MultisigCoordinatorSenderNotAllowedToUseHandle(externalHandle, msg.sender)
+            );
+            handle = externalHandle;
+        }
+        Impl.allow(handle, address(this));
+        Impl.allow(handle, account);
+        return handle;
     }
 
     /**
      * @dev Grants ACL permission over an encrypted `handle` to address `to`.
      *
-     * `msg.sender` must be `account` itself or a registered signer EOA. Use the overload
-     * when authorizing via an explicit signer and signature (e.g. an ERC-7913 key or an
-     * off-chain EIP-712 signature).
-     *
-     * WARNING: This grant is permanent and irrevocable. If `to` is later removed from the
-     * multisig, they will still be able to decrypt any handle they were previously allowed. To
-     * remove a former signer's access, re-encrypt the sensitive values using fresh FHE inputs
-     * and grant access only to current signers. Consider using {allowHandleTransient} instead
-     * when persistent decryption rights are not required.
+     * `msg.sender` must be `account` itself or a registered signer EOA.
      *
      * Requirements:
      *
@@ -236,8 +194,7 @@ abstract contract MultisigCoordinator {
      * @dev Grants a permanent ACL permission over an encrypted `handle` to address `to`, verified
      * against the account's registered {ERC7579Multisig}.
      *
-     * See {_validateAccess} for the full authorization rules and {_getTypedHash} for the
-     * {ALLOW_HANDLE_TYPEHASH} typed data hash.
+     * See {_validateAccess} for the full authorization rules.
      *
      * Once authorization is confirmed, the `handle` is permanently allowed to `to` via the FHE
      * ACL. This enables `to` (typically an EOA) to request off-chain decryption of the value.
@@ -245,8 +202,7 @@ abstract contract MultisigCoordinator {
      * WARNING: This grant is permanent and irrevocable. If `to` is later removed from the
      * multisig, they will still be able to decrypt any handle they were previously allowed. To
      * remove a former signer's access, re-encrypt the sensitive values using fresh FHE inputs
-     * and grant access only to current signers. Consider using {allowHandleTransient} instead
-     * when persistent decryption rights are not required.
+     * and grant access only to current signers.
      *
      * Requirements:
      *
@@ -260,150 +216,18 @@ abstract contract MultisigCoordinator {
         bytes32 handle,
         address to
     ) public virtual {
-        _validateAccess(account, signer, signature, _getTypedHash(ALLOW_HANDLE_TYPEHASH, account, handle, to));
-        Impl.allow(handle, to);
-    }
-
-    /**
-     * @dev Grants a transient ACL permission over an encrypted `handle` to address `to`.
-     *
-     * `msg.sender` must be `account` itself or a registered signer EOA. Use the overload
-     * when authorizing via an explicit signer and signature (e.g. an ERC-7913 key or an
-     * off-chain EIP-712 signature).
-     *
-     * Unlike {allowHandle}, the permission granted here only persists for the duration of the
-     * current transaction; it is not recorded permanently in the FHE ACL.
-     *
-     * Requirements:
-     *
-     * * `account` must have a multisig registered via {setMultisig} and installed as a validator.
-     * * `account` must implement {IERC5267}.
-     */
-    function allowHandleTransient(address account, bytes32 handle, address to) public virtual {
-        allowHandleTransient(account, Calldata.emptyBytes(), Calldata.emptyBytes(), handle, to);
-    }
-
-    /**
-     * @dev Grants a transient ACL permission over an encrypted `handle` to address `to`, verified
-     * against the account's registered {ERC7579Multisig}.
-     *
-     * See {_validateAccess} for the full authorization rules and {_getTypedHash} for the
-     * {ALLOW_HANDLE_TRANSIENT_TYPEHASH} typed data hash.
-     *
-     * Unlike {allowHandle}, the permission granted here only persists for the duration of the
-     * current transaction; it is not recorded permanently in the FHE ACL.
-     *
-     * Requirements:
-     *
-     * * `account` must have a multisig registered via {setMultisig} and installed as a validator.
-     * * `account` must implement {IERC5267}.
-     */
-    function allowHandleTransient(
-        address account,
-        bytes calldata signer,
-        bytes calldata signature,
-        bytes32 handle,
-        address to
-    ) public virtual {
-        _validateAccess(
-            account,
-            signer,
-            signature,
-            _getTypedHash(ALLOW_HANDLE_TRANSIENT_TYPEHASH, account, handle, to)
+        bytes1 fields;
+        string memory name;
+        string memory version;
+        uint256 chainId;
+        address verifyingContract;
+        bytes32 domainSalt;
+        (fields, name, version, chainId, verifyingContract, domainSalt, ) = IERC5267(account).eip712Domain();
+        bytes32 hash = fields.toDomainSeparator(name, version, chainId, verifyingContract, domainSalt).toTypedDataHash(
+            keccak256(abi.encode(ALLOW_HANDLE_TYPEHASH, account, handle, to))
         );
-        Impl.allowTransient(handle, to);
-    }
-
-    /// @dev Internal version of {asEbool}
-    function _asEbool(address account, externalEbool value, bytes memory inputProof) internal virtual returns (ebool) {
-        ebool evalue = FHE.fromExternal(value, inputProof);
-        FHE.allowThis(evalue);
-        FHE.allow(evalue, account);
-        return evalue;
-    }
-
-    /// @dev Internal version of {asEuint8}
-    function _asEuint8(
-        address account,
-        externalEuint8 value,
-        bytes memory inputProof
-    ) internal virtual returns (euint8) {
-        euint8 evalue = FHE.fromExternal(value, inputProof);
-        FHE.allowThis(evalue);
-        FHE.allow(evalue, account);
-        return evalue;
-    }
-
-    /// @dev Internal version of {asEuint16}
-    function _asEuint16(
-        address account,
-        externalEuint16 value,
-        bytes memory inputProof
-    ) internal virtual returns (euint16) {
-        euint16 evalue = FHE.fromExternal(value, inputProof);
-        FHE.allowThis(evalue);
-        FHE.allow(evalue, account);
-        return evalue;
-    }
-
-    /// @dev Internal version of {asEuint32}
-    function _asEuint32(
-        address account,
-        externalEuint32 value,
-        bytes memory inputProof
-    ) internal virtual returns (euint32) {
-        euint32 evalue = FHE.fromExternal(value, inputProof);
-        FHE.allowThis(evalue);
-        FHE.allow(evalue, account);
-        return evalue;
-    }
-
-    /// @dev Internal version of {asEuint64}
-    function _asEuint64(
-        address account,
-        externalEuint64 value,
-        bytes memory inputProof
-    ) internal virtual returns (euint64) {
-        euint64 evalue = FHE.fromExternal(value, inputProof);
-        FHE.allowThis(evalue);
-        FHE.allow(evalue, account);
-        return evalue;
-    }
-
-    /// @dev Internal version of {asEuint128}
-    function _asEuint128(
-        address account,
-        externalEuint128 value,
-        bytes memory inputProof
-    ) internal virtual returns (euint128) {
-        euint128 evalue = FHE.fromExternal(value, inputProof);
-        FHE.allowThis(evalue);
-        FHE.allow(evalue, account);
-        return evalue;
-    }
-
-    /// @dev Internal version of {asEuint256}
-    function _asEuint256(
-        address account,
-        externalEuint256 value,
-        bytes memory inputProof
-    ) internal virtual returns (euint256) {
-        euint256 evalue = FHE.fromExternal(value, inputProof);
-        FHE.allowThis(evalue);
-        FHE.allow(evalue, account);
-        return evalue;
-    }
-
-    /// @dev Internal version of {asEaddress}
-    function _asEaddress(
-        address account,
-        externalEaddress value,
-        bytes memory inputProof
-    ) internal virtual returns (eaddress) {
-        eaddress evalue = FHE.fromExternal(value, inputProof);
-        FHE.allowThis(evalue);
-        FHE.allow(evalue, account);
-        return evalue;
+        _validateAccess(account, signer, signature, hash);
+        Impl.allow(handle, to);
     }
 
     /**
@@ -435,12 +259,13 @@ abstract contract MultisigCoordinator {
         bytes calldata signature,
         bytes32 hash
     ) internal view virtual {
-        address multisigModule = multisig(account);
+        address multisigModule = erc7579Multisig(account);
         require(
-            IERC7579ModuleConfig(account).isModuleInstalled(MODULE_TYPE_VALIDATOR, multisigModule, ""),
+            multisigModule != address(0) &&
+                IERC7579ModuleConfig(account).isModuleInstalled(MODULE_TYPE_VALIDATOR, multisigModule, ""),
             MultisigCoordinatorInvalidMultisigModule()
         );
-        ERC7579Multisig multisig_ = ERC7579Multisig(multisig(account));
+        ERC7579Multisig multisig_ = ERC7579Multisig(multisigModule);
         if (signer.length == 0) {
             require(
                 msg.sender == account || multisig_.isSigner(account, abi.encodePacked(msg.sender)),
@@ -466,38 +291,5 @@ abstract contract MultisigCoordinator {
         } else {
             revert MultisigCoordinatorInvalidSigner(account, signer);
         }
-    }
-
-    /**
-     * @dev Generates the EIP-712 typed data hash for an operation using the `typehash` and the
-     * `account`'s domain separator.
-     *
-     * The typed data structure includes:
-     *
-     * * `account`: The account address
-     * * `handle`: The encrypted handle
-     * * `to`: The address to grant ACL permission to
-     *
-     * Requirements:
-     *
-     * * The `account` must implement {IERC5267}.
-     */
-    function _getTypedHash(
-        bytes32 typehash,
-        address account,
-        bytes32 handle,
-        address to
-    ) private view returns (bytes32) {
-        bytes1 fields;
-        string memory name;
-        string memory version;
-        uint256 chainId;
-        address verifyingContract;
-        bytes32 domainSalt;
-        (fields, name, version, chainId, verifyingContract, domainSalt, ) = IERC5267(account).eip712Domain();
-        return
-            fields.toDomainSeparator(name, version, chainId, verifyingContract, domainSalt).toTypedDataHash(
-                keccak256(abi.encode(typehash, account, handle, to))
-            );
     }
 }

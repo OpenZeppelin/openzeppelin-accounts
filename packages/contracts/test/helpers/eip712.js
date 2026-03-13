@@ -19,11 +19,6 @@ module.exports = mapValues(
       handle: 'bytes32',
       to: 'address',
     },
-    AllowHandleTransient: {
-      account: 'address',
-      handle: 'bytes32',
-      to: 'address',
-    },
   },
   formatType,
 );
