@@ -441,21 +441,21 @@ coordinator.setMultisig(address(multisigModule));
 Any caller can submit an FHE-encrypted value together with its input proof. The coordinator verifies the proof and grants ACL access to both itself and the target account:
 
 ```solidity
-import {FHE, externalEuint64, euint64} from "@fhevm/solidity/lib/FHE.sol";
+import {FheType} from "@fhevm/solidity/lib/FheType.sol";
 
 // Off-chain: one signer encrypts the transfer amount using the FHE public key
 // and generates the input proof
-externalEuint64 encryptedAmount = ...; // handle from input.encrypt()
-bytes memory inputProof = ...;         // proof from input.encrypt()
+bytes32 encryptedAmount = ...; // handle from input.encrypt()
+bytes memory inputProof = ...;  // proof from input.encrypt()
 
 // On-chain: any caller registers the encrypted value for the account
-euint64 handle = coordinator.asEuint64(address(account), encryptedAmount, inputProof);
+bytes32 handle = coordinator.fromExternal(address(account), encryptedAmount, inputProof, FheType.Uint64);
 
-// The handle can now be forwarded to e.g. confidentialTransferFrom
-token.confidentialTransferFrom(address(account), recipient, handle);
+// The handle can now be cast and forwarded to e.g. confidentialTransferFrom
+token.confidentialTransferFrom(address(account), recipient, euint64.wrap(handle));
 ```
 
-Encrypted values are supported for all FHE types: `asEbool`, `asEuint8`, `asEuint16`, `asEuint32`, `asEuint64`, `asEuint128`, `asEuint256`, and `asEaddress`.
+All FHE types are supported via the `fheType` parameter: `FheType.Bool`, `FheType.Uint8`, `FheType.Uint16`, `FheType.Uint32`, `FheType.Uint64`, `FheType.Uint128`, `FheType.Uint256`, and `FheType.Address`.
 
 ### Granting handle access to a signer's EOA
 
@@ -485,9 +485,9 @@ AllowHandle(address account, bytes32 handle, address to)
 Once `allowHandle` is called, `signerEOA` can request off-chain decryption of the FHE value through the Zama gateway.
 
 <Callout type="idea">
-  If the party preparing the encrypted input is a smart account, it can batch `asEuint64` and `allowHandle` into a single UserOperation. Because `asEuint64` is not tied to `msg.sender`, any caller can register the encrypted value, meaning this batching does not require a multisig proposal from the target account itself: it is just a convenience for whoever is constructing the input.
+  `fromExternal` and `allowHandle` can be batched into a single UserOperation. Because `fromExternal` accepts any `account` address regardless of `msg.sender`, any caller can register the encrypted value. `allowHandle`, however, requires the caller to be authorized: `msg.sender` must be the account itself or a registered signer EOA (option 1 above), or the 5-parameter overload must be used with a valid signature from a registered signer (options 2 and 3 above). This means the party submitting the batch must already satisfy one of those conditions — it is not sufficient to simply be any smart account.
 </Callout>
 
 <Callout type="warn">
-  ACL grants made via `allowHandle` are **permanent and irrevocable**. A signer removed from the multisig retains the ability to decrypt any handle they were previously allowed. To remove a former signer's access, re-encrypt the sensitive values using fresh FHE inputs and grant access only to current signers. Use `allowHandleTransient` when persistent decryption rights are not required.
+  ACL grants made via `allowHandle` are **permanent and irrevocable**. A signer removed from the multisig retains the ability to decrypt any handle they were previously allowed. To remove a former signer's access, re-encrypt the sensitive values using fresh FHE inputs and grant access only to current signers.
 </Callout>
