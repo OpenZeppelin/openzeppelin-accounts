@@ -1,4 +1,4 @@
-## 11-03-2026
+## 12-03-2026
 
 - Add `MultisigCoordinator` utility contract, bridging multisig accounts with Zama's Fully Homomorphic Encryption (FHE). It allows any caller to register externally-encrypted FHE values on behalf of an account (granting ACL access to both the coordinator and the account), and allows any authorized signer to permanently grant FHE ACL decryption rights over a handle to an EOA address.
 
