@@ -422,7 +422,7 @@ Two problems arise when a multisig account interacts with confidential tokens:
 2. **Handle allowance delegation**: Any authorized signer can grant ACL permission over an existing encrypted handle to any EOA. This allows individual signers to expose a value to their own EOA address for off-chain decryption, without the account needing to approve anything.
 
 <Callout>
-  `MultisigCoordinator` is abstract and must be extended with an fhEVM configuration before deployment. Once deployed, a single instance can serve multiple accounts, each account registers its own multisig address independently via `setERC7579Multisig`.
+  `MultisigCoordinator` is abstract and must be extended with an fhEVM configuration before deployment. Once deployed, a single instance can serve multiple accounts, and each account registers its own multisig address independently via `setERC7579Multisig`.
 </Callout>
 
 ### Setting up the coordinator
