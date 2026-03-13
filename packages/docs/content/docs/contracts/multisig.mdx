@@ -510,5 +510,6 @@ coordinator.allowHandle(address(account), handle, signerEOA);
 
 In practice, the most common batching patterns are:
 
+- **A signer that is itself a smart account** calls both functions in a single transaction. Since `msg.sender` is a registered signer, the 3-parameter overload is accepted directly.
 - **A signer EOA using EIP-7702 delegation**. A bare EOA cannot atomically issue two external calls, but if the signer EOA has delegated its code to a batching contract via [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702), the delegation allows it to batch both calls in one transaction. `msg.sender` remains the EOA address, so the 3-parameter overload is still accepted.
 - **A third-party relayer submits the batch**. The `fromExternal` call goes through freely, but the `allowHandle` call must use the 5-parameter overload with an EIP-712 signature obtained off-chain from a registered signer before the batch is submitted.
