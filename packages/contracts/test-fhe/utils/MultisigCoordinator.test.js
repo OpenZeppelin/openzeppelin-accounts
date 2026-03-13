@@ -370,6 +370,4 @@ describe('MultisigCoordinator', function () {
       ).to.be.revertedWithCustomError(this.coordinator, 'MultisigCoordinatorInvalidMultisigModule');
     });
   });
-
 });
-
