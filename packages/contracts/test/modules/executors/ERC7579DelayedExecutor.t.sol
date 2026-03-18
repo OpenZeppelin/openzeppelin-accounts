@@ -118,7 +118,7 @@ contract ERC7579DelayedExecutorTest is Test {
         emit ERC7579DelayedExecutor.ERC7579ExecutorDelayUpdated(
             address(_account),
             0,
-            uint48(block.timestamp) + uint48(Math.max(initialDelay, _delayedExecutor.delayChangeWindow()))
+            uint48(block.timestamp) + uint48(initialDelay)
         );
 
         vm.expectEmit(true, true, true, true);
@@ -130,7 +130,7 @@ contract ERC7579DelayedExecutorTest is Test {
         assertEq(_delayedExecutor.getExpiration(address(_account)), 0);
     }
 
-    function testReinstallEnforcesMinSetback(uint32 initialDelay, uint32 expiration, uint32 newDelay) public {
+    function testReinstallUsesSetDelayTransitionRules(uint32 initialDelay, uint32 expiration, uint32 newDelay) public {
         vm.assume(initialDelay > 0);
 
         (
@@ -153,19 +153,24 @@ contract ERC7579DelayedExecutorTest is Test {
         _delayedExecutor.onInstall(abi.encodePacked(newDelay, expiration));
 
         (uint32 delay, uint32 pendingDelay, uint48 effectTime) = _delayedExecutor.getDelay(address(_account));
-        assertEq(delay, initialDelay);
-        assertEq(pendingDelay, newDelay);
-        assertEq(
-            effectTime,
-            reinstallTime +
-                // At least delayChangeWindow is used
-                uint32(
-                    Math.max(
-                        _delayedExecutor.delayChangeWindow(),
-                        initialDelay > newDelay ? initialDelay - newDelay : 0
+        bool immediate = newDelay == initialDelay;
+        if (immediate) {
+            assertEq(delay, newDelay);
+            assertEq(pendingDelay, 0);
+            assertEq(effectTime, 0);
+        } else {
+            assertEq(delay, initialDelay);
+            assertEq(pendingDelay, newDelay);
+            assertEq(
+                effectTime,
+                reinstallTime +
+                    uint32(
+                        newDelay > initialDelay
+                            ? Math.min(newDelay, _delayedExecutor.delayChangeWindow())
+                            : initialDelay - newDelay
                     )
-                )
-        );
+            );
+        }
     }
 
     function testOperationStates(uint32 initialDelay, uint32 initialExpiration, bytes32 salt) public {
@@ -398,7 +403,6 @@ contract ERC7579DelayedExecutorTest is Test {
     }
 
     function testSetDelay(uint32 initialDelay, uint32 newDelay) public {
-        vm.assume(newDelay > initialDelay);
         (
             uint256[] memory moduleTypeIds,
             address[] memory modules,
@@ -410,9 +414,12 @@ contract ERC7579DelayedExecutorTest is Test {
             )
         );
 
-        uint48 expectedEffectTime = newDelay > initialDelay
-            ? uint48(block.timestamp) + uint48(Math.min(newDelay, _delayedExecutor.delayChangeWindow()))
-            : uint48(block.timestamp) + uint48(initialDelay - newDelay);
+        bool immediate = initialDelay == 0 || newDelay == initialDelay;
+        uint48 expectedEffectTime = immediate
+            ? uint48(block.timestamp)
+            : newDelay > initialDelay
+                ? uint48(block.timestamp) + uint48(Math.min(newDelay, _delayedExecutor.delayChangeWindow()))
+                : uint48(block.timestamp) + uint48(initialDelay - newDelay);
 
         vm.expectEmit(true, true, true, true);
         emit ERC7579DelayedExecutor.ERC7579ExecutorDelayUpdated(address(_account), newDelay, expectedEffectTime);
@@ -421,6 +428,12 @@ contract ERC7579DelayedExecutorTest is Test {
         _delayedExecutor.setDelay(newDelay);
 
         (uint32 currentDelay, uint32 pendingDelay, uint48 effectTime) = _delayedExecutor.getDelay(address(_account));
+        if (immediate) {
+            assertEq(currentDelay, newDelay);
+            assertEq(pendingDelay, 0);
+            assertEq(effectTime, 0);
+            return;
+        }
         assertEq(currentDelay, initialDelay);
         assertEq(pendingDelay, newDelay);
         assertEq(effectTime, expectedEffectTime);

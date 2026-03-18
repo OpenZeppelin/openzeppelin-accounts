@@ -177,7 +177,7 @@ describe('ERC7579DelayedExecutor', function () {
       .withArgs(this.mockAccount.address, 0);
   });
 
-  it('enforces delayChangeWindow when reinstalling before delay reset completes', async function () {
+  it('reuses setDelay transition rules when reinstalling before delay reset completes', async function () {
     const delay = time.duration.days(7);
     const installData = solidityPacked(['uint32', 'uint32'], [delay, this.expiration]);
 
@@ -185,29 +185,28 @@ describe('ERC7579DelayedExecutor', function () {
     const [initialDelay] = await this.mock.getDelay(this.mockAccount.address);
     expect(initialDelay).to.equal(delay);
 
-    // Uninstall schedules delay reset to 0 after delayChangeWindow
+    // Uninstall schedules delay reset to 0 after the current delay
     await this.mockAccountFromEntrypoint.uninstallModule(this.moduleType, this.mock.target, '0x');
 
     // Immediately reinstall with a shorter delay before the reset completes
-    const delayChangeWindow = await this.mock.delayChangeWindow();
     const newDelay = time.duration.days(4);
     const newInstallData = solidityPacked(['uint32', 'uint32'], [newDelay, this.expiration]);
 
     const tx = await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, newInstallData);
 
     const now = await time.latest();
-    const expectedEffectTime = BigInt(now) + delayChangeWindow; // Instead of 7 - 4 = 3 days, it is 5 days
+    const expectedEffectTime = BigInt(now) + BigInt(delay - newDelay); // Decrease: currentDelay - newDelay
     await expect(tx)
       .to.emit(this.mock, 'ERC7579ExecutorDelayUpdated')
       .withArgs(this.mockAccount.address, newDelay, expectedEffectTime);
 
     await expect(this.mock.getDelay(this.mockAccount.address)).to.eventually.deep.equal([
-      initialDelay, // Still the old 10 day delay
+      initialDelay, // Still the old 7 day delay
       newDelay, // New 4 day delay pending
-      expectedEffectTime, // Takes effect after max(delayChangeWindow, delay difference)
+      expectedEffectTime, // Takes effect after currentDelay - newDelay
     ]);
 
-    await time.increase(delayChangeWindow);
+    await time.increase(delay - newDelay);
     await expect(this.mock.getDelay(this.mockAccount.address)).to.eventually.deep.equal([
       newDelay, // New 4 day delay
       0, // No pending delay
