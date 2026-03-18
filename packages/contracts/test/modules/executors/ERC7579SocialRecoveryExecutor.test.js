@@ -18,7 +18,7 @@ const {
 } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/signers');
 const { MAX_UINT64 } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/constants');
 const { ERC7579OperationState } = require('../../helpers/enums');
-const { ScheduleRecover, CancelRecover } = require('../../helpers/eip712');
+const { ScheduleRecover, CancelRecover } = require('../../helpers/eip712-types');
 
 const { shouldBehaveLikeERC7579Module } = require('../ERC7579Module.behavior');
 
