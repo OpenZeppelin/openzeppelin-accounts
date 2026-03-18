@@ -1,7 +1,7 @@
 ## 13-03-2026
 
 - `ERC7579DelayedExecutor`: Renamed `minSetback` to `delayChangeWindow` to better reflect its dual role as a cap on delay increases and a floor on uninstall/reinstall transitions.
-- `ERC7579DelayedExecutor`: `setDelay` now uses an asymmetric transition period depending on the direction of the change. When increasing the delay, the new value takes effect after `min(newDelay, delayChangeWindow())`, so small increases apply proportionally faster while large increases are still capped at `delayChangeWindow()`. When decreasing the delay, the new value takes effect after `currentDelay - newDelay`, guaranteeing that no operation can execute under a shorter window than was in place when the change was scheduled.
+- `ERC7579DelayedExecutor`: `setDelay` now uses an asymmetric transition period depending on the direction of the change. When increasing the delay, the new value takes effect after `min(newDelay, delayChangeWindow())`. When decreasing the delay, the new value takes effect after `currentDelay - newDelay`.
 
 ## 12-03-2026
 

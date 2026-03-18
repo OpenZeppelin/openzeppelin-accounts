@@ -227,7 +227,7 @@ uint32 expiration = executor.getExpiration(account);
 <Callout>
   The transition period for `setDelay` depends on the direction of the change:
 
-  - **Increasing** the delay: takes effect after `min(newDelay, delayChangeWindow())` (defaults to 5 days). This means small increases apply proportionally faster, while very large increases are capped at `delayChangeWindow()` to guard against accidental lock-out (e.g. passing milliseconds instead of seconds).
+  - **Increasing** the delay: takes effect after `min(newDelay, delayChangeWindow())` (defaults to 5 days). This means when the new delay is below `delayChangeWindow()`, the transition period is the new delay itself; when above, it is capped at `delayChangeWindow()` to guard against accidental lock-out (e.g. passing milliseconds instead of seconds).
   - **Decreasing** the delay: takes effect after `currentDelay - newDelay`. This ensures no already-scheduled operation can execute under a shorter window than was active when the change was requested.
 
   Changing the expiration or delay settings only affects new operations scheduled after the update. Operations that were

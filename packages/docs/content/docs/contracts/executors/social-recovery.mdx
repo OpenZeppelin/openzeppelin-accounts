@@ -203,7 +203,7 @@ socialRecovery.setExpiration(90 days); // Extend operation lifetime to 90 days
 <Callout type="warning">
   Delay changes do not take effect immediately. The transition period depends on the direction of the change:
 
-  - **Increasing** the delay: takes effect after `min(newDelay, delayChangeWindow())` (5 days by default). Small increases apply proportionally faster; very large ones are capped at `delayChangeWindow()` to guard against accidental lock-out.
+  - **Increasing** the delay: takes effect after `min(newDelay, delayChangeWindow())` (5 days by default). When the new delay is below `delayChangeWindow()`, the transition period is the new delay itself; very large ones are capped at `delayChangeWindow()` to guard against accidental lock-out.
   - **Decreasing** the delay: takes effect after `currentDelay - newDelay`. This ensures no already-scheduled operation can execute under a shorter security window than was active when the change was requested.
 </Callout>
 
