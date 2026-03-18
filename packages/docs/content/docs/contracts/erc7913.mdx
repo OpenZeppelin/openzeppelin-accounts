@@ -89,7 +89,7 @@ OpenZeppelin Contracts ships a [`P256`](https://docs.openzeppelin.com/contracts/
 
 ## In This Framework
 
-ERC-7913 is leveraged by the [multisig base modules](/docs/contracts/base#multisig) (`ERC7579Multisig`, `ERC7579MultisigWeighted`) to support heterogeneous signer sets. A single multisig can hold a mix of EOAs, P256 hardware keys, WebAuthn credentials, and ZKEmail addresses:
+ERC-7913 is leveraged by the [multisig base modules](/docs/contracts/multisig) (`ERC7579Multisig`, `ERC7579MultisigWeighted`) to support heterogeneous signer sets. A single multisig can hold a mix of EOAs, P256 hardware keys, WebAuthn credentials, and ZKEmail addresses:
 
 ```solidity
 bytes[] memory signers = new bytes[](3);
@@ -98,7 +98,7 @@ signers[1] = abi.encodePacked(p256Verifier, qx, qy);               // P256
 signers[2] = abi.encodePacked(zkEmailVerifier, emailKeyBytes);      // ZKEmail
 ```
 
-The `ERC7579SocialRecoveryExecutor` and the multisig validators all consume signers in this format. See [Base Modules](/docs/contracts/base#multisig) and [Validators](/docs/contracts/validators) for usage details.
+The `ERC7579SocialRecoveryExecutor` and the multisig validators all consume signers in this format. See [Base Modules](/docs/contracts/multisig) and [Validators](/docs/contracts/validators) for usage details.
 
 ## Security Considerations
 

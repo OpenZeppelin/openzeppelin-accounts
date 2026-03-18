@@ -1,6 +1,15 @@
-## XX-03-2026
+## 18-03-2026
 
 - Add `CrossChainSignatureChecker` utility library to verify cross-chain signatures following ERC-7964.
+
+## 12-03-2026
+
+- Add `MultisigCoordinator` utility contract, bridging multisig accounts with Zama's Fully Homomorphic Encryption (FHE). It allows any caller to register externally-encrypted FHE values on behalf of an account (granting ACL access to both the coordinator and the account), and allows any authorized signer to permanently grant FHE ACL decryption rights over a handle to an EOA address.
+
+## 09-03-2026
+
+- Add `ERC7579SessionKeys` abstract contract module, providing per-account registration of ERC-7913 session keys with configurable validity ranges. Supports arbitrary key types (EOA, P256, WebAuthn, etc.). Concrete implementations must add policy enforcement (e.g., selector whitelist, spending limits).
+- Add `ERC7579SessionKeysValidator` abstract contract, extending `ERC7579SessionKeys` with ERC-4337 user-operation validation and ERC-1271 message signing. Packs session key validity range into `validationData` for EntryPoint enforcement. Developers extend it to enforce custom policies (e.g., by overriding `_validateUserOp` to inspect `userOp.callData`).
 
 ## 04-03-2026
 

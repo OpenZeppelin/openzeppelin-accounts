@@ -9,7 +9,9 @@
     "erc7964",
     "erc8043",
     "---Modules---",
-    "base",
+    "signers",
+    "multisig",
+    "session-keys",
     "validators",
     "executors"
   ]

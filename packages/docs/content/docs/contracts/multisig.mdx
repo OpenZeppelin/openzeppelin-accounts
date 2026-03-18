@@ -1,43 +1,11 @@
 ---
-title: Base Modules
-description: Reusable abstract modules for signer management and multisig
+title: Multisig
+description: Threshold and weighted multisignature modules and utilities, with optional on-chain confidentiality
 ---
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-The framework provides abstract base modules that implement common patterns for signer management and authorization. These modules are not tied to any specific module type and can be composed with validators, executors, or other contracts.
-
-## Signers
-
-These abstract modules handle signer storage, the installation lifecycle, and core signature validation primitives. See the [Validators](/docs/contracts/validators) page for the ready-to-use validator implementations built on top of them.
-
-### ERC7579ECDSA
-
-Manages a single EOA signer per account and exposes `_validateECDSA` for downstream validation logic. Installation data encodes the signer as a packed 20-byte address.
-
-```solidity
-address currentSigner = module.signer(account);
-module.setSigner(account, newSigner); // must be called by the account
-```
-
-### ERC7579P256
-
-Manages a single P256 (secp256r1) public key per account as `(qx, qy)` coordinates and exposes `_validateP256`. Installation data encodes the key as 64 packed bytes.
-
-```solidity
-(bytes32 qx, bytes32 qy) = module.signer(account);
-module.setSigner(account, newQx, newQy); // must be called by the account
-```
-
-### ERC7579WebAuthn
-
-Extends `ERC7579P256` with WebAuthn authentication by adding `_validateWebAuthn`. Signatures must be ABI-encoded [`WebAuthn.WebAuthnAuth`](https://docs.openzeppelin.com/contracts/5.x/api/utils/cryptography#WebAuthn) structs. Signer storage and management are inherited from `ERC7579P256`.
-
----
-
-## Multisig
-
-The framework provides multisignature (multisig) modules that enable accounts to require multiple signatures before executing operations. Unlike traditional accounts controlled by a single private key, multisigs distribute control among multiple parties, eliminating single points of failure.
+The framework provides multisignature (multisig) modules and utilities that enable accounts to require multiple signatures before executing operations. Unlike traditional accounts controlled by a single private key, multisigs distribute control among multiple parties, eliminating single points of failure.
 
 It also provides base multisig modules that can be combined with different module types (validators or executors) to create various use cases. This flexible design allows multisig functionality to be used for signature validation, execution authorization, or both.
 
@@ -61,7 +29,7 @@ The framework also provides confidential versions of the multisig modules that u
 
 **`ERC7579MultisigWeightedConfidential`**: A confidential weighted multisig module that keeps signer addresses, individual weights, and threshold values encrypted.
 
-### Understanding Confidential Multisig
+## Understanding Confidential Multisig
 
 Confidential multisig modules provide enhanced privacy by keeping critical multisig parameters encrypted on-chain using Fully Homomorphic Encryption (FHE). This approach offers several privacy properties:
 
@@ -85,7 +53,7 @@ Confidential multisig modules provide enhanced privacy by keeping critical multi
   operations where the signer update won't be immediately observable.
 </Callout>
 
-### As validators
+## As validators
 
 The framework provides validator implementations that combine the base multisig modules with validator functionality:
 
@@ -96,7 +64,7 @@ The framework provides validator implementations that combine the base multisig 
 
 These validators enable accounts to require multiple signatures before executing operations through ERC-4337 UserOperations.
 
-#### Multisig Validator
+### Multisig Validator
 
 To install a multisig validator on your account:
 
@@ -129,7 +97,7 @@ The `initData` must be encoded as:
 bytes memory initData = abi.encode(bytes[] signers, uint64 threshold);
 ```
 
-#### Multisig Weighted Validator
+### Multisig Weighted Validator
 
 To install a multisig validator that allows for weighted signers:
 
@@ -168,7 +136,7 @@ The `initData` must be encoded as:
 bytes memory initData = abi.encode(bytes[] signers, uint64 threshold, uint64[] weights);
 ```
 
-#### Multisig Confidential Validator
+### Multisig Confidential Validator
 
 The confidential validators use FHE to keep signer addresses and thresholds encrypted on-chain, providing enhanced privacy for multisig operations. Due to FHE's asynchronous decryption model, validating a UserOperation with confidential multisig requires a three-step process:
 
@@ -279,7 +247,7 @@ bytes memory initData = abi.encode(
 );
 ```
 
-#### Multisig Weighted Confidential Validator
+### Multisig Weighted Confidential Validator
 
 The weighted confidential validator extends the confidential validator to support weighted signatures while keeping weights encrypted:
 
@@ -348,7 +316,7 @@ bytes memory initData = abi.encode(
   execution. Even if setting the same addresses, new handles will be generated due to FHE's non-deterministic encryption.
 </Callout>
 
-### As executors
+## As executors
 
 The base multisig modules can also be extended to work with executors, enabling different execution patterns. For example:
 
@@ -358,7 +326,7 @@ The base multisig modules can also be extended to work with executors, enabling 
 
 This design pattern allows multisig to be used flexibly across different use cases, not just for signature validation. The framework provides `ERC7579SocialRecoveryExecutor` as a ready-to-use implementation of the delayed social recovery pattern. See [Executors](/docs/contracts/executors#erc7579socialrecoveryexecutor) for details.
 
-### Managing Signers
+## Managing Signers
 
 After installation, you can manage signers dynamically:
 
@@ -382,7 +350,7 @@ multisig.setThreshold(4); // Now requires 4-of-N signatures
   the threshold unreachable.
 </Callout>
 
-### Signature Format
+## Signature Format
 
 When signing a UserOperation or message, the signature must be encoded as:
 
@@ -395,7 +363,7 @@ bytes memory signature = abi.encode(
 
 The `signingSigners` array must be sorted in ascending order by `keccak256(signer)` to prevent duplicates and optimize verification.
 
-### Weighted Multisig Details
+## Weighted Multisig Details
 
 When using `ERC7579MultisigWeightedValidator`, each signer has a weight (default is 1). The threshold is based on total weight, not signer count.
 
@@ -408,12 +376,12 @@ When using `ERC7579MultisigWeightedValidator`, each signer has a weight (default
 Example:
 
 ```solidity
- // Signers with weights: Alice=1, Bob=2, Charlie=3
+// Signers with weights: Alice=1, Bob=2, Charlie=3
 // Total weight = 6
 // Threshold = 4 means: Bob+Charlie (5) or Alice+Bob+Charlie (6) or Alice+Charlie (4)
 ```
 
-### Querying Multisig State
+## Querying Multisig State
 
 You can query the multisig module to check signers and thresholds:
 
@@ -435,4 +403,129 @@ uint64 weight = weightedMultisig.signerWeight(account, signer);
 
 // Get total weight
 uint64 total = weightedMultisig.totalWeight(account);
+```
+
+## MultisigCoordinator
+
+`MultisigCoordinator` is a utility contract (not an ERC-7579 module) that bridges multisig accounts with [confidential tokens (ERC-7984)](https://ercs.ethereum.org/ERCS/erc-7984). It is deployed independently and works alongside any installed `ERC7579Multisig` module.
+
+Two problems arise when a multisig account interacts with confidential tokens:
+
+1. **Off-chain input preparation**: The encrypted input (ciphertext + ZK proof) is typically constructed by a single signer off-chain. The remaining signers cannot independently verify it before execution and must trust the submitting signer's preparation.
+
+2. **ACL EOA-only restriction**: Zama's [FHE ACL](https://docs.zama.org/protocol/solidity-guides/smart-contract/acl) only supports EOA addresses as decryption recipients. A smart-contract multisig cannot be directly granted decryption rights in a way its signers can act on off-chain.
+
+`MultisigCoordinator` solves both by providing:
+
+1. **Encrypted value creation**: Any caller can submit an externally-encrypted FHE value with its input proof. The contract validates the proof and registers ACL permissions so that the coordinator and the account can subsequently use the resulting handle (e.g. pass it to `confidentialTransferFrom`).
+
+2. **Handle allowance delegation**: Any authorized signer can grant ACL permission over an existing encrypted handle to any address. This allows individual signers to expose a value to their own EOA address for off-chain decryption, without the account needing to approve anything. Note that any other contract that performs FHE operations on the handle (e.g. a token contract that performs a transfer using the handle) must also be granted ACL access via `allowHandle` — see the example below.
+
+<Callout>
+  `MultisigCoordinator` is abstract and must be extended with an fhEVM configuration before deployment. Once deployed, a single instance can serve multiple accounts, and each account registers its own multisig address independently via `setERC7579Multisig`.
+</Callout>
+
+### Setting up the coordinator
+
+Before using `allowHandle`, the account must register its `ERC7579Multisig` module with the coordinator. This is done by calling `setERC7579Multisig` from the account itself, typically as part of a UserOperation:
+
+```solidity
+import {MultisigCoordinator} from "@open-accounts-framework/contracts/utils/MultisigCoordinator.sol";
+
+// Called from the account (e.g. via account.execute in a UserOperation)
+coordinator.setERC7579Multisig(address(multisigModule));
+```
+
+### Creating an encrypted value
+
+Any caller can submit an FHE-encrypted value together with its input proof. The coordinator verifies the proof and grants ACL access to both itself and the target account:
+
+```solidity
+import {FheType} from "@fhevm/solidity/lib/FheType.sol";
+
+// Off-chain: one signer encrypts the transfer amount using the FHE public key
+// and generates the input proof
+bytes32 encryptedAmount = ...; // handle from input.encrypt()
+bytes memory inputProof = ...;  // proof from input.encrypt()
+
+// On-chain: any caller registers the encrypted value for the account
+bytes32 handle = coordinator.fromExternal(address(account), encryptedAmount, inputProof, FheType.Uint64);
+
+// Grant the token contract ACL access for the handle, so that its transfer logic
+// can perform FHE operations using it.
+coordinator.allowHandle(address(account), handle, address(token));
+
+// The handle can now be cast and forwarded to e.g. confidentialTransferFrom
+token.confidentialTransferFrom(address(account), recipient, euint64.wrap(handle));
+```
+
+All FHE types are supported via the `fheType` parameter: `FheType.Bool`, `FheType.Uint8`, `FheType.Uint16`, `FheType.Uint32`, `FheType.Uint64`, `FheType.Uint128`, `FheType.Uint256`, and `FheType.Address`.
+
+### Granting handle access to a signer's EOA
+
+Because the FHE ACL does not support smart contracts as decryption recipients, a signer can call `allowHandle` to grant their own EOA the ability to decrypt a value:
+
+```solidity
+// Option 1: msg.sender is the account itself or a registered signer EOA (no signature needed)
+coordinator.allowHandle(address(account), handle, signerEOA);
+
+// Option 2: an EOA signer provides an EIP-712 signature
+bytes memory signerBytes = abi.encodePacked(signerAddress); // 20 bytes
+bytes memory sig = ...; // EIP-712 signature over AllowHandle(account, handle, to)
+coordinator.allowHandle(address(account), signerBytes, sig, handle, signerEOA);
+
+// Option 3: an ERC-7913 signer (e.g. P256) provides its key and a signature
+bytes memory signerBytes = abi.encodePacked(verifierAddress, publicKey);
+bytes memory sig = ...; // signature from the ERC-7913 verifier
+coordinator.allowHandle(address(account), signerBytes, sig, handle, signerEOA);
+```
+
+For options 2 and 3, the signed digest follows the same EIP-712 structure anchored to the account's own domain:
+
+```
+AllowHandle(address account, bytes32 handle, address to)
+```
+
+Once `allowHandle` is called, `signerEOA` can request off-chain decryption of the FHE value through the Zama gateway.
+
+<Callout type="warn">
+  ACL grants made via `allowHandle` are **permanent and irrevocable**. A signer removed from the multisig retains the ability to decrypt any handle they were previously allowed. To remove a former signer's access, re-encrypt the sensitive values using fresh FHE inputs and grant access only to current signers.
+</Callout>
+
+### Batching encrypted value creation and handle delegation
+
+`fromExternal` and `allowHandle` can be combined into a single UserOperation to register an encrypted value and immediately delegate decryption rights to a signer's EOA in one atomic step:
+
+```solidity
+import {FheType} from "@fhevm/solidity/lib/FheType.sol";
+
+// Prepare off-chain
+bytes32 encryptedAmount = ...; // handle from input.encrypt()
+bytes memory inputProof = ...;  // proof from input.encrypt()
+
+// Batched on-chain calls (e.g. via account.execute with CALLTYPE_BATCH in a UserOperation)
+bytes32 handle = coordinator.fromExternal(address(account), encryptedAmount, inputProof, FheType.Uint64);
+coordinator.allowHandle(address(account), handle, signerEOA);
+```
+
+`fromExternal` is open to any caller and it does not check `msg.sender` and will register the encrypted value for any `account` address. This means the party building the UserOperation does not need to be the account itself just to submit the encrypted input.
+
+`allowHandle` is different: it checks that the caller is actually authorized to act for the account. Concretely, when using the `allowHandle(address,bytes32,address)` function in the batch, `msg.sender` must be either the account itself or an EOA that is registered as a signer in the account's multisig. Otherwise, the `allowHandle(address,bytes,bytes,bytes32,adddress)` overload must be used instead, carrying a pre-signed EIP-712 authorization from a registered signer.
+
+In practice, the most common batching patterns are:
+
+- **A signer that is itself a smart account** calls both functions in a single transaction. Since `msg.sender` is a registered signer, the 3-parameter overload is accepted directly.
+- **A signer EOA using EIP-7702 delegation**. A bare EOA cannot atomically issue two external calls, but if the signer EOA has delegated its code to a batching contract via [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702), the delegation allows it to batch both calls in one transaction. `msg.sender` remains the EOA address, so the 3-parameter overload is still accepted.
+- **A third-party relayer submits the batch**. The `fromExternal` call goes through freely, but the `allowHandle` call must use the 5-parameter overload with an EIP-712 signature obtained off-chain from a registered signer before the batch is submitted.
+
+### Batching token ACL grant with confidential transfer
+
+When executing a confidential transfer, the token contract needs ACL access to the handle (see [Creating an encrypted value](#creating-an-encrypted-value)). This grant can be batched with the transfer in the same UserOperation for convenience:
+
+```solidity
+// Executed by the account itself via account.execute with CALLTYPE_BATCH in a UserOperation:
+// 1. Grant the token contract ACL access to the handle
+coordinator.allowHandle(address(account), handle, address(token));
+// 2. Execute the confidential transfer
+token.confidentialTransfer(recipient, euint64.wrap(handle));
 ```

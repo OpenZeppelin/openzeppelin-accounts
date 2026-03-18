@@ -25,6 +25,11 @@ module.exports = mapValues(
       chainId: 'uint256',
       verifyingContract: 'address',
     },
+    AllowHandle: {
+      account: 'address',
+      handle: 'bytes32',
+      to: 'address',
+    },
   },
   formatType,
 );
