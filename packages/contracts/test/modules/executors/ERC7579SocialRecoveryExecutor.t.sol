@@ -13,7 +13,6 @@ import {
 import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {IERC5267} from "@openzeppelin/contracts/interfaces/IERC5267.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {OpenAccount} from "../../../src/OpenAccount.sol";
 import {OpenAccountFactory} from "../../../src/OpenAccountFactory.sol";
 import {ERC7579DelayedExecutor} from "../../../src/modules/executors/ERC7579DelayedExecutor.sol";
@@ -74,7 +73,7 @@ contract ERC7579SocialRecoveryExecutorTest is Test {
         emit ERC7579DelayedExecutor.ERC7579ExecutorDelayUpdated(
             address(_account),
             0,
-            uint48(block.timestamp) + uint48(Math.max(delay, _executor.delayChangeWindow()))
+            uint48(block.timestamp) + uint48(delay)
         );
 
         vm.expectEmit(true, true, true, true);
