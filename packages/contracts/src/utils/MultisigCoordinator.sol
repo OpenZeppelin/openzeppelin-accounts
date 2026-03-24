@@ -205,6 +205,7 @@ abstract contract MultisigCoordinator {
             keccak256(abi.encode(ALLOW_HANDLE_TYPEHASH, account, handle, to))
         );
         _validateAccess(account, signer, signature, hash);
+        require(Impl.isAllowed(handle, account), MultisigCoordinatorSenderNotAllowedToUseHandle(handle, to));
         Impl.allow(handle, to);
     }
 
