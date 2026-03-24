@@ -419,7 +419,7 @@ Two problems arise when a multisig account interacts with confidential tokens:
 
 1. **Encrypted value creation**: Any caller can submit an externally-encrypted FHE value with its input proof. The contract validates the proof and registers ACL permissions so that the coordinator and the account can subsequently use the resulting handle (e.g. pass it to `confidentialTransferFrom`).
 
-2. **Handle allowance delegation**: Any authorized signer can grant ACL permission over an existing encrypted handle to any EOA. This allows individual signers to expose a value to their own EOA address for off-chain decryption, without the account needing to approve anything.
+2. **Handle allowance delegation**: Any authorized signer can grant ACL permission over an existing encrypted handle to any address. This allows individual signers to expose a value to their own EOA address for off-chain decryption, without the account needing to approve anything. Note that any other contract that performs FHE operations on the handle (e.g. a token contract that performs a transfer using the handle) must also be granted ACL access via `allowHandle` — see the example below.
 
 <Callout>
   `MultisigCoordinator` is abstract and must be extended with an fhEVM configuration before deployment. Once deployed, a single instance can serve multiple accounts, and each account registers its own multisig address independently via `setERC7579Multisig`.
@@ -450,6 +450,10 @@ bytes memory inputProof = ...;  // proof from input.encrypt()
 
 // On-chain: any caller registers the encrypted value for the account
 bytes32 handle = coordinator.fromExternal(address(account), encryptedAmount, inputProof, FheType.Uint64);
+
+// Grant the token contract ACL access for the handle, so that its transfer logic
+// can perform FHE operations using it.
+coordinator.allowHandle(address(account), handle, address(token));
 
 // The handle can now be cast and forwarded to e.g. confidentialTransferFrom
 token.confidentialTransferFrom(address(account), recipient, euint64.wrap(handle));
@@ -499,7 +503,7 @@ import {FheType} from "@fhevm/solidity/lib/FheType.sol";
 bytes32 encryptedAmount = ...; // handle from input.encrypt()
 bytes memory inputProof = ...;  // proof from input.encrypt()
 
-// Batched on-chain calls (e.g. via account.executeBatch in a UserOperation)
+// Batched on-chain calls (e.g. via account.execute with CALLTYPE_BATCH in a UserOperation)
 bytes32 handle = coordinator.fromExternal(address(account), encryptedAmount, inputProof, FheType.Uint64);
 coordinator.allowHandle(address(account), handle, signerEOA);
 ```
@@ -513,3 +517,15 @@ In practice, the most common batching patterns are:
 - **A signer that is itself a smart account** calls both functions in a single transaction. Since `msg.sender` is a registered signer, the 3-parameter overload is accepted directly.
 - **A signer EOA using EIP-7702 delegation**. A bare EOA cannot atomically issue two external calls, but if the signer EOA has delegated its code to a batching contract via [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702), the delegation allows it to batch both calls in one transaction. `msg.sender` remains the EOA address, so the 3-parameter overload is still accepted.
 - **A third-party relayer submits the batch**. The `fromExternal` call goes through freely, but the `allowHandle` call must use the 5-parameter overload with an EIP-712 signature obtained off-chain from a registered signer before the batch is submitted.
+
+### Batching token ACL grant with confidential transfer
+
+When executing a confidential transfer, the token contract needs ACL access to the handle (see [Creating an encrypted value](#creating-an-encrypted-value)). This grant can be batched with the transfer in the same UserOperation for convenience:
+
+```solidity
+// Executed by the account itself via account.execute with CALLTYPE_BATCH in a UserOperation:
+// 1. Grant the token contract ACL access to the handle
+coordinator.allowHandle(address(account), handle, address(token));
+// 2. Execute the confidential transfer
+token.confidentialTransfer(recipient, euint64.wrap(handle));
+```

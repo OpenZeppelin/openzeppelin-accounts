@@ -1,7 +1,13 @@
-## 13-03-2026
+## 24-03-2026
 
+- `ERC7579ERC20Spender`: Fixed return value validation in `_transferFrom` and `_batchTransferFrom` to correctly accept non-standard ERC20 tokens that return no data (e.g. old USDT-style tokens). Previously the check would incorrectly revert for such tokens due to reading the length field of the `bytes memory` returndata as the boolean value.
+- `ERC7579ERC20Spender`: Replaced raw returndata bubbling on failed transfers with the new `ERC7579ERC20SpenderFailedTransfer(address token)` custom error. Since `EXECTYPE_DEFAULT` already propagates EVM-level reverts, only the `false`-return case needed explicit handling.
 - `ERC7579DelayedExecutor`: Renamed `minSetback` to `delayChangeWindow` to better reflect its dual role as a cap on delay increases and a floor on uninstall/reinstall transitions.
 - `ERC7579DelayedExecutor`: `setDelay` now uses an asymmetric transition period depending on the direction of the change. When increasing the delay, the new value takes effect after `min(newDelay, delayChangeWindow())`. When decreasing the delay, the new value takes effect after `currentDelay - newDelay`.
+
+## 18-03-2026
+
+- Add `CrossChainSignatureChecker` utility library to verify cross-chain signatures following ERC-7964.
 
 ## 12-03-2026
 
