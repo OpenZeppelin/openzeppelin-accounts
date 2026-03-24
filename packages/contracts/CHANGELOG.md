@@ -1,7 +1,7 @@
-## 11-03-2026
+## 24-03-2026
 
 - `ERC7579ERC20Spender`: Fixed return value validation in `_transferFrom` and `_batchTransferFrom` to correctly accept non-standard ERC20 tokens that return no data (e.g. old USDT-style tokens). Previously the check would incorrectly revert for such tokens due to reading the length field of the `bytes memory` returndata as the boolean value.
-- `ERC7579ERC20Spender`: Replaced raw returndata bubbling on failed transfers with the new `ERC7579ERC20SpenderNonStandardERC20(address token)` custom error. Since `EXECTYPE_DEFAULT` already propagates EVM-level reverts, only the `false`-return case needed explicit handling.
+- `ERC7579ERC20Spender`: Replaced raw returndata bubbling on failed transfers with the new `ERC7579ERC20SpenderFailedTransfer(address token)` custom error. Since `EXECTYPE_DEFAULT` already propagates EVM-level reverts, only the `false`-return case needed explicit handling.
 
 ## 09-03-2026
 
