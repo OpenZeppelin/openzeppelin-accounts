@@ -3,12 +3,15 @@ pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC7579ERC20Spender} from "../../../src/modules/executors/ERC7579ERC20Spender.sol";
 import {ERC20Mock} from "../../../../../lib/@openzeppelin-contracts/contracts/mocks/token/ERC20Mock.sol";
 import {ERC7579Utils, Mode} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {OpenAccount} from "../../../src/OpenAccount.sol";
+import {ERC20ReturnFalseMock} from "../../../src/mocks/ERC20ReturnFalseMock.sol";
+import {ERC20NoReturnMock} from "../../../src/mocks/ERC20NoReturnMock.sol";
 
 contract OpenAccountMock is OpenAccount {
     constructor() EIP712("TestAccount", "1") {}
@@ -198,6 +201,38 @@ contract ERC7579ERC20SpenderTest is Test {
         _spender.transferFrom(address(_account), address(_token1), _recipient, amount);
     }
 
+    function testTransferERC20FalseReturnReverts() public {
+        uint160 limit = 100 ether;
+
+        ERC20ReturnFalseMock _badToken = new ERC20ReturnFalseMock();
+        _badToken.mint(address(_account), 1_000 ether);
+
+        {
+            address[] memory tokens = new address[](1);
+            tokens[0] = address(_badToken);
+            address[] memory spenders_ = new address[](1);
+            spenders_[0] = _spenderAddress;
+            uint48[] memory starts = new uint48[](1);
+            starts[0] = uint48(block.timestamp);
+            uint160[] memory limits = new uint160[](1);
+            limits[0] = limit;
+            uint48[] memory renewPeriods = new uint48[](1);
+            renewPeriods[0] = 1 days;
+
+            bytes memory initData = abi.encode(tokens, spenders_, starts, limits, renewPeriods);
+            (
+                uint256[] memory moduleTypeIds,
+                address[] memory modules,
+                bytes[] memory initDatas
+            ) = _buildInstallationModules(initData);
+            _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        }
+
+        vm.prank(_spenderAddress);
+        vm.expectRevert(abi.encodeWithSignature("ERC7579ERC20SpenderFailedTransfer(address)", address(_badToken)));
+        _spender.transferFrom(address(_account), address(_badToken), _recipient, limit);
+    }
+
     function testMultipleTransfersWithinLimit(uint160 limit, uint8 numTransfers) public {
         limit = uint160(bound(limit, 1, MAX_TOKENS));
         numTransfers = uint8(bound(numTransfers, 1, 20));
@@ -275,6 +310,162 @@ contract ERC7579ERC20SpenderTest is Test {
         for (uint256 i = 0; i < numRecipients; i++) {
             assertEq(_token1.balanceOf(recipients[i]), amounts[i]);
         }
+    }
+
+    function testBatchTransferRevertsWhenExceedingLimit(uint160 limit, uint8 numRecipients, uint256 excess) public {
+        limit = uint160(bound(limit, 1, MAX_TOKENS - 1));
+        numRecipients = uint8(bound(numRecipients, 1, 10));
+        excess = bound(excess, 1, MAX_TOKENS - limit);
+
+        uint48 start = uint48(block.timestamp);
+        uint48 renewPeriod = 1 days;
+
+        _installSpender(address(_token1), start, limit, renewPeriod);
+
+        // Distribute limit evenly, then add excess to the last recipient so the total exceeds limit
+        uint256 amountPerRecipient = limit / numRecipients;
+
+        address[] memory recipients = new address[](numRecipients);
+        uint256[] memory amounts = new uint256[](numRecipients);
+        for (uint256 i = 0; i < numRecipients; i++) {
+            recipients[i] = makeAddr(string(abi.encodePacked("recipient", i)));
+            amounts[i] = amountPerRecipient;
+        }
+        amounts[numRecipients - 1] += excess + (limit - amountPerRecipient * numRecipients) + 1;
+
+        uint256 totalAmount = 0;
+        for (uint256 i = 0; i < numRecipients; i++) {
+            totalAmount += amounts[i];
+        }
+
+        vm.prank(_spenderAddress);
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "ERC7579ERC20InsufficientAvailable(address,address,address,uint256)",
+                address(_account),
+                address(_token1),
+                _spenderAddress,
+                totalAmount
+            )
+        );
+        _spender.batchTransferFrom(address(_account), address(_token1), recipients, amounts);
+    }
+
+    function testBatchTransferERC20FalseReturnReverts() public {
+        uint160 limit = 100 ether;
+
+        ERC20ReturnFalseMock _badToken = new ERC20ReturnFalseMock();
+        _badToken.mint(address(_account), 1_000 ether);
+
+        {
+            address[] memory tokens = new address[](1);
+            tokens[0] = address(_badToken);
+            address[] memory spenders_ = new address[](1);
+            spenders_[0] = _spenderAddress;
+            uint48[] memory starts = new uint48[](1);
+            starts[0] = uint48(block.timestamp);
+            uint160[] memory limits = new uint160[](1);
+            limits[0] = limit;
+            uint48[] memory renewPeriods = new uint48[](1);
+            renewPeriods[0] = 1 days;
+
+            bytes memory initData = abi.encode(tokens, spenders_, starts, limits, renewPeriods);
+            (
+                uint256[] memory moduleTypeIds,
+                address[] memory modules,
+                bytes[] memory initDatas
+            ) = _buildInstallationModules(initData);
+            _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        }
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = _recipient;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = limit;
+
+        vm.prank(_spenderAddress);
+        vm.expectRevert(abi.encodeWithSignature("ERC7579ERC20SpenderFailedTransfer(address)", address(_badToken)));
+        _spender.batchTransferFrom(address(_account), address(_badToken), recipients, amounts);
+    }
+
+    function testTransferERC20NoReturnSucceeds() public {
+        uint160 limit = 100 ether;
+
+        ERC20NoReturnMock _noReturnToken = new ERC20NoReturnMock();
+        _noReturnToken.mint(address(_account), 1_000 ether);
+
+        {
+            address[] memory tokens = new address[](1);
+            tokens[0] = address(_noReturnToken);
+            address[] memory spenders_ = new address[](1);
+            spenders_[0] = _spenderAddress;
+            uint48[] memory starts = new uint48[](1);
+            starts[0] = uint48(block.timestamp);
+            uint160[] memory limits = new uint160[](1);
+            limits[0] = limit;
+            uint48[] memory renewPeriods = new uint48[](1);
+            renewPeriods[0] = 1 days;
+
+            bytes memory initData = abi.encode(tokens, spenders_, starts, limits, renewPeriods);
+            (
+                uint256[] memory moduleTypeIds,
+                address[] memory modules,
+                bytes[] memory initDatas
+            ) = _buildInstallationModules(initData);
+            _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        }
+
+        uint256 recipientBalanceBefore = _noReturnToken.balanceOf(_recipient);
+        uint256 accountBalanceBefore = _noReturnToken.balanceOf(address(_account));
+
+        vm.prank(_spenderAddress);
+        _spender.transferFrom(address(_account), address(_noReturnToken), _recipient, limit);
+
+        assertEq(_noReturnToken.balanceOf(_recipient), recipientBalanceBefore + limit);
+        assertEq(_noReturnToken.balanceOf(address(_account)), accountBalanceBefore - limit);
+        assertEq(_spender.spent(address(_account), address(_noReturnToken), _spenderAddress, 0), limit);
+    }
+
+    function testBatchTransferERC20NoReturnSucceeds() public {
+        uint160 limit = 100 ether;
+
+        ERC20NoReturnMock _noReturnToken = new ERC20NoReturnMock();
+        _noReturnToken.mint(address(_account), 1_000 ether);
+
+        {
+            address[] memory tokens = new address[](1);
+            tokens[0] = address(_noReturnToken);
+            address[] memory spenders_ = new address[](1);
+            spenders_[0] = _spenderAddress;
+            uint48[] memory starts = new uint48[](1);
+            starts[0] = uint48(block.timestamp);
+            uint160[] memory limits = new uint160[](1);
+            limits[0] = limit;
+            uint48[] memory renewPeriods = new uint48[](1);
+            renewPeriods[0] = 1 days;
+
+            bytes memory initData = abi.encode(tokens, spenders_, starts, limits, renewPeriods);
+            (
+                uint256[] memory moduleTypeIds,
+                address[] memory modules,
+                bytes[] memory initDatas
+            ) = _buildInstallationModules(initData);
+            _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        }
+
+        address[] memory recipients = new address[](2);
+        recipients[0] = makeAddr("recipient1");
+        recipients[1] = makeAddr("recipient2");
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = limit / 2;
+        amounts[1] = limit / 2;
+
+        vm.prank(_spenderAddress);
+        _spender.batchTransferFrom(address(_account), address(_noReturnToken), recipients, amounts);
+
+        assertEq(_noReturnToken.balanceOf(recipients[0]), amounts[0]);
+        assertEq(_noReturnToken.balanceOf(recipients[1]), amounts[1]);
+        assertEq(_spender.spent(address(_account), address(_noReturnToken), _spenderAddress, 0), limit);
     }
 
     function testSpendingAcrossMultiplePeriods(uint160 limit, uint8 numPeriods, uint48 renewPeriod) public {
