@@ -66,7 +66,7 @@ library ERC1967Clones {
             // 0x0031 | 3d         | RETURNDATASIZE | <rds> 0 <success>
             // :::: check delegatecall result
             // 0x0032 | 91         | SWAP2          | <success> 0 <rds>
-            // 0x0033 | 60 0x36    | PUSH1 0x36     | <dest> <success> 0 <rds>
+            // 0x0033 | 60 0x37    | PUSH1 0x37     | <dest> <success> 0 <rds>
             // 0x0035 | 57         | JUMPI          | 0 <rds>
             // :::: delegatecall failed
             // 0x0036 | fd         | REVERT         |

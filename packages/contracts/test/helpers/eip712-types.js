@@ -14,6 +14,22 @@ module.exports = mapValues(
       mode: 'bytes32',
       recoveryCalldata: 'bytes',
     },
+    SetValue: {
+      operations: 'ChainOperation[]',
+    },
+    ChainOperation: {
+      domain: 'EIP712ChainDomain',
+      value: 'uint256',
+    },
+    EIP712ChainDomain: {
+      chainId: 'uint256',
+      verifyingContract: 'address',
+    },
+    AllowHandle: {
+      account: 'address',
+      handle: 'bytes32',
+      to: 'address',
+    },
   },
   formatType,
 );

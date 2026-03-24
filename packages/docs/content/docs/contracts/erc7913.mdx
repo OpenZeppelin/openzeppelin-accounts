@@ -1,9 +1,9 @@
 ---
-title: ERC-7913
+title: ERC-7913 Signature Verifiers
 description: A developer's guide to signature verifiers for address-less keys
 ---
 
-[ERC-7913](https://eips.ethereum.org/EIP-7913) (Signature Verifiers) extends the concept of signature verification beyond Ethereum addresses. While EOAs sign with secp256k1 and ERC-1271 contracts verify on behalf of a smart account, neither covers keys that have no Ethereum address of their own: P256 keys on a mobile device, a hardware security key, an email address. ERC-7913 introduces a unified interface so any cryptographic key type can be used as a signer without deploying a dedicated on-chain identity contract per key.
+[ERC-7913](https://eips.ethereum.org/EIP-7913) extends the concept of signature verification beyond Ethereum addresses. While EOAs sign with secp256k1 and ERC-1271 contracts verify on behalf of a smart account, neither covers keys that have no Ethereum address of their own: P256 keys on a mobile device, a hardware security key, an email address. ERC-7913 introduces a unified interface so any cryptographic key type can be used as a signer without deploying a dedicated on-chain identity contract per key.
 
 ## Signer Representation
 
