@@ -15,7 +15,7 @@ const {
   MAX_UINT64,
   MAX_UINT128,
 } = require('../../../../lib/@openzeppelin-contracts/test/helpers/constants');
-const { AllowHandle } = require('../../test/helpers/eip712');
+const { AllowHandle } = require('../../test/helpers/eip712-types');
 
 // Pre-generated wallets
 const signerECDSA1 = ethers.Wallet.createRandom();

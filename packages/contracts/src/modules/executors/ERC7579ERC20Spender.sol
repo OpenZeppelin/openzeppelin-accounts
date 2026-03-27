@@ -87,6 +87,9 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
     /// @dev The account has not installed the module.
     error ERC7579ERC20SpenderUninstalled();
 
+    /// @dev The ERC20 `transfer` call on `token` returned false.
+    error ERC7579ERC20SpenderFailedTransfer(address token);
+
     /// @dev Emitted when all spending configurations are cleared for an account.
     event ERC7579ERC20SpendingConfigCleared(address indexed account);
 
@@ -523,13 +526,13 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
             Mode.unwrap(mode),
             abi.encodePacked(token, uint256(0), abi.encodeCall(IERC20.transfer, (to, amount)))
         );
-        if (returndatas[0].length != 0 && returndatas[0].length != 32 && !_toBool(bytes32(returndatas[0]))) {
-            bytes memory returndata = returndatas[0];
-            assembly ("memory-safe") {
-                // Bubble the revert reason
-                revert(add(returndata, 0x20), mload(returndata))
-            }
+        bytes memory returndata = returndatas[0];
+        bool standardReturn;
+        // Accept empty returndata (non-standard ERC20 with no return value) or an explicit true.
+        assembly ("memory-safe") {
+            standardReturn := or(iszero(mload(returndata)), eq(mload(add(returndata, 0x20)), 1))
         }
+        require(standardReturn, ERC7579ERC20SpenderFailedTransfer(token));
     }
 
     /// @dev Internal version of {batchTransferFrom} without access control.
@@ -571,15 +574,13 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
             ERC7579Utils.encodeBatch(executions)
         );
         for (uint256 i = 0; i < returndatas.length; ++i) {
-            // This check relaxes the requirement on the return value from a transfer with
-            // non-standard ERC20 implementations.
-            if (returndatas[i].length != 0 && returndatas[i].length != 32 && !_toBool(bytes32(returndatas[i]))) {
-                bytes memory returndata = returndatas[i];
-                assembly ("memory-safe") {
-                    // Bubble the revert reason
-                    revert(add(returndata, 0x20), mload(returndata))
-                }
+            bytes memory returndata = returndatas[i];
+            bool standardReturn;
+            // Accept empty returndata (non-standard ERC20 with no return value) or an explicit true.
+            assembly ("memory-safe") {
+                standardReturn := or(iszero(mload(returndata)), eq(mload(add(returndata, 0x20)), 1))
             }
+            require(standardReturn, ERC7579ERC20SpenderFailedTransfer(executions[i].target));
         }
     }
 
@@ -790,11 +791,5 @@ contract ERC7579ERC20Spender is ERC7579Executor, Nonces {
             renewPeriods.length := renewPeriodsLength
         }
         return renewPeriods;
-    }
-
-    function _toBool(bytes32 result) private pure returns (bool success) {
-        assembly ("memory-safe") {
-            success := result
-        }
     }
 }
