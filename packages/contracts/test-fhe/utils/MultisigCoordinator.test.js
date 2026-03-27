@@ -401,7 +401,9 @@ describe('MultisigCoordinator', function () {
         this.coordinator
           .connect(signerECDSA2AsSigner)
           .allowHandle(attackerAccount.address, this.handle, signerECDSA2.address),
-      ).to.be.revertedWithCustomError(this.coordinator, 'MultisigCoordinatorSenderNotAllowedToUseHandle');
+      )
+        .to.be.revertedWithCustomError(this.coordinator, 'MultisigCoordinatorAccountNotAllowedToUseHandle')
+        .withArgs(this.handle, attackerAccount.address);
     });
   });
 });
