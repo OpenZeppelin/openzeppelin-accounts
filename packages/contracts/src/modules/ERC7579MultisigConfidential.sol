@@ -357,7 +357,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     }
 
     /// @dev Verifies the decryption proof for a disclosed operation (hash).
-    function _discloseOperation(address relayer, bytes32 hash, bytes calldata decryptionProof) public {
+    function _discloseOperation(address relayer, bytes32 hash, bytes calldata decryptionProof) internal virtual {
         ebool valid = requestedDisclosure(relayer, hash);
         require(FHE.isInitialized(valid), ERC7579MultisigUnknownDisclosure(hash));
 
