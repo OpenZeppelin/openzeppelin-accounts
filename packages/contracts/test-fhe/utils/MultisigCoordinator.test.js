@@ -369,5 +369,41 @@ describe('MultisigCoordinator', function () {
         this.coordinator.allowHandle(otherAccount.address, this.handle, signerECDSA2.address),
       ).to.be.revertedWithCustomError(this.coordinator, 'MultisigCoordinatorInvalidMultisigModule');
     });
+
+    it('reverts if the account does not have ACL over the handle (cross-account handle theft)', async function () {
+      // Set up an attacker-controlled account with a valid multisig where signerECDSA2 is a signer.
+      // This account passes _validateAccess checks but was never granted ACL over `this.handle`
+      // (which belongs to mockAccount), so the isAllowed guard should block the call.
+      const attackerHelper = new ERC4337Helper();
+      await attackerHelper.wait();
+      const attackerAccount = await attackerHelper.newAccount('$OpenAccount', ['OpenAccount', '1']);
+      const attackerAccountAsSigner = await impersonate(attackerAccount.address);
+      const attackerAccountFromEntrypoint = await impersonate(predeploy.entrypoint.v09.target).then(asEntrypoint =>
+        attackerAccount.connect(asEntrypoint),
+      );
+      await attackerAccount.deploy();
+
+      // Install a fresh multisig with signerECDSA2 as a signer on the attacker account
+      const attackerMultisig = await ethers.deployContract('$ERC7579MultisigValidator');
+      const installData = ethers.AbiCoder.defaultAbiCoder().encode(
+        ['bytes[]', 'uint64'],
+        [[ethers.getBytes(signerECDSA2.address)], 1n],
+      );
+      await attackerAccountFromEntrypoint.installModule(MODULE_TYPE_VALIDATOR, attackerMultisig.target, installData);
+
+      // Register the attacker's multisig on the coordinator from the attacker account itself
+      await this.coordinator.connect(attackerAccountAsSigner).setERC7579Multisig(attackerMultisig.target);
+
+      // signerECDSA2 is a valid signer of attackerAccount, so _validateAccess passes,
+      // but attackerAccount has no ACL over this.handle (registered for mockAccount).
+      const signerECDSA2AsSigner = await impersonate(signerECDSA2.address);
+      await expect(
+        this.coordinator
+          .connect(signerECDSA2AsSigner)
+          .allowHandle(attackerAccount.address, this.handle, signerECDSA2.address),
+      )
+        .to.be.revertedWithCustomError(this.coordinator, 'MultisigCoordinatorAccountNotAllowedToUseHandle')
+        .withArgs(this.handle, attackerAccount.address);
+    });
   });
 });

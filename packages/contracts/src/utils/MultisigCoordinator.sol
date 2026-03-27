@@ -85,8 +85,8 @@ abstract contract MultisigCoordinator {
     /// @dev The provided multisig module is not installed in the account.
     error MultisigCoordinatorInvalidMultisigModule();
 
-    /// @dev The provided sender is not allowed to use the handle.
-    error MultisigCoordinatorSenderNotAllowedToUseHandle(bytes32 handle, address sender);
+    /// @dev The provided account is not allowed to use the handle.
+    error MultisigCoordinatorAccountNotAllowedToUseHandle(bytes32 handle, address account);
 
     mapping(address account => address multisig) private _multisigs;
 
@@ -148,7 +148,7 @@ abstract contract MultisigCoordinator {
         } else {
             require(
                 externalHandle != 0 && Impl.isAllowed(externalHandle, msg.sender),
-                MultisigCoordinatorSenderNotAllowedToUseHandle(externalHandle, msg.sender)
+                MultisigCoordinatorAccountNotAllowedToUseHandle(externalHandle, msg.sender)
             );
             handle = externalHandle;
         }
@@ -205,6 +205,7 @@ abstract contract MultisigCoordinator {
             keccak256(abi.encode(ALLOW_HANDLE_TYPEHASH, account, handle, to))
         );
         _validateAccess(account, signer, signature, hash);
+        require(Impl.isAllowed(handle, account), MultisigCoordinatorAccountNotAllowedToUseHandle(handle, account));
         Impl.allow(handle, to);
     }
 
