@@ -347,9 +347,7 @@ function shouldBehaveLikeOperationDiscloser() {
 
     it('discloseOperation reverts with ERC7579MultisigUnknownDisclosure for unknown hash', async function () {
       const unknownHash = ethers.id('never requested');
-      await expect(
-        this.mock.discloseOperation(this.mock.runner.address, this.mockAccount.address, unknownHash, '0x'),
-      )
+      await expect(this.mock.discloseOperation(this.mock.runner.address, this.mockAccount.address, unknownHash, '0x'))
         .to.be.revertedWithCustomError(this.mock, 'ERC7579MultisigUnknownDisclosure')
         .withArgs(unknownHash);
     });
