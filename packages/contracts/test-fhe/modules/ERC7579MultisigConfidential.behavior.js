@@ -133,6 +133,17 @@ function shouldBehaveLikeERC7579MultisigConfidential() {
         this.mockFromAccount.addSigners([newSigner], encryptedNewSigner.inputProof),
       ).to.be.revertedWithCustomError(this.mock, 'ERC7579MultisigDuplicateHandle');
     });
+
+    it('increments the nonce', async function () {
+      const nonceBefore = await this.mock.nonces(this.mockAccount.address);
+
+      const newSignerInput = fhevm.createEncryptedInput(this.mock.target, this.mockAccount.address);
+      newSignerInput.add256(this.nonSigners[0].address);
+      const encryptedNewSigner = await newSignerInput.encrypt();
+      await this.mockFromAccount.addSigners([encryptedNewSigner.handles[0]], encryptedNewSigner.inputProof);
+
+      await expect(this.mock.nonces(this.mockAccount.address)).to.eventually.equal(nonceBefore + 1n);
+    });
   });
 
   describe('removeSigners', function () {
@@ -187,6 +198,16 @@ function shouldBehaveLikeERC7579MultisigConfidential() {
         this.mockFromAccount.removeSigners(signers.map(signer => ethers.hexlify(signer))),
       ).to.be.revertedWithCustomError(this.mock, 'ERC7579MultisigEmptySigners');
     });
+
+    it('increments the nonce', async function () {
+      const nonceBefore = await this.mock.nonces(this.mockAccount.address);
+
+      const signers = await this.mock.getSigners(this.mockAccount.address, 0, MAX_UINT32);
+      await this.mockFromAccount.removeSigners([signers[0]]);
+
+      // The single increment is delegated to the internal _setThreshold call
+      await expect(this.mock.nonces(this.mockAccount.address)).to.eventually.equal(nonceBefore + 1n);
+    });
   });
 
   describe('setThreshold', function () {
@@ -230,6 +251,17 @@ function shouldBehaveLikeERC7579MultisigConfidential() {
       await expect(
         fhevm.userDecryptEuint(FhevmType.euint32, threshold, this.mockAccount.address, this.signers[0]),
       ).to.eventually.eq(totalSigners);
+    });
+
+    it('increments the nonce', async function () {
+      const nonceBefore = await this.mock.nonces(this.mockAccount.address);
+
+      const thresholdInput = fhevm.createEncryptedInput(this.mock.target, this.mockAccount.address);
+      thresholdInput.add32(1);
+      const encryptedThreshold = await thresholdInput.encrypt();
+      await this.mockFromAccount.setThreshold(encryptedThreshold.handles[0], encryptedThreshold.inputProof);
+
+      await expect(this.mock.nonces(this.mockAccount.address)).to.eventually.equal(nonceBefore + 1n);
     });
   });
 }
@@ -524,6 +556,17 @@ function shouldBehaveLikeERC7579MultisigConfidentialWeighted() {
         fhevm.userDecryptEuint(FhevmType.euint16, weight, this.mockAccount.address, this.signers[0]),
       ).to.eventually.eq(1);
     });
+
+    it('increments the nonce', async function () {
+      const nonceBefore = await this.mock.nonces(this.mockAccount.address);
+
+      const newSignerInput = fhevm.createEncryptedInput(this.mock.target, this.mockAccount.address);
+      newSignerInput.add256(this.nonSigners[0].address);
+      const encryptedNewSigner = await newSignerInput.encrypt();
+      await this.mockFromAccount.addSigners([encryptedNewSigner.handles[0]], encryptedNewSigner.inputProof);
+
+      await expect(this.mock.nonces(this.mockAccount.address)).to.eventually.equal(nonceBefore + 1n);
+    });
   });
 
   describe('setSignerWeights', function () {
@@ -639,6 +682,23 @@ function shouldBehaveLikeERC7579MultisigConfidentialWeighted() {
         fhevm.userDecryptEuint(FhevmType.euint16, weight, this.mockAccount.address, this.signers[0]),
       ).to.eventually.eq(1);
     });
+
+    it('increments the nonce', async function () {
+      const nonceBefore = await this.mock.nonces(this.mockAccount.address);
+
+      const signerHandles = await this.mock.getSigners(this.mockAccount.address, 0, MAX_UINT32);
+      const weightInput = fhevm.createEncryptedInput(this.mock.target, this.mockAccount.address);
+      signerHandles.forEach(() => weightInput.add16(1));
+      const encryptedWeights = await weightInput.encrypt();
+      await this.mockFromAccount.setSignerWeights(
+        signerHandles.map(handle => ethers.hexlify(handle)),
+        encryptedWeights.handles.map(handle => ethers.hexlify(handle)),
+        encryptedWeights.inputProof,
+      );
+
+      // The single increment is delegated to the internal _setThreshold call
+      await expect(this.mock.nonces(this.mockAccount.address)).to.eventually.equal(nonceBefore + 1n);
+    });
   });
 
   describe('removeSigners', function () {
@@ -713,6 +773,16 @@ function shouldBehaveLikeERC7579MultisigConfidentialWeighted() {
         this.mockFromAccount.removeSigners(signers.map(signer => ethers.hexlify(signer))),
       ).to.be.revertedWithCustomError(this.mock, 'ERC7579MultisigEmptySigners');
     });
+
+    it('increments the nonce', async function () {
+      const nonceBefore = await this.mock.nonces(this.mockAccount.address);
+
+      const signers = await this.mock.getSigners(this.mockAccount.address, 0, MAX_UINT32);
+      await this.mockFromAccount.removeSigners([signers[0]]);
+
+      // The single increment is delegated to the internal _setThreshold call
+      await expect(this.mock.nonces(this.mockAccount.address)).to.eventually.equal(nonceBefore + 1n);
+    });
   });
 
   describe('setThreshold', function () {
@@ -767,6 +837,17 @@ function shouldBehaveLikeERC7579MultisigConfidentialWeighted() {
       await expect(
         fhevm.userDecryptEuint(FhevmType.euint32, threshold, this.mockAccount.address, this.signers[0]),
       ).to.eventually.eq(totalWeightDecrypted);
+    });
+
+    it('increments the nonce', async function () {
+      const nonceBefore = await this.mock.nonces(this.mockAccount.address);
+
+      const thresholdInput = fhevm.createEncryptedInput(this.mock.target, this.mockAccount.address);
+      thresholdInput.add32(1);
+      const encryptedThreshold = await thresholdInput.encrypt();
+      await this.mockFromAccount.setThreshold(encryptedThreshold.handles[0], encryptedThreshold.inputProof);
+
+      await expect(this.mock.nonces(this.mockAccount.address)).to.eventually.equal(nonceBefore + 1n);
     });
   });
 
