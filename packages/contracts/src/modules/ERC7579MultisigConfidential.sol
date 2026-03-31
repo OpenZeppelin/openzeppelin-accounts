@@ -84,14 +84,14 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
     error ERC7579MultisigUnknownDisclosure(bytes32 hash);
 
     /**
-     ** @dev Emitted when an encrypted signerId is added to the authorized set.
-     ** Increments the account's configuration {nonce}, invalidating outstanding disclosure snapshots.
+     * @dev Emitted when an encrypted signerId is added to the authorized set.
+     * Implies an increment to the account's configuration {nonce}, invalidating outstanding disclosure snapshots.
      */
     event ERC7579MultisigSignerAdded(address indexed account, euint256 signerId);
 
     /**
-     ** @dev Emitted when an encrypted signerId is removed from the authorized set.
-     ** Increments the account's configuration {nonce}, invalidating outstanding disclosure snapshots.
+     * @dev Emitted when an encrypted signerId is removed from the authorized set.
+     * Implies an increment to the account's configuration {nonce}, invalidating outstanding disclosure snapshots.
      */
     event ERC7579MultisigSignerRemoved(address indexed account, euint256 signerId);
 
