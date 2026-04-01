@@ -35,6 +35,12 @@ function shouldBehaveLikeERC7579MultisigConfidential() {
     ).to.eventually.eq(this.threshold);
   });
 
+  it('increments the nonce exactly once on installation', async function () {
+    const nonceBefore = await this.mock.nonces(this.mockAccount.address);
+    await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
+    await expect(this.mock.nonces(this.mockAccount.address)).to.eventually.equal(nonceBefore + 1n);
+  });
+
   it('reverts when installing twice', async function () {
     await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
     await expect(this.mockFromAccount.onInstall(this.installData)).to.be.revertedWithCustomError(
@@ -440,6 +446,12 @@ function shouldBehaveLikeERC7579MultisigConfidentialWeighted() {
     await expect(
       fhevm.userDecryptEuint(FhevmType.euint32, totalWeight, this.mockAccount.address, this.signers[0]),
     ).to.eventually.eq(expectedTotalWeight);
+  });
+
+  it('increments the nonce exactly once on installation', async function () {
+    const nonceBefore = await this.mock.nonces(this.mockAccount.address);
+    await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
+    await expect(this.mock.nonces(this.mockAccount.address)).to.eventually.equal(nonceBefore + 1n);
   });
 
   it('reverts when installing twice', async function () {
