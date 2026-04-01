@@ -205,7 +205,6 @@ function shouldBehaveLikeERC7579MultisigConfidential() {
       const signers = await this.mock.getSigners(this.mockAccount.address, 0, MAX_UINT32);
       await this.mockFromAccount.removeSigners([signers[0]]);
 
-      // The single increment is delegated to the internal _setThreshold call
       await expect(this.mock.nonces(this.mockAccount.address)).to.eventually.equal(nonceBefore + 1n);
     });
   });
@@ -696,7 +695,6 @@ function shouldBehaveLikeERC7579MultisigConfidentialWeighted() {
         encryptedWeights.inputProof,
       );
 
-      // The single increment is delegated to the internal _setThreshold call
       await expect(this.mock.nonces(this.mockAccount.address)).to.eventually.equal(nonceBefore + 1n);
     });
   });
@@ -780,7 +778,6 @@ function shouldBehaveLikeERC7579MultisigConfidentialWeighted() {
       const signers = await this.mock.getSigners(this.mockAccount.address, 0, MAX_UINT32);
       await this.mockFromAccount.removeSigners([signers[0]]);
 
-      // The single increment is delegated to the internal _setThreshold call
       await expect(this.mock.nonces(this.mockAccount.address)).to.eventually.equal(nonceBefore + 1n);
     });
   });

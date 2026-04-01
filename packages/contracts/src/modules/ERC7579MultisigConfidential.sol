@@ -46,9 +46,9 @@ import {IERC7579Module} from "@openzeppelin/contracts/interfaces/draft-IERC7579.
  * operators must rely on external validation to ensure the threshold is not 0, which allows
  * arbitrary execution.
  *
- * NOTE: A per-account configuration nonce (from {Nonces}) is incremented on every call to
- * {_addSigners}, {_removeSigners}, or {_setThreshold}. Disclosure state is scoped to the
- * nonce active at the time of {requestDiscloseOperation}, so any configuration change
+ * NOTE: A per-account configuration nonce (from {Nonces}) is incremented on every configuration
+ * change ({addSigners}, {removeSigners}, {setThreshold}, {onInstall}). Disclosure state is scoped
+ * to the nonce active at the time of {requestDiscloseOperation}, so any configuration change
  * automatically invalidates outstanding disclosure entries and closes the stale-approval window.
  */
 abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
@@ -83,22 +83,13 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
     /// @dev The operation (hash) is not requested for disclosure.
     error ERC7579MultisigUnknownDisclosure(bytes32 hash);
 
-    /**
-     * @dev Emitted when an encrypted signerId is added to the authorized set.
-     * Implies an increment to the account's configuration {nonce}, invalidating outstanding disclosure snapshots.
-     */
+    /// @dev Emitted when an encrypted signerId is added to the authorized set.
     event ERC7579MultisigSignerAdded(address indexed account, euint256 signerId);
 
-    /**
-     * @dev Emitted when an encrypted signerId is removed from the authorized set.
-     * Implies an increment to the account's configuration {nonce}, invalidating outstanding disclosure snapshots.
-     */
+    /// @dev Emitted when an encrypted signerId is removed from the authorized set.
     event ERC7579MultisigSignerRemoved(address indexed account, euint256 signerId);
 
-    /**
-     ** @dev Emitted when the encrypted threshold is updated.
-     ** Increments the account's configuration {nonce}, invalidating outstanding disclosure snapshots.
-     */
+    /// @dev Emitted when the encrypted threshold is updated.
     event ERC7579MultisigThresholdSet(address indexed account, euint32 threshold);
 
     /// @dev Emitted when a disclosure request is made for an operation.
@@ -142,8 +133,15 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
             externalEuint32 externalThreshold
         ) = _decodeMultisigInitData(initData);
         require(externalSignersIds.length > 0, ERC7579MultisigEmptySigners());
-        addSigners(externalSignersIds, inputProof);
-        setThreshold(externalThreshold, inputProof);
+        euint256[] memory signersIds = new euint256[](externalSignersIds.length);
+        for (uint256 i = 0; i < externalSignersIds.length; ++i) {
+            signersIds[i] = FHE.fromExternal(externalSignersIds[i], inputProof);
+            FHE.allowThis(signersIds[i]);
+            FHE.allow(signersIds[i], msg.sender);
+        }
+        _addSigners(msg.sender, signersIds);
+        _setThreshold(msg.sender, FHE.fromExternal(externalThreshold, inputProof));
+        _useNonce(msg.sender);
     }
 
     /**
@@ -221,6 +219,9 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
      * @dev Adds new encrypted signerIds to the authorized set for the calling account.
      * Can only be called by the account itself. See {_addSigners}.
      *
+     * Increments the account's configuration nonce, invalidating any outstanding disclosure entries
+     * made under the previous nonce.
+     *
      * The signerIds are provided as externally encrypted uint256 values. Each signerId represents
      * either an address (cast to uint256) or an ERC-7913 key (hashed with `keccak256(verifier || key)`
      * and cast to uint256). The caller must encrypt the signerId off-chain before calling this function.
@@ -237,22 +238,31 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
             FHE.allow(signersIds[i], msg.sender);
         }
         _addSigners(msg.sender, signersIds);
+        _useNonce(msg.sender);
     }
 
     /**
      * @dev Removes encrypted signerIds from the authorized set for the calling account.
      * Can only be called by the account itself. See {_removeSigners}.
+     *
+     * Increments the account's configuration nonce, invalidating any outstanding disclosure entries
+     * made under the previous nonce.
      */
     function removeSigners(euint256[] calldata oldSignersIds) public virtual {
         _removeSigners(msg.sender, oldSignersIds);
+        _useNonce(msg.sender);
     }
 
     /**
      * @dev Sets the encrypted threshold for the calling account.
      * Can only be called by the account itself. See {_setThreshold}.
+     *
+     * Increments the account's configuration nonce, invalidating any outstanding disclosure entries
+     * made under the previous nonce.
      */
     function setThreshold(externalEuint32 newThreshold, bytes memory inputProof) public virtual {
         _setThreshold(msg.sender, FHE.fromExternal(newThreshold, inputProof));
+        _useNonce(msg.sender);
     }
 
     /**
@@ -304,12 +314,13 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
     /**
      * @dev Adds the encrypted `newSignerIds` to those allowed to sign on behalf of the `account`.
      *
-     * Increments the account's configuration nonce, invalidating any outstanding disclosure entries
-     * made under the previous nonce.
-     *
      * Requirements:
      *
      * * The number of signers must not exceed `type(uint32).max`. Reverts with {ERC7579MultisigTooManySigners} if exceeded.
+     *
+     * IMPORTANT: This function does not increment the account's configuration nonce.
+     * Callers that change the configuration must call {Nonces-_useNonce} to invalidate
+     * outstanding disclosure entries.
      *
      * NOTE: FHE encryption is non-deterministic. Encrypting the same plaintext uint256 value multiple times
      * produces different ciphertexts and thus different handles. This allows the same underlying
@@ -329,19 +340,19 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
             emit ERC7579MultisigSignerAdded(account, encryptedSignerId);
         }
         require(getSignerCount(account) <= type(uint32).max, ERC7579MultisigTooManySigners());
-        _useNonce(account);
     }
 
     /**
      * @dev Removes the encrypted `oldSignerIds` from the authorized signerIds for the account.
      *
-     * The account's configuration nonce is incremented via the internal {_setThreshold} call,
-     * which invalidates any outstanding disclosure entries made under the previous nonce.
-     *
      * Requirements:
      *
      * * Each of `oldSignerIds` must be authorized. Reverts with {ERC7579MultisigNonexistentSigner} if not.
      * * After removal, at least one signer must remain. Reverts with {ERC7579MultisigEmptySigners} if not.
+     *
+     * IMPORTANT: This function does not increment the account's configuration nonce.
+     * Callers that change the configuration must call {Nonces-_useNonce} to invalidate
+     * outstanding disclosure entries.
      *
      * NOTE: The threshold will be automatically capped at the number of remaining signers to ensure it's
      * always reachable.
@@ -358,14 +369,15 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
             emit ERC7579MultisigSignerRemoved(account, encryptedSignerId);
         }
         require(getSignerCount(account) > 0, ERC7579MultisigEmptySigners());
-        _setThreshold(account, threshold(account)); // Caps the threshold at the number of signers and increments the nonce
+        _setThreshold(account, threshold(account)); // Caps the threshold at the number of signers
     }
 
     /**
      * @dev Sets the encrypted signatures `threshold` required to approve a multisignature operation.
      *
-     * Increments the account's configuration nonce, invalidating any outstanding disclosure entries
-     * made under the previous nonce.
+     * IMPORTANT: This function does not increment the account's configuration nonce.
+     * Callers that change the configuration must call {Nonces-_useNonce} to invalidate
+     * outstanding disclosure entries.
      *
      * NOTE: The threshold is automatically capped at the current number of signers to ensure it's
      * always reachable.
@@ -378,7 +390,6 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
         FHE.allowThis(thresholdToSet);
         FHE.allow(thresholdToSet, account);
         emit ERC7579MultisigThresholdSet(account, thresholdToSet);
-        _useNonce(account);
     }
 
     /// @dev Returns the maximum threshold for the specified account.
