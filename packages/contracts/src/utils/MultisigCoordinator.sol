@@ -186,6 +186,7 @@ abstract contract MultisigCoordinator {
      *
      * * `account` must have a multisig registered via {setERC7579Multisig} and installed as a validator.
      * * `account` must implement {IERC5267}.
+     * * The EIP-712 domain returned by `account` must not set the extensions flag (bit `0x20` of `fields`),
      */
     function allowHandle(
         address account,
