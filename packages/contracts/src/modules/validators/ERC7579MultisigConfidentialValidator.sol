@@ -51,6 +51,7 @@ contract ERC7579MultisigConfidentialValidator is ERC7579MultisigConfidential, ER
 
         return
             (FHE.isInitialized(valid) &&
-                FHE.isPublicDecryptionResultValid(handles, abi.encode(true), signature[20:])) || disclosed(account, hash);
+                FHE.isPublicDecryptionResultValid(handles, abi.encode(true), signature[20:])) ||
+            disclosed(account, hash);
     }
 }
