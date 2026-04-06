@@ -38,19 +38,20 @@ contract ERC7579MultisigConfidentialValidator is ERC7579MultisigConfidential, ER
      * or set the disclosed flag when the proof is valid; disclosure is implicit in execution.
      */
     function _rawERC7579Validation(
-        address /* account */,
+        address account,
         bytes32 hash,
         bytes calldata signature
     ) internal view virtual override returns (bool) {
         // Minimum length: address(20) + offset(32) + length(32) = 84 bytes
-        if (signature.length < 84) return disclosed(hash); // Fallback to public disclosure if the signature is too short
+        if (signature.length < 84) return disclosed(account, hash); // Fallback to public disclosure if the signature is too short
 
-        ebool valid = requestedDisclosure(address(bytes20(signature[:20])), hash);
+        ebool valid = requestedDisclosure(address(bytes20(signature[:20])), account, hash);
         bytes32[] memory handles = new bytes32[](1);
         handles[0] = FHE.toBytes32(valid);
 
         return
             (FHE.isInitialized(valid) &&
-                FHE.isPublicDecryptionResultValid(handles, abi.encode(true), signature[20:])) || disclosed(hash);
+                FHE.isPublicDecryptionResultValid(handles, abi.encode(true), signature[20:])) ||
+            disclosed(account, hash);
     }
 }

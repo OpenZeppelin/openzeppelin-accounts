@@ -107,7 +107,7 @@ describe('ERC7579MultisigWeightedConfidentialValidator', function () {
 
     const disclose = async (hash, signingSigners, signatures) =>
       requestDisclose(hash, signingSigners, signatures).then(decryptResult =>
-        mock.discloseOperation(hash, decryptResult.decryptionProof),
+        mock.discloseOperation(mockAccount.address, hash, decryptResult.decryptionProof),
       );
 
     signer.signMessage = async function (message) {
