@@ -50,6 +50,16 @@ import {IERC7579Module} from "@openzeppelin/contracts/interfaces/draft-IERC7579.
  * change ({addSigners}, {removeSigners}, {setThreshold}, {onInstall}). Disclosure state is scoped
  * to the nonce active at the time of {requestDiscloseOperation}, so any configuration change
  * automatically invalidates outstanding disclosure entries and closes the stale-approval window.
+ *
+ * WARNING: This module provides confidentiality of signer identities and threshold values, but
+ * does not provide confidentiality of threshold relationships among participants. Once a valid
+ * disclosure is made via {requestDiscloseOperation}, any party that has observed valid signatures
+ * for the operation hash (e.g. from mempool or calldata) can probe arbitrary signer subsets to
+ * infer the threshold or weight distribution. To limit the exposure window, accounts can perform
+ * a signer reset after sensitive operations: re-encrypting the signer set with fresh FHE handles
+ * (and optionally updating the threshold) invalidates any oracle knowledge accumulated over the
+ * previous handle set, since FHE encryption is non-deterministic and old handles are unlinkable
+ * to new ones.
  */
 abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
     using EnumerableSet for EnumerableSet.Bytes32Set;
@@ -275,6 +285,12 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
      *
      * NOTE: This function does not perform any access control. Anyone can request disclosure
      * of the multisignature validation result for any operation.
+     *
+     * IMPORTANT: Each call produces a secret-dependent encrypted boolean that is made publicly
+     * decryptable. A caller who possesses valid signatures for the operation `hash` can
+     * probe arbitrary signer subsets across multiple calls to infer the threshold or weight
+     * distribution, since the decrypted result reveals whether the chosen subset meets the
+     * threshold.
      *
      * Emits a {ERC7579MultisigOperationDiscloseRequested} event.
      */
