@@ -81,9 +81,22 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
             externalEuint16[] calldata externalWeights
         ) = _decodeMultisigWeightedInitData(initData);
         require(externalSigners.length > 0, ERC7579MultisigEmptySigners());
-        addSigners(externalSigners, inputProof);
-        setSignerWeights(getSigners(msg.sender, 0, type(uint32).max), externalWeights, inputProof);
-        setThreshold(externalThreshold, inputProof);
+        euint256[] memory signersIds = new euint256[](externalSigners.length);
+        for (uint256 i = 0; i < externalSigners.length; ++i) {
+            signersIds[i] = FHE.fromExternal(externalSigners[i], inputProof);
+            FHE.allowThis(signersIds[i]);
+            FHE.allow(signersIds[i], msg.sender);
+        }
+        _addSigners(msg.sender, signersIds);
+        euint16[] memory weights = new euint16[](externalWeights.length);
+        for (uint256 i = 0; i < externalWeights.length; ++i) {
+            weights[i] = FHE.fromExternal(externalWeights[i], inputProof);
+            FHE.allowThis(weights[i]);
+            FHE.allow(weights[i], msg.sender);
+        }
+        _setSignerWeights(msg.sender, getSigners(msg.sender, 0, type(uint32).max), weights);
+        _setThreshold(msg.sender, FHE.fromExternal(externalThreshold, inputProof));
+        _useNonce(msg.sender);
     }
 
     /**
@@ -125,6 +138,9 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
      * @dev Sets encrypted weights for signers for the calling account.
      * Can only be called by the account itself.
      *
+     * Increments the account's configuration nonce, invalidating any outstanding disclosure entries
+     * made under the previous nonce.
+     *
      * Requirements:
      *
      * * Those of {_setSignerWeights} for additional requirements.
@@ -141,6 +157,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
             FHE.allow(weights[i], msg.sender);
         }
         _setSignerWeights(msg.sender, signers, weights);
+        _useNonce(msg.sender);
     }
 
     /**
@@ -212,6 +229,10 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
      *
      * * `signers` and `weights` arrays must have the same length. Reverts with {ERC7579MultisigMismatchedSignerWeights} on mismatch.
      * * Each signer must exist in the set of authorized signers. Reverts with {ERC7579MultisigNonexistentSigner} if not.
+     *
+     * IMPORTANT: This function does not increment the account's configuration nonce.
+     * Callers that change the configuration must call {Nonces-_useNonce} to invalidate
+     * outstanding disclosure entries.
      *
      * NOTE: The threshold will be automatically capped at the total weight to ensure it's always reachable.
      * NOTE: Weights of 0 are automatically converted to weight 1 (base weight). See {signerWeight}.

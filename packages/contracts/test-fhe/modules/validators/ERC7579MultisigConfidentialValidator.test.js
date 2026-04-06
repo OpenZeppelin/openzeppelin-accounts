@@ -264,5 +264,98 @@ describe('ERC7579MultisigConfidentialValidator', function () {
       await expect(fhevm.userDecryptEbool(encryptedBool, this.mockAccount.address, signerECDSA1)).to.eventually.be
         .false;
     });
+
+    describe('stale disclosure invalidation', function () {
+      const operation = 'approved operation';
+      const operationHash = ethers.hashMessage(operation);
+
+      beforeEach(async function () {
+        const signerHandles = await this.mock.getSigners(this.mockAccount.address, 0, MAX_UINT32);
+        await Promise.all(signerHandles.map(handle => allowHandle(this.accountAsSigner, signerECDSA1.address, handle)));
+
+        const signerIds = [];
+        for (const handle of signerHandles) {
+          signerIds.push(
+            await fhevm.userDecryptEuint(FhevmType.euint256, handle, this.mockAccount.address, signerECDSA1),
+          );
+        }
+
+        const signerBytes = ethers.getBytes(signerECDSA1.address);
+        const signerHandle = signerHandles[signerIds.findIndex(id => id === toId(signerBytes))];
+        const signature = await signerECDSA1.signMessage(operation);
+
+        const receipt = await this.mock
+          .requestDiscloseOperation(
+            this.mockAccount.address,
+            operationHash,
+            [ethers.hexlify(signerBytes)],
+            [ethers.hexlify(signerHandle)],
+            [signature],
+          )
+          .then(tx => tx.wait());
+
+        const [[, , , encryptedBool]] = receipt.logs
+          .map(log => this.mock.interface.parseLog(log))
+          .filter(log => log?.name === 'ERC7579MultisigOperationDiscloseRequested')
+          .map(log => log.args.map(arg => ethers.hexlify(arg)));
+
+        Object.assign(this, { encryptedBool });
+      });
+
+      it('requestedDisclosure snapshot is unreachable and discloseOperation reverts after a config change', async function () {
+        // Snapshot is visible under the current nonce.
+        await expect(
+          this.mock.requestedDisclosure(this.mock.runner.address, this.mockAccount.address, operationHash),
+        ).to.eventually.equal(this.encryptedBool);
+
+        // Decrypt the result off-chain (mirrors what an attacker would do before triggering a change).
+        const decryptResult = await fhevm.publicDecrypt([this.encryptedBool]);
+
+        // Config change: add a new signer, which bumps the account's configuration nonce.
+        const newSignerInput = fhevm.createEncryptedInput(this.mock.target, this.mockAccount.address);
+        newSignerInput.add256(signerECDSA2.address);
+        const encryptedNewSigner = await newSignerInput.encrypt();
+        await this.mockFromAccount.addSigners([encryptedNewSigner.handles[0]], encryptedNewSigner.inputProof);
+
+        // The old snapshot is no longer reachable: requestedDisclosure returns the zero handle.
+        await expect(
+          this.mock.requestedDisclosure(this.mock.runner.address, this.mockAccount.address, operationHash),
+        ).to.eventually.equal(ethers.ZeroHash);
+
+        // Attempting to finalise the stale approval via discloseOperation reverts.
+        await expect(
+          this.mock['discloseOperation(address,address,bytes32,bytes)'](
+            this.mock.runner.address,
+            this.mockAccount.address,
+            operationHash,
+            decryptResult.decryptionProof,
+          ),
+        ).to.be.revertedWithCustomError(this.mock, 'ERC7579MultisigUnknownDisclosure');
+      });
+
+      it('disclosed entry from a previous nonce is rejected after a config change', async function () {
+        // Fully disclose the operation under the current nonce.
+        const decryptResult = await fhevm.publicDecrypt([this.encryptedBool]);
+        await this.mock['discloseOperation(address,address,bytes32,bytes)'](
+          this.mock.runner.address,
+          this.mockAccount.address,
+          operationHash,
+          decryptResult.decryptionProof,
+        );
+
+        // disclosed returns true while the nonce is unchanged.
+        await expect(this.mock.disclosed(this.mockAccount.address, operationHash)).to.eventually.be.true;
+
+        // Config change: add a new signer, which bumps the account's configuration nonce.
+        const newSignerInput = fhevm.createEncryptedInput(this.mock.target, this.mockAccount.address);
+        newSignerInput.add256(signerECDSA2.address);
+        const encryptedNewSigner = await newSignerInput.encrypt();
+        await this.mockFromAccount.addSigners([encryptedNewSigner.handles[0]], encryptedNewSigner.inputProof);
+
+        // The disclosed entry lives under the old nonce — it is no longer visible and the
+        // validator would reject the operation as if it had never been approved.
+        await expect(this.mock.disclosed(this.mockAccount.address, operationHash)).to.eventually.be.false;
+      });
+    });
   });
 });

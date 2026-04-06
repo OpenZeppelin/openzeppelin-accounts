@@ -3,6 +3,7 @@ pragma solidity ^0.8.27;
 
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import {Nonces} from "@openzeppelin/contracts/utils/Nonces.sol";
 import {FHE, ebool, euint16, euint32, euint256, externalEuint32, externalEuint256} from "@fhevm/solidity/lib/FHE.sol";
 import {IERC7579Module} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 
@@ -45,6 +46,11 @@ import {IERC7579Module} from "@openzeppelin/contracts/interfaces/draft-IERC7579.
  * operators must rely on external validation to ensure the threshold is not 0, which allows
  * arbitrary execution.
  *
+ * NOTE: A per-account configuration nonce (from {Nonces}) is incremented on every configuration
+ * change ({addSigners}, {removeSigners}, {setThreshold}, {onInstall}). Disclosure state is scoped
+ * to the nonce active at the time of {requestDiscloseOperation}, so any configuration change
+ * automatically invalidates outstanding disclosure entries and closes the stale-approval window.
+ *
  * WARNING: This module provides confidentiality of signer identities and threshold values, but
  * does not provide confidentiality of threshold relationships among participants. Once a valid
  * disclosure is made via {requestDiscloseOperation}, any party that has observed valid signatures
@@ -55,7 +61,7 @@ import {IERC7579Module} from "@openzeppelin/contracts/interfaces/draft-IERC7579.
  * previous handle set, since FHE encryption is non-deterministic and old handles are unlinkable
  * to new ones.
  */
-abstract contract ERC7579MultisigConfidential is IERC7579Module {
+abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
     using EnumerableSet for EnumerableSet.Bytes32Set;
     using SignatureChecker for bytes;
 
@@ -109,8 +115,9 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
 
     mapping(address account => EnumerableSet.Bytes32Set) private _signersSetByAccount;
     mapping(address account => euint32) private _thresholdByAccount;
-    mapping(address relayer => mapping(address account => mapping(bytes32 hash => ebool))) private _requestedDisclosure;
-    mapping(address account => mapping(bytes32 hash => bool)) private _disclosed;
+    mapping(address relayer => mapping(address account => mapping(uint256 nonce => mapping(bytes32 hash => ebool))))
+        private _requestedDisclosure;
+    mapping(address account => mapping(uint256 nonce => mapping(bytes32 hash => bool))) private _disclosed;
 
     /**
      * @dev Sets up the module's initial configuration when installed by an account.
@@ -136,8 +143,15 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
             externalEuint32 externalThreshold
         ) = _decodeMultisigInitData(initData);
         require(externalSignersIds.length > 0, ERC7579MultisigEmptySigners());
-        addSigners(externalSignersIds, inputProof);
-        setThreshold(externalThreshold, inputProof);
+        euint256[] memory signersIds = new euint256[](externalSignersIds.length);
+        for (uint256 i = 0; i < externalSignersIds.length; ++i) {
+            signersIds[i] = FHE.fromExternal(externalSignersIds[i], inputProof);
+            FHE.allowThis(signersIds[i]);
+            FHE.allow(signersIds[i], msg.sender);
+        }
+        _addSigners(msg.sender, signersIds);
+        _setThreshold(msg.sender, FHE.fromExternal(externalThreshold, inputProof));
+        _useNonce(msg.sender);
     }
 
     /**
@@ -191,19 +205,32 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         return _thresholdByAccount[account];
     }
 
-    /// @dev Returns whether the multisignature validation result for an operation (hash) is requested for disclosure.
+    /**
+     * @dev Returns whether the multisignature validation result for an operation (hash) is requested for
+     * disclosure under the account's current configuration nonce.
+     *
+     * NOTE: Returns an uninitialized handle if the configuration has changed since the disclosure was requested.
+     */
     function requestedDisclosure(address relayer, address account, bytes32 hash) public view virtual returns (ebool) {
-        return _requestedDisclosure[relayer][account][hash];
+        return _requestedDisclosure[relayer][account][nonces(account)][hash];
     }
 
-    /// @dev Returns whether the multisignature validation result for an operation (hash) is disclosed.
+    /**
+     * @dev Returns whether the multisignature validation result for an operation (hash) is disclosed
+     * under the account's current configuration nonce.
+     *
+     * NOTE: Returns false if the configuration has changed since the operation was disclosed.
+     */
     function disclosed(address account, bytes32 hash) public view virtual returns (bool) {
-        return _disclosed[account][hash];
+        return _disclosed[account][nonces(account)][hash];
     }
 
     /**
      * @dev Adds new encrypted signerIds to the authorized set for the calling account.
      * Can only be called by the account itself. See {_addSigners}.
+     *
+     * Increments the account's configuration nonce, invalidating any outstanding disclosure entries
+     * made under the previous nonce.
      *
      * The signerIds are provided as externally encrypted uint256 values. Each signerId represents
      * either an address (cast to uint256) or an ERC-7913 key (hashed with `keccak256(verifier || key)`
@@ -221,22 +248,31 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
             FHE.allow(signersIds[i], msg.sender);
         }
         _addSigners(msg.sender, signersIds);
+        _useNonce(msg.sender);
     }
 
     /**
      * @dev Removes encrypted signerIds from the authorized set for the calling account.
      * Can only be called by the account itself. See {_removeSigners}.
+     *
+     * Increments the account's configuration nonce, invalidating any outstanding disclosure entries
+     * made under the previous nonce.
      */
     function removeSigners(euint256[] calldata oldSignersIds) public virtual {
         _removeSigners(msg.sender, oldSignersIds);
+        _useNonce(msg.sender);
     }
 
     /**
      * @dev Sets the encrypted threshold for the calling account.
      * Can only be called by the account itself. See {_setThreshold}.
+     *
+     * Increments the account's configuration nonce, invalidating any outstanding disclosure entries
+     * made under the previous nonce.
      */
     function setThreshold(externalEuint32 newThreshold, bytes memory inputProof) public virtual {
         _setThreshold(msg.sender, FHE.fromExternal(newThreshold, inputProof));
+        _useNonce(msg.sender);
     }
 
     /**
@@ -298,6 +334,10 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
      *
      * * The number of signers must not exceed `type(uint32).max`. Reverts with {ERC7579MultisigTooManySigners} if exceeded.
      *
+     * IMPORTANT: This function does not increment the account's configuration nonce.
+     * Callers that change the configuration must call {Nonces-_useNonce} to invalidate
+     * outstanding disclosure entries.
+     *
      * NOTE: FHE encryption is non-deterministic. Encrypting the same plaintext uint256 value multiple times
      * produces different ciphertexts and thus different handles. This allows the same underlying
      * signer to be added multiple times, so duplicate detection by comparing encrypted handles
@@ -326,6 +366,10 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
      * * Each of `oldSignerIds` must be authorized. Reverts with {ERC7579MultisigNonexistentSigner} if not.
      * * After removal, at least one signer must remain. Reverts with {ERC7579MultisigEmptySigners} if not.
      *
+     * IMPORTANT: This function does not increment the account's configuration nonce.
+     * Callers that change the configuration must call {Nonces-_useNonce} to invalidate
+     * outstanding disclosure entries.
+     *
      * NOTE: The threshold will be automatically capped at the number of remaining signers to ensure it's
      * always reachable.
      *
@@ -346,6 +390,10 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
 
     /**
      * @dev Sets the encrypted signatures `threshold` required to approve a multisignature operation.
+     *
+     * IMPORTANT: This function does not increment the account's configuration nonce.
+     * Callers that change the configuration must call {Nonces-_useNonce} to invalidate
+     * outstanding disclosure entries.
      *
      * NOTE: The threshold is automatically capped at the current number of signers to ensure it's
      * always reachable.
@@ -368,13 +416,14 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
     /// @dev Requests disclosure of the multisignature validation result for an operation (hash).
     function _requestDiscloseOperation(address relayer, address account, bytes32 hash, ebool valid) internal virtual {
         FHE.makePubliclyDecryptable(valid);
-        _requestedDisclosure[relayer][account][hash] = valid;
+        _requestedDisclosure[relayer][account][nonces(account)][hash] = valid;
         emit ERC7579MultisigOperationDiscloseRequested(relayer, account, hash, valid);
     }
 
     /// @dev Verifies the decryption proof for a disclosed operation (hash).
     function _discloseOperation(address relayer, address account, bytes32 hash, bytes calldata decryptionProof) public {
-        ebool valid = requestedDisclosure(relayer, account, hash);
+        uint256 currentNonce = nonces(account);
+        ebool valid = _requestedDisclosure[relayer][account][currentNonce][hash];
         require(FHE.isInitialized(valid), ERC7579MultisigUnknownDisclosure(hash));
 
         bytes32[] memory handles = new bytes32[](1);
@@ -382,8 +431,8 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module {
         bytes memory cleartextMemory = abi.encode(true); // Must be true by design
         FHE.checkSignatures(handles, cleartextMemory, decryptionProof);
 
-        _requestedDisclosure[relayer][account][hash] = ebool.wrap(0);
-        _disclosed[account][hash] = true;
+        _requestedDisclosure[relayer][account][currentNonce][hash] = ebool.wrap(0);
+        _disclosed[account][currentNonce][hash] = true;
         emit ERC7579MultisigOperationDisclosed(account, hash, valid);
     }
 
