@@ -395,6 +395,51 @@ function shouldBehaveLikeOperationDiscloser() {
         .to.be.revertedWithCustomError(this.mock, 'ERC7579MultisigUnknownDisclosure')
         .withArgs(unknownHash);
     });
+
+    describe('dismissDisclosure', function () {
+      it('increments the nonce', async function () {
+        const nonceBefore = await this.mock.nonces(this.mockAccount.address);
+        await this.mockFromAccount.dismissDisclosure();
+        await expect(this.mock.nonces(this.mockAccount.address)).to.eventually.equal(nonceBefore + 1n);
+      });
+
+      it('invalidates a pending disclosure request', async function () {
+        const { encryptedBool } = await this.requestDiscloseOperation(
+          new NonNativeSigner(new MultiERC7913SigningKey([...this.signers])),
+        );
+
+        await expect(
+          this.mock.requestedDisclosure(this.mock.runner.address, this.mockAccount.address, operationHash),
+        ).to.eventually.equal(encryptedBool);
+
+        await this.mockFromAccount.dismissDisclosure();
+
+        // After nonce bump, requestedDisclosure returns uninitialized handle
+        await expect(
+          this.mock.requestedDisclosure(this.mock.runner.address, this.mockAccount.address, operationHash),
+        ).to.eventually.equal(ethers.ZeroHash);
+      });
+
+      it('invalidates a completed disclosure', async function () {
+        const { encryptedBool } = await this.requestDiscloseOperation(
+          new NonNativeSigner(new MultiERC7913SigningKey([...this.signers])),
+        );
+
+        const decryptResult = await fhevm.publicDecrypt([encryptedBool]);
+        await this.mock['discloseOperation(address,address,bytes32,bytes)'](
+          this.mock.runner.address,
+          this.mockAccount.address,
+          operationHash,
+          decryptResult.decryptionProof,
+        );
+        await expect(this.mock.disclosed(this.mockAccount.address, operationHash)).to.eventually.be.true;
+
+        await this.mockFromAccount.dismissDisclosure();
+
+        // After nonce bump, disclosed returns false
+        await expect(this.mock.disclosed(this.mockAccount.address, operationHash)).to.eventually.be.false;
+      });
+    });
   });
 }
 
