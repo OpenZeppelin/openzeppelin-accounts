@@ -51,6 +51,13 @@ import {IERC7579Module} from "@openzeppelin/contracts/interfaces/draft-IERC7579.
  * to the nonce active at the time of {requestDiscloseOperation}, so any configuration change
  * automatically invalidates outstanding disclosure entries and closes the stale-approval window.
  *
+ * WARNING: When using ERC-1271 contract signers, signature validity can change over time (e.g. the
+ * signer contract updates its owner). Because {requestDiscloseOperation} snapshots the validation
+ * result, a later call to {_rawERC7579Validation} may accept a stale authorization even if the
+ * ERC-1271 signer would now reject the signature. Prefer signers with non-revocable signatures
+ * (e.g. EOAs), or call {dismissDisclosure} to invalidate outstanding disclosures when an
+ * ERC-1271 signer's validity changes.
+ *
  * WARNING: This module provides confidentiality of signer identities and threshold values, but
  * does not provide confidentiality of threshold relationships among participants. Once a valid
  * disclosure is made via {requestDiscloseOperation}, any party that has observed valid signatures
@@ -325,6 +332,15 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
     /// @dev Same as {discloseOperation} but with the relayer set to `msg.sender`.
     function discloseOperation(address account, bytes32 hash, bytes calldata decryptionProof) public {
         _discloseOperation(msg.sender, account, hash, decryptionProof);
+    }
+
+    /**
+     * @dev Consumes the caller's configuration nonce, invalidating all outstanding disclosure
+     * entries. Useful when an ERC-1271 signer's validity changes and the account needs to
+     * revoke previously snapshotted authorization results.
+     */
+    function dismissDisclosure() public virtual {
+        _useNonce(msg.sender);
     }
 
     /**
