@@ -13,7 +13,7 @@ import {
 import { SmartAccount, createBundlerClient, BundlerClient, entryPoint09Address } from 'viem/account-abstraction';
 import { erc7579Actions, ERC7579Actions, InstallModulesParameters } from '../erc7579.actions.js';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import ECDSAValidatorArtifact from '@open-accounts-framework/contracts/out/ERC7579ECDSAValidator.sol/ERC7579ECDSAValidator.json' with { type: 'json' };
+import ECDSAValidatorArtifact from '@openzeppelin-accounts/contracts/out/ERC7579ECDSAValidator.sol/ERC7579ECDSAValidator.json' with { type: 'json' };
 import { ModuleTypes } from '../erc7579.utils.js';
 import { setup, cleanup } from './helpers/setup.js';
 import { deployECDSAValidator } from './helpers/erc7579.modules.js';

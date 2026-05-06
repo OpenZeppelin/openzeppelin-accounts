@@ -12,7 +12,7 @@ Extend any Viem bundler client with `erc7579Actions()` after creating it:
 ```typescript
 import { createBundlerClient } from 'viem/account-abstraction';
 import { http } from 'viem';
-import { erc7579Actions } from '@open-accounts-framework/sdk';
+import { erc7579Actions } from '@openzeppelin-accounts/sdk';
 
 const bundlerClient = createBundlerClient({
   account,
@@ -157,7 +157,7 @@ The SDK also exports the low-level encoding helpers used internally by `erc7579A
 ERC-7579 execution modes are 32-byte packed values that combine a call type, an execution type, an optional selector, and optional payload.
 
 ```typescript
-import { encodeMode, decodeMode } from '@open-accounts-framework/sdk';
+import { encodeMode, decodeMode } from '@openzeppelin-accounts/sdk';
 
 const mode = encodeMode({
   callType: 'batchcall', // 'call' | 'batchcall' | 'delegatecall'
@@ -177,7 +177,7 @@ Omitted fields default to `CALLTYPE_CALL`, `EXECTYPE_DEFAULT`, a zero selector, 
 `encodeCalls` wraps an array of Viem `Call` objects into ERC-7579 `execute` calldata, choosing single or batch encoding automatically:
 
 ```typescript
-import { encodeCalls, decodeCalls } from '@open-accounts-framework/sdk';
+import { encodeCalls, decodeCalls } from '@openzeppelin-accounts/sdk';
 
 const calldata = encodeCalls([
   { to: '0x<target>', value: 0n, data: '0x1234' },
@@ -199,7 +199,7 @@ Lower-level helpers for each encoding are also exported:
 `ModuleType` values can be passed as either string or numeric literals throughout the SDK:
 
 ```typescript
-import { ModuleTypes, parseModuleTypeId } from '@open-accounts-framework/sdk';
+import { ModuleTypes, parseModuleTypeId } from '@openzeppelin-accounts/sdk';
 
 ModuleTypes.VALIDATOR  // 1
 ModuleTypes.EXECUTOR   // 2

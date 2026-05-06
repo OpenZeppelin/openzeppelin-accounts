@@ -1,13 +1,13 @@
-# @open-accounts-framework/sdk
+# @openzeppelin-accounts/sdk
 
-**Viem-native TypeScript SDK for the Open Accounts Framework.**
+**Viem-native TypeScript SDK for OpenZeppelin Accounts.**
 
-This package provides typed account factories and a bundler client extension for interacting with ERC-7579 smart accounts. It is the off-chain counterpart to [`@open-accounts-framework/contracts`](../contracts).
+This package provides typed account factories and a bundler client extension for interacting with ERC-7579 smart accounts. It is the off-chain counterpart to [`@openzeppelin-accounts/contracts`](../contracts).
 
 ## Installation
 
 ```bash
-npm install @open-accounts-framework/sdk viem
+npm install @openzeppelin-accounts/sdk viem
 ```
 
 ## Contents
@@ -44,8 +44,8 @@ import { createPublicClient, http, getContract, encodePacked } from 'viem';
 import { mainnet } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createBundlerClient } from 'viem/account-abstraction';
-import { toOpenAccount, erc7579Actions } from '@open-accounts-framework/sdk';
-import OpenAccountFactoryABI from '@open-accounts-framework/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' assert { type: 'json' };
+import { toOpenAccount, erc7579Actions } from '@openzeppelin-accounts/sdk';
+import OpenAccountFactoryABI from '@openzeppelin-accounts/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' assert { type: 'json' };
 
 const client = createPublicClient({ chain: mainnet, transport: http() });
 const signer = privateKeyToAccount('0x<privateKey>');
@@ -96,7 +96,7 @@ const account = await toOpenAccount({
 ### Using with a different ERC-7579 account
 
 ```typescript
-import { toERC7579Account } from '@open-accounts-framework/sdk';
+import { toERC7579Account } from '@openzeppelin-accounts/sdk';
 
 const account = await toERC7579Account({
   client,

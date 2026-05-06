@@ -1,12 +1,12 @@
 ---
-title: Open Account
+title: toOpenAccount
 description: Detailed parameter reference for toOpenAccount
 ---
 
-`toOpenAccount` creates a Viem `SmartAccount` instance configured for the `OpenAccount` contract. It is a thin wrapper around `toERC7579Account` that handles `OpenAccount`-specific address derivation, factory interaction, and on-chain identity validation.
+`toOpenAccount` creates a Viem `SmartAccount` instance configured for the `OpenAccount` contract. It is a thin wrapper around `toERC7579Account` that handles the account's address derivation, factory interaction, and on-chain identity validation.
 
 ```typescript
-import { toOpenAccount } from '@open-accounts-framework/sdk';
+import { toOpenAccount } from '@openzeppelin-accounts/sdk';
 
 const account = await toOpenAccount({ client, signer, ...parameters });
 ```
@@ -120,7 +120,7 @@ Use this mode when no account has been deployed yet. The account address is comp
 
 ```typescript
 import { getContract, encodePacked } from 'viem';
-import OpenAccountFactoryABI from '@open-accounts-framework/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' assert { type: 'json' };
+import OpenAccountFactoryABI from '@openzeppelin-accounts/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' assert { type: 'json' };
 
 const factory = getContract({
   address: '0x9045eF209067701bE7b78AaC216C04Ffa6543330',
@@ -201,7 +201,7 @@ An additional call executed _after_ all modules are installed, in the same initi
 `configMode` is an `EncodeMode` object (same shape as passed to `encodeMode`) that describes how `configCalldata` should be executed. `configCalldata` follows the ERC-7579 `executionCalldata` format for the chosen mode.
 
 ```typescript
-import { encodeMode } from '@open-accounts-framework/sdk';
+import { encodeMode } from '@openzeppelin-accounts/sdk';
 import { encodePacked } from 'viem';
 
 configMode: { callType: 'call', execType: 'default' },
@@ -255,8 +255,8 @@ import {
 import { mainnet } from 'viem/chains';
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts';
 import { createBundlerClient } from 'viem/account-abstraction';
-import { toOpenAccount, erc7579Actions } from '@open-accounts-framework/sdk';
-import OpenAccountFactoryABI from '@open-accounts-framework/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' assert { type: 'json' };
+import { toOpenAccount, erc7579Actions } from '@openzeppelin-accounts/sdk';
+import OpenAccountFactoryABI from '@openzeppelin-accounts/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' assert { type: 'json' };
 
 const client = createPublicClient({ chain: mainnet, transport: http() });
 const signer = privateKeyToAccount(generatePrivateKey());

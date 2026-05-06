@@ -3,7 +3,7 @@ title: ERC-7579 Account Modules
 description: A developer's guide to the ERC-7579 standard for modular smart accounts
 ---
 
-ERC-7579 (Minimal Modular Smart Accounts) is the standard that enables interoperability between smart accounts and modules across the ecosystem. This guide explains the key concepts you need to know when working with the Open Accounts Framework.
+ERC-7579 (Minimal Modular Smart Accounts) is the standard that enables interoperability between smart accounts and modules across the ecosystem. This guide explains the key concepts you need to know when working with OpenZeppelin Accounts.
 
 ## What is ERC-7579?
 
@@ -197,7 +197,7 @@ account.execute(Mode.unwrap(mode), executionData);
 Or using the SDK:
 
 ```typescript
-import { encodeMode, encodeSingle, CALL_TYPE_CALL, EXEC_TYPE_DEFAULT } from '@open-accounts-framework/sdk';
+import { encodeMode, encodeSingle, CALL_TYPE_CALL, EXEC_TYPE_DEFAULT } from '@openzeppelin-accounts/sdk';
 
 const mode = encodeMode({
   callType: CALL_TYPE_CALL,
@@ -236,7 +236,7 @@ account.execute(Mode.unwrap(mode), executionData);
 Or using the SDK:
 
 ```typescript
-import { encodeMode, encodeBatch, CALL_TYPE_BATCH, EXEC_TYPE_DEFAULT } from '@open-accounts-framework/sdk';
+import { encodeMode, encodeBatch, CALL_TYPE_BATCH, EXEC_TYPE_DEFAULT } from '@openzeppelin-accounts/sdk';
 
 const mode = encodeMode({
   callType: CALL_TYPE_BATCH,

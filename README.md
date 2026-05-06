@@ -1,28 +1,28 @@
-# Open Accounts Framework
+# OpenZeppelin Accounts
 
 **Standardized modular tooling and SDK for EVM smart accounts.**
 
-The Open Accounts Framework delivers production-ready [ERC-7579](https://eips.ethereum.org/EIPS/eip-7579) modules and a TypeScript SDK for interacting with smart accounts. Because the modules conform to the ERC-7579 standard they can be installed on any compatible account: including [OpenZeppelin's `AccountERC7579`](https://docs.openzeppelin.com/contracts/5.x/api/account#AccountERC7579), [Kernel](https://github.com/zerodevapp/kernel), and the framework's own `OpenAccount`.
+OpenZeppelin Accounts delivers production-ready [ERC-7579](https://eips.ethereum.org/EIPS/eip-7579) modules and a TypeScript SDK for interacting with smart accounts. Because the modules conform to the ERC-7579 standard they can be installed on any compatible account: including [OpenZeppelin's `AccountERC7579`](https://docs.openzeppelin.com/contracts/5.x/api/account#AccountERC7579), [Kernel](https://github.com/zerodevapp/kernel), and the bundled `OpenAccount`.
 
 ## Packages
 
 | Package                                                      | Description                                                                                     |
 | :----------------------------------------------------------- | :---------------------------------------------------------------------------------------------- |
-| [`@open-accounts-framework/contracts`](./packages/contracts) | Solidity contracts: `OpenAccount`, validator modules, executor modules, and multisig primitives |
-| [`@open-accounts-framework/sdk`](./packages/sdk)             | TypeScript SDK: Viem-native account factories and ERC-7579 bundler client actions               |
+| [`@openzeppelin-accounts/contracts`](./packages/contracts) | Solidity contracts: `OpenAccount`, validator modules, executor modules, and multisig primitives |
+| [`@openzeppelin-accounts/sdk`](./packages/sdk)             | TypeScript SDK: Viem-native account factories and ERC-7579 bundler client actions               |
 
 ## Installation
 
 **Contracts (Hardhat / Foundry)**
 
 ```bash
-npm install @open-accounts-framework/contracts
+npm install @openzeppelin-accounts/contracts
 ```
 
 **SDK**
 
 ```bash
-npm install @open-accounts-framework/sdk viem
+npm install @openzeppelin-accounts/sdk viem
 ```
 
 ## Overview
@@ -54,8 +54,8 @@ import { createPublicClient, http, getContract, encodePacked } from 'viem';
 import { mainnet } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createBundlerClient } from 'viem/account-abstraction';
-import { toOpenAccount, erc7579Actions } from '@open-accounts-framework/sdk';
-import OpenAccountFactoryABI from '@open-accounts-framework/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' assert { type: 'json' };
+import { toOpenAccount, erc7579Actions } from '@openzeppelin-accounts/sdk';
+import OpenAccountFactoryABI from '@openzeppelin-accounts/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' assert { type: 'json' };
 
 const client = createPublicClient({ chain: mainnet, transport: http() });
 const signer = privateKeyToAccount('0x<privateKey>');
@@ -101,7 +101,7 @@ Full documentation is available at **[docs.openzeppelin.com](https://docs.openze
 
 ## Security
 
-This project is maintained by [OpenZeppelin](https://openzeppelin.com). Smart contracts are a nascent technology and carry a high level of technical risk and uncertainty. Using this framework is not a substitute for a security audit.
+This project is maintained by [OpenZeppelin](https://openzeppelin.com). Smart contracts are a nascent technology and carry a high level of technical risk and uncertainty. Using this library is not a substitute for a security audit.
 
 This project has not yet had a stable release. Please report security vulnerabilities by email to [security@openzeppelin.com](mailto:security@openzeppelin.com).
 

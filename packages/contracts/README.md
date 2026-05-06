@@ -1,13 +1,13 @@
-# @open-accounts-framework/contracts
+# @openzeppelin-accounts/contracts
 
-**ERC-7579 modules and smart account contracts for the Open Accounts Framework.**
+**ERC-7579 modules and smart account contracts for OpenZeppelin Accounts.**
 
 This package provides production-ready Solidity contracts: a base smart account implementation and a set of ERC-7579 modules that can be used with any ERC-7579 compliant account.
 
 ## Installation
 
 ```bash
-npm install @open-accounts-framework/contracts
+npm install @openzeppelin-accounts/contracts
 ```
 
 ## Contents
@@ -67,7 +67,7 @@ Base modules that implement ERC-7913 threshold and weighted multisig logic, comb
 pragma solidity ^0.8.20;
 
 import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {ERC7579ECDSAValidator} from "@open-accounts-framework/contracts/modules/validators/ERC7579ECDSAValidator.sol";
+import {ERC7579ECDSAValidator} from "@openzeppelin-accounts/contracts/modules/validators/ERC7579ECDSAValidator.sol";
 
 contract MyECDSAValidator is ERC7579ECDSAValidator {}
 ```

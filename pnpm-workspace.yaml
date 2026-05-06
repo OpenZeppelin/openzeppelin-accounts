@@ -2,4 +2,4 @@ packages:
   - packages/*
 
 overrides:
-  '@open-accounts-framework/contracts': link:packages/contracts
+  '@openzeppelin-accounts/contracts': link:packages/contracts

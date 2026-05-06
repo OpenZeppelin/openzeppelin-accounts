@@ -1,5 +1,5 @@
 {
-  "name": "open-accounts-framework",
+  "name": "openzeppelin-accounts",
   "private": true,
   "description": "Standardized modular tooling and SDK for EVM smart accounts",
   "type": "module",
@@ -17,12 +17,12 @@
     "ERC-4337",
     "ERC-7579"
   ],
-  "author": "Open Accounts Framework Contributors",
+  "author": "OpenZeppelin Accounts Contributors",
   "license": "MIT",
   "devDependencies": {
     "@eslint/compat": "^1.2.9",
     "@eslint/js": "^9.25.1",
-    "@open-accounts-framework/contracts": "link:packages/contracts",
+    "@openzeppelin-accounts/contracts": "link:packages/contracts",
     "eslint": "^9.39.1",
     "eslint-config-next": "16.0.1",
     "eslint-config-prettier": "^10.1.2",

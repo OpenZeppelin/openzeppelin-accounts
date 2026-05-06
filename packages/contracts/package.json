@@ -1,8 +1,8 @@
 {
-  "name": "@open-accounts-framework/contracts",
+  "name": "@openzeppelin-accounts/contracts",
   "version": "0.0.1",
   "description": "Standardized modular tooling and SDK for EVM smart accounts",
-  "author": "Open Accounts Framework Contributors",
+  "author": "OpenZeppelin Accounts Contributors",
   "license": "MIT",
   "files": [
     "/contracts/**/*.sol",

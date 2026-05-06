@@ -3,7 +3,7 @@ title: Session Keys
 description: Scoped, time-limited signing authority for dapps, games, and automated services
 ---
 
-Session keys grant a temporary, scoped signing authority to an additional key so that a dapp, game engine, or automated service can act on behalf of an account without exposing the owner's primary key. Rather than implementing a single, opinionated session-key contract, this framework decomposes the problem into two clearly separated concerns.
+Session keys grant a temporary, scoped signing authority to an additional key so that a dapp, game engine, or automated service can act on behalf of an account without exposing the owner's primary key. Rather than implementing a single, opinionated session-key contract, OpenZeppelin Accounts decomposes the problem into two clearly separated concerns.
 
 **What every session key needs:**
 
@@ -15,7 +15,7 @@ Session keys grant a temporary, scoped signing authority to an additional key so
 
 Policy enforcement is use-case specific. A gaming session may need only a timer; a DeFi integration may need a spending-limit tracker that renews on a schedule; a selector-whitelist module rejects calls to functions not on an allow-list. Each policy requires its own storage and logic, and there is no one-size-fits-all implementation.
 
-The framework resolves this by splitting the responsibility: `ERC7579SessionKeys` handles the generic concerns (key registry + validity) while concrete extensions provide their own policy logic as ERC-7579 modules.
+This is resolved by splitting the responsibility: `ERC7579SessionKeys` handles the generic concerns (key registry + validity) while concrete extensions provide their own policy logic as ERC-7579 modules.
 
 ## Architecture
 
@@ -66,7 +66,7 @@ Key behaviors:
 Because `ERC7579SessionKeysValidator` is abstract, the developer is responsible for providing the policy logic. The simplest concrete implementation—which grants full account access to any registered key within its validity window—looks like:
 
 ```solidity
-import {ERC7579SessionKeysValidator} from "@open-accounts-framework/contracts/modules/validators/ERC7579SessionKeysValidator.sol";
+import {ERC7579SessionKeysValidator} from "@openzeppelin-accounts/contracts/modules/validators/ERC7579SessionKeysValidator.sol";
 
 contract UnrestrictedSessionKeyValidator is ERC7579SessionKeysValidator {
     // No additional policy: any registered + valid key can sign anything.
@@ -82,7 +82,7 @@ contract UnrestrictedSessionKeyValidator is ERC7579SessionKeysValidator {
 A more realistic policy overrides `_validateUserOp` to inspect `userOp.callData` before delegating to the parent. For example, a selector-whitelist policy:
 
 ```solidity
-import {ERC7579SessionKeysValidator} from "@open-accounts-framework/contracts/modules/validators/ERC7579SessionKeysValidator.sol";
+import {ERC7579SessionKeysValidator} from "@openzeppelin-accounts/contracts/modules/validators/ERC7579SessionKeysValidator.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 
 contract SelectorWhitelistValidator is ERC7579SessionKeysValidator {

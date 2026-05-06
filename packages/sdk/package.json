@@ -1,7 +1,7 @@
 {
-  "name": "@open-accounts-framework/sdk",
+  "name": "@openzeppelin-accounts/sdk",
   "version": "0.0.1",
-  "description": "SDK for the Open Accounts Framework",
+  "description": "SDK for OpenZeppelin Accounts",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
@@ -12,9 +12,9 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OpenZeppelin/accounts.git"
+    "url": "git+https://github.com/OpenZeppelin/openzeppelin-accounts.git"
   },
-  "author": "Open Accounts Framework Contributors",
+  "author": "OpenZeppelin Accounts Contributors",
   "license": "MIT",
   "dependencies": {
     "viem": "^2.44.4"
