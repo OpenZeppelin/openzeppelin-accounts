@@ -5,7 +5,7 @@ description: Secure account recovery through trusted guardians with time-delayed
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-Social recovery enables users to regain control of their smart accounts through trusted guardians when access to primary credentials is lost. The Open Accounts Framework provides a production-ready social recovery module that combines weighted multisignatures with time-delayed execution, offering both flexibility and security. See also [Social Recovery use cases in Executors](/docs/contracts/executors#erc7579socialrecoveryexecutor).
+Social recovery enables users to regain control of their smart accounts through trusted guardians when access to primary credentials is lost. The OpenZeppelin Accounts provides a production-ready social recovery module that combines weighted multisignatures with time-delayed execution, offering both flexibility and security. See also [Social Recovery use cases in Executors](/docs/contracts/executors#erc7579socialrecoveryexecutor).
 
 ## Overview
 
@@ -14,7 +14,7 @@ Social recovery fundamentally combines two features:
 1. **Multisignature validation**: Require multiple guardians to approve a recovery operation
 2. **Execution scheme**: Define how and when approved operations execute
 
-While you can compose these features in various ways (combining [`ERC7579Multisig`](/docs/contracts/multisig) or [`ERC7579MultisigWeighted`](/docs/contracts/multisig) with [`ERC7579Executor`](/docs/contracts/executors#base-executor), [`ERC7579DelayedExecutor`](/docs/contracts/executors#erc7579delayedexecutor), or even `ERC7579Validator` for ERC-4337-based execution), the framework provides **`ERC7579SocialRecoveryExecutor`** as the recommended implementation with the following features:
+While you can compose these features in various ways (combining [`ERC7579Multisig`](/docs/contracts/multisig) or [`ERC7579MultisigWeighted`](/docs/contracts/multisig) with [`ERC7579Executor`](/docs/contracts/executors#base-executor), [`ERC7579DelayedExecutor`](/docs/contracts/executors#erc7579delayedexecutor), or even `ERC7579Validator` for ERC-4337-based execution), **`ERC7579SocialRecoveryExecutor`** is the recommended implementation, with the following features:
 
 - Uses [`ERC7579MultisigWeighted`](/docs/contracts/multisig) to implement a weighted list of guardians
 - Uses [`ERC7579DelayedExecutor`](/docs/contracts/executors#erc7579delayedexecutor) to enforce a security window in which the recovery operations can be cancelled
@@ -100,7 +100,7 @@ To install the social recovery executor on your ERC-7579 account:
 
 ```solidity
 import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {ERC7579SocialRecoveryExecutor} from "@open-accounts-framework/contracts/modules/executors/ERC7579SocialRecoveryExecutor.sol";
+import {ERC7579SocialRecoveryExecutor} from "@openzeppelin-accounts/contracts/modules/executors/ERC7579SocialRecoveryExecutor.sol";
 
 // Deploy the executor (singleton, can be reused)
 ERC7579SocialRecoveryExecutor socialRecovery = new ERC7579SocialRecoveryExecutor();

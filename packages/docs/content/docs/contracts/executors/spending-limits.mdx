@@ -9,7 +9,7 @@ Each spender gets a renewable spending limit that automatically resets at the en
 
 ## Overview
 
-The framework provides two spending limit executor implementations:
+OpenZeppelin Accounts provides two spending limit executor implementations:
 
 - **`ERC7579NativeSpender`**: Manages spending limits for native tokens (ETH)
 - **`ERC7579ERC20Spender`**: Manages spending limits for ERC20 tokens
@@ -42,7 +42,7 @@ Manages spending limits for native tokens (ETH). Spenders can transfer native to
 
 ```solidity
 import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {ERC7579NativeSpender} from "@open-accounts-framework/contracts/modules/executors/ERC7579NativeSpender.sol";
+import {ERC7579NativeSpender} from "@openzeppelin-accounts/contracts/modules/executors/ERC7579NativeSpender.sol";
 
 // Deploy the executor (singleton, can be reused)
 ERC7579NativeSpender nativeSpender = new ERC7579NativeSpender();
@@ -178,7 +178,7 @@ Manages spending limits for ERC20 tokens. Spenders can transfer ERC20 tokens fro
 
 ```solidity
 import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {ERC7579ERC20Spender} from "@open-accounts-framework/contracts/modules/executors/ERC7579ERC20Spender.sol";
+import {ERC7579ERC20Spender} from "@openzeppelin-accounts/contracts/modules/executors/ERC7579ERC20Spender.sol";
 
 // Deploy the executor (singleton, can be reused)
 ERC7579ERC20Spender erc20Spender = new ERC7579ERC20Spender();

@@ -21,7 +21,7 @@ Developers extending this base contract must implement:
 
 ## Available Executors
 
-The framework provides the following executor implementations:
+OpenZeppelin Accounts provides the following executor implementations:
 
 ### ERC7579DelayedExecutor
 
@@ -118,7 +118,7 @@ To install an ERC7579DelayedExecutor:
 
 ```solidity
 import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {ERC7579DelayedExecutor} from "@open-accounts-framework/contracts/modules/executors/ERC7579DelayedExecutor.sol";
+import {ERC7579DelayedExecutor} from "@openzeppelin-accounts/contracts/modules/executors/ERC7579DelayedExecutor.sol";
 
 // Create a concrete dummy implementation
 // WARNING: Do not use in production since it doesn't implement access control
@@ -253,8 +253,8 @@ This pattern requires guardians to:
 To implement this, you would extend both `ERC7579Multisig` and `ERC7579DelayedExecutor`:
 
 ```solidity
-import { ERC7579Multisig } from '@open-accounts-framework/contracts/modules/ERC7579Multisig.sol';
-import { ERC7579DelayedExecutor } from '@open-accounts-framework/contracts/modules/executors/ERC7579DelayedExecutor.sol';
+import { ERC7579Multisig } from '@openzeppelin-accounts/contracts/modules/ERC7579Multisig.sol';
+import { ERC7579DelayedExecutor } from '@openzeppelin-accounts/contracts/modules/executors/ERC7579DelayedExecutor.sol';
 
 contract DelayedRecoveryExecutor is ERC7579Multisig, ERC7579DelayedExecutor {
   function onInstall(bytes calldata data) public override(ERC7579Multisig, ERC7579DelayedExecutor, IERC7579Module) {
@@ -366,7 +366,7 @@ Installation data is length-prefixed to separate the two components:
 
 ```solidity
 import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {ERC7579SocialRecoveryExecutor} from "@open-accounts-framework/contracts/modules/executors/ERC7579SocialRecoveryExecutor.sol";
+import {ERC7579SocialRecoveryExecutor} from "@openzeppelin-accounts/contracts/modules/executors/ERC7579SocialRecoveryExecutor.sol";
 
 ERC7579SocialRecoveryExecutor recovery = new ERC7579SocialRecoveryExecutor();
 
@@ -410,7 +410,7 @@ Extends `ERC7579Executor` with native token (ETH) spending limits and automatic 
 
 ```solidity
 import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {ERC7579NativeSpender} from "@open-accounts-framework/contracts/modules/executors/ERC7579NativeSpender.sol";
+import {ERC7579NativeSpender} from "@openzeppelin-accounts/contracts/modules/executors/ERC7579NativeSpender.sol";
 
 ERC7579NativeSpender nativeSpender = new ERC7579NativeSpender();
 
@@ -444,7 +444,7 @@ Mirrors `ERC7579NativeSpender` for ERC20 tokens. Spending configurations are tra
 
 ```solidity
 import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {ERC7579ERC20Spender} from "@open-accounts-framework/contracts/modules/executors/ERC7579ERC20Spender.sol";
+import {ERC7579ERC20Spender} from "@openzeppelin-accounts/contracts/modules/executors/ERC7579ERC20Spender.sol";
 
 ERC7579ERC20Spender erc20Spender = new ERC7579ERC20Spender();
 

@@ -111,7 +111,7 @@ First, define the type hashes for your message structures. You'll need:
 
 ```solidity
 import { EIP712 } from '@openzeppelin/contracts/utils/cryptography/EIP712.sol';
-import { CrossChainSignatureChecker } from '@open-accounts-framework/contracts/utils/CrossChainSignatureChecker.sol';
+import { CrossChainSignatureChecker } from '@openzeppelin-accounts/contracts/utils/CrossChainSignatureChecker.sol';
 
 contract CrossChainApp is EIP712 {
   using CrossChainSignatureChecker for address;
@@ -198,7 +198,7 @@ Here's a complete example that puts it all together:
 pragma solidity ^0.8.24;
 
 import { EIP712 } from '@openzeppelin/contracts/utils/cryptography/EIP712.sol';
-import { CrossChainSignatureChecker } from '@open-accounts-framework/contracts/utils/CrossChainSignatureChecker.sol';
+import { CrossChainSignatureChecker } from '@openzeppelin-accounts/contracts/utils/CrossChainSignatureChecker.sol';
 
 contract CrossChainApp is EIP712 {
   using CrossChainSignatureChecker for address;
@@ -292,9 +292,9 @@ When users sign crosschain messages, the EIP-712 structure should look like this
 
 The operations array encodes to a single `bytes32` hash per EIP-712, and users can see all operations in their wallet. Each chain validates only its relevant operation from the signature.
 
-## In This Framework
+## In OpenZeppelin Accounts
 
-`CrossChainSignatureChecker` is a standalone library that any contract can import. It is used by the ERC-7579 validators included in this framework to support ERC-7964 signatures natively, so smart account users can authorize operations on multiple chains with a single signature through their installed validator.
+`CrossChainSignatureChecker` is a standalone library that any contract can import. It is used by the included ERC-7579 validators to support ERC-7964 signatures natively, so smart account users can authorize operations on multiple chains with a single signature through their installed validator.
 
 See [Validators](/docs/contracts/validators) for usage details.
 

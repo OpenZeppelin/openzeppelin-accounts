@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@open-accounts-framework/contracts': link:packages/contracts
+  '@openzeppelin-accounts/contracts': link:packages/contracts
 
 importers:
 
@@ -17,7 +17,7 @@ importers:
       '@eslint/js':
         specifier: ^9.25.1
         version: 9.38.0
-      '@open-accounts-framework/contracts':
+      '@openzeppelin-accounts/contracts':
         specifier: link:packages/contracts
         version: link:packages/contracts
       eslint:

@@ -1,17 +1,17 @@
 ---
 title: Overview
-description: Architecture and key concepts of the Open Accounts Framework
+description: Architecture and key concepts of OpenZeppelin Accounts
 ---
 
 import { File, Folder, Files } from 'fumadocs-ui/components/files';
 
-The Open Accounts Framework is designed to provide compatibility with ERC-7579 accounts. Previous developments in major smart account contracts have provided with a layer of compatibility with ERC-7579, or even native support, which suits the standard to distribute standardized functionality that developers can use safely with popular account implementations like [OpenZeppelin's ERC-7579 account](https://docs.openzeppelin.com/contracts/5.x/api/account#AccountERC7579) or [Kernel](https://github.com/zerodevapp/kernel).
+The OpenZeppelin Accounts is designed to provide compatibility with ERC-7579 accounts. Previous developments in major smart account contracts have provided with a layer of compatibility with ERC-7579, or even native support, which suits the standard to distribute standardized functionality that developers can use safely with popular account implementations like [OpenZeppelin's ERC-7579 account](https://docs.openzeppelin.com/contracts/5.x/api/account#AccountERC7579) or [Kernel](https://github.com/zerodevapp/kernel).
 
 The contracts are organized with a clear structure that separates account implementations, and modules. This overview explains the architecture and key components.
 
 ## Directory Structure
 
-The framework's source code is organized as follows:
+The repository's source code is organized as follows:
 
 ```files
 src/
@@ -26,7 +26,7 @@ src/
 
 ## Setting up an account
 
-Given the framework's is designed to provide compatibility with major ERC-7579 account implementations, it's assumed the developer has picked one already. Otherwise, the framework provides with the `OpenAccount`.
+Since these contracts are designed to provide compatibility with major ERC-7579 account implementations, it's assumed the developer has picked one already. Otherwise, `OpenAccount` is provided as a starting point.
 
 ### OpenAccount
 
@@ -45,7 +45,7 @@ The `OpenAccountFactory` is deployed across all major EVM chains at the same det
 0x9045eF209067701bE7b78AaC216C04Ffa6543330
 ```
 
-This factory creates minimal ERC-1967 proxy clones of the `OpenAccountImplementation` contract, providing deterministic addresses and efficient ERC-1967 proxy deployment. By design, the OpenAccount is upgradeable allowing the account itself (or the entrypoint) to upgrade the implementation contract.
+This factory creates minimal ERC-1967 proxy clones of the `OpenAccountImplementation` contract, providing deterministic addresses and efficient ERC-1967 proxy deployment. By design, the account is upgradeable, allowing the account itself (or the entrypoint) to upgrade the implementation contract.
 
 `OpenAccountImplementation` inherits from both `OpenAccount` and `OpenAccountERC8043`, so every account deployed through this factory supports [init mode (ERC-8043)](/docs/contracts/erc8043) out of the box, so no extra setup required to install and use modules atomically in a single user operation.
 

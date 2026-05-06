@@ -5,7 +5,7 @@ description: Threshold and weighted multisignature modules and utilities, with o
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-The framework provides multisignature (multisig) modules and utilities that enable accounts to require multiple signatures before executing operations. Unlike traditional accounts controlled by a single private key, multisigs distribute control among multiple parties, eliminating single points of failure.
+OpenZeppelin Accounts provides multisignature (multisig) modules and utilities that enable accounts to require multiple signatures before executing operations. Unlike traditional accounts controlled by a single private key, multisigs distribute control among multiple parties, eliminating single points of failure.
 
 It also provides base multisig modules that can be combined with different module types (validators or executors) to create various use cases. This flexible design allows multisig functionality to be used for signature validation, execution authorization, or both.
 
@@ -23,7 +23,7 @@ Two main multisig modules are available:
 - Configurable thresholds
 - Weighted voting support (in `ERC7579MultisigWeighted`)
 
-The framework also provides confidential versions of the multisig modules that use Fully Homomorphic Encryption (FHE) to keep signer addresses, weights, and thresholds encrypted on-chain. This provides privacy benefits by hiding sensitive information from public view.
+Confidential versions of the multisig modules are also available. They use Fully Homomorphic Encryption (FHE) to keep signer addresses, weights, and thresholds encrypted on-chain, hiding sensitive information from public view.
 
 **`ERC7579MultisigConfidential`**: A confidential threshold-based multisig module that keeps signer addresses and threshold values encrypted.
 
@@ -55,7 +55,7 @@ Confidential multisig modules provide enhanced privacy by keeping critical multi
 
 ## As validators
 
-The framework provides validator implementations that combine the base multisig modules with validator functionality:
+The following validator implementations combine the base multisig modules with validator functionality:
 
 - **`ERC7579MultisigValidator`**: Combines `ERC7579Multisig` with validator functionality for signature validation
 - **`ERC7579MultisigWeightedValidator`**: Combines `ERC7579MultisigWeighted` with validator functionality
@@ -70,7 +70,7 @@ To install a multisig validator on your account:
 
 ```solidity
 import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {ERC7579MultisigValidator} from "@open-accounts-framework/contracts/modules/validators/ERC7579MultisigValidator.sol";
+import {ERC7579MultisigValidator} from "@openzeppelin-accounts/contracts/modules/validators/ERC7579MultisigValidator.sol";
 
 // Deploy the validator (singleton, can be reused)
 ERC7579MultisigValidator multisig = new ERC7579MultisigValidator();
@@ -103,7 +103,7 @@ To install a multisig validator that allows for weighted signers:
 
 ```solidity
 import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {ERC7579MultisigWeightedValidator} from "@open-accounts-framework/contracts/modules/validators/ERC7579MultisigWeightedValidator.sol";
+import {ERC7579MultisigWeightedValidator} from "@openzeppelin-accounts/contracts/modules/validators/ERC7579MultisigWeightedValidator.sol";
 
 // Deploy the weighted validator (singleton, can be reused)
 ERC7579MultisigWeightedValidator multisigWeighted = new ERC7579MultisigWeightedValidator();
@@ -148,7 +148,7 @@ The confidential validators use FHE to keep signer addresses and thresholds encr
 Call `requestDiscloseOperation` to validate the multisig using encrypted values and make the result publicly decryptable:
 
 ```solidity
-import {ERC7579MultisigConfidentialValidator} from "@open-accounts-framework/contracts/modules/validators/ERC7579MultisigConfidentialValidator.sol";
+import {ERC7579MultisigConfidentialValidator} from "@openzeppelin-accounts/contracts/modules/validators/ERC7579MultisigConfidentialValidator.sol";
 
 // Prepare the UserOperation hash and signature data
 bytes32 userOpHash = ...; // Hash of the UserOperation
@@ -211,7 +211,7 @@ To install a confidential multisig validator on your account:
 
 ```solidity
 import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {ERC7579MultisigConfidentialValidator} from "@open-accounts-framework/contracts/modules/validators/ERC7579MultisigConfidentialValidator.sol";
+import {ERC7579MultisigConfidentialValidator} from "@openzeppelin-accounts/contracts/modules/validators/ERC7579MultisigConfidentialValidator.sol";
 import {FHE, externalEuint256, externalEuint32} from "@fhevm/solidity/lib/FHE.sol";
 
 // Deploy the confidential validator (singleton, can be reused)
@@ -253,7 +253,7 @@ The weighted confidential validator extends the confidential validator to suppor
 
 ```solidity
 import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {ERC7579MultisigWeightedConfidentialValidator} from "@open-accounts-framework/contracts/modules/validators/ERC7579MultisigWeightedConfidentialValidator.sol";
+import {ERC7579MultisigWeightedConfidentialValidator} from "@openzeppelin-accounts/contracts/modules/validators/ERC7579MultisigWeightedConfidentialValidator.sol";
 import {FHE, externalEuint256, externalEuint32, externalEuint16} from "@fhevm/solidity/lib/FHE.sol";
 
 // Deploy the weighted confidential validator (singleton, can be reused)
@@ -324,7 +324,7 @@ The base multisig modules can also be extended to work with executors, enabling 
 
 - **Social Recovery with Delayed Execution**: Combine multisig with `ERC7579DelayedExecutor` to require guardians to approve recovery operations, which then execute after a time delay. This provides a security window to cancel suspicious operations.
 
-This design pattern allows multisig to be used flexibly across different use cases, not just for signature validation. The framework provides `ERC7579SocialRecoveryExecutor` as a ready-to-use implementation of the delayed social recovery pattern. See [Executors](/docs/contracts/executors#erc7579socialrecoveryexecutor) for details.
+This design pattern allows multisig to be used flexibly across different use cases, not just for signature validation. `ERC7579SocialRecoveryExecutor` is a ready-to-use implementation of the delayed social recovery pattern. See [Executors](/docs/contracts/executors#erc7579socialrecoveryexecutor) for details.
 
 ## Managing Signers
 
@@ -430,7 +430,7 @@ Two problems arise when a multisig account interacts with confidential tokens:
 Before using `allowHandle`, the account must register its `ERC7579Multisig` module with the coordinator. This is done by calling `setERC7579Multisig` from the account itself, typically as part of a UserOperation:
 
 ```solidity
-import {MultisigCoordinator} from "@open-accounts-framework/contracts/utils/MultisigCoordinator.sol";
+import {MultisigCoordinator} from "@openzeppelin-accounts/contracts/utils/MultisigCoordinator.sol";
 
 // Called from the account (e.g. via account.execute in a UserOperation)
 coordinator.setERC7579Multisig(address(multisigModule));
