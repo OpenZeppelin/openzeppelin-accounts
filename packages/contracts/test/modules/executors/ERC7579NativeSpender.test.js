@@ -36,7 +36,8 @@ const encodeSessionKeySig = (key, keySignature) =>
   ethers.AbiCoder.defaultAbiCoder().encode(['bytes', 'bytes'], [key, keySignature]);
 
 // Encode the executionCalldata for CALLTYPE_SINGLE: abi.encodePacked(target, value, data)
-const encodeSingle = (target, value, data) => ethers.solidityPacked(['address', 'uint256', 'bytes'], [target, value, data]);
+const encodeSingle = (target, value, data) =>
+  ethers.solidityPacked(['address', 'uint256', 'bytes'], [target, value, data]);
 
 async function fixture() {
   const [other, recipient1, recipient2] = await ethers.getSigners();
@@ -88,7 +89,15 @@ async function fixture() {
   const validatorNonceKey = BigInt(mock.target) << 32n;
 
   // Build a UserOp that calls `account.execute(SINGLE, encodeSingle(mock, 0, transferFromCall))`
-  const buildSpendUserOp = async ({ key: usedKey = key, signer = sessionKey, to = recipient1.address, amount, batch = false, tos, amounts } = {}) => {
+  const buildSpendUserOp = async ({
+    key: usedKey = key,
+    signer = sessionKey,
+    to = recipient1.address,
+    amount,
+    batch = false,
+    tos,
+    amounts,
+  } = {}) => {
     const innerCall = batch
       ? mock.interface.encodeFunctionData('batchTransferFrom', [mockAccount.address, usedKey, tos, amounts])
       : mock.interface.encodeFunctionData('transferFrom', [mockAccount.address, usedKey, to, amount]);
@@ -176,11 +185,7 @@ describe('ERC7579NativeSpender', function () {
     });
 
     it('flips true after the first install registers a key', async function () {
-      await this.mockAccountFromEntrypoint.installModule(
-        MODULE_TYPE_VALIDATOR,
-        this.mock.target,
-        this.keysInstallData,
-      );
+      await this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_VALIDATOR, this.mock.target, this.keysInstallData);
       await expect(this.mock.installed(this.mockAccount.address)).to.eventually.be.true;
     });
 
@@ -412,39 +417,21 @@ describe('ERC7579NativeSpender', function () {
     });
 
     it('allows start = 0 (resolves to clock())', async function () {
-      await this.mockFromAccount.addKeysWithConfig(
-        [this.otherKey],
-        [0n],
-        [0n],
-        [this.limit],
-        [this.renewPeriod],
-      );
+      await this.mockFromAccount.addKeysWithConfig([this.otherKey], [0n], [0n], [this.limit], [this.renewPeriod]);
       const [from] = await this.mock.validity(this.mockAccount.address, this.otherKey);
       expect(from).to.be.gt(0n);
     });
 
     it('allows start in the future', async function () {
       const future = BigInt(await time.clock.timestamp()) + time.duration.days(1);
-      await this.mockFromAccount.addKeysWithConfig(
-        [this.otherKey],
-        [future],
-        [0n],
-        [this.limit],
-        [this.renewPeriod],
-      );
+      await this.mockFromAccount.addKeysWithConfig([this.otherKey], [future], [0n], [this.limit], [this.renewPeriod]);
       const [from] = await this.mock.validity(this.mockAccount.address, this.otherKey);
       expect(from).to.equal(future);
     });
 
     it('allows re-adding a removed key with start = 0', async function () {
       await this.mockFromAccount.removeKeys([this.key]);
-      await this.mockFromAccount.addKeysWithConfig(
-        [this.key],
-        [0n],
-        [0n],
-        [this.limit],
-        [this.renewPeriod],
-      );
+      await this.mockFromAccount.addKeysWithConfig([this.key], [0n], [0n], [this.limit], [this.renewPeriod]);
       await expect(this.mock.isKey(this.mockAccount.address, this.key)).to.eventually.be.true;
       await expect(this.mock.limit(this.mockAccount.address, this.key)).to.eventually.equal(this.limit);
     });
@@ -472,7 +459,9 @@ describe('ERC7579NativeSpender', function () {
       const before = await this.mock.validity(this.mockAccount.address, this.key);
       const historicalStart = before[0];
 
-      await this.mock.connect(this.sessionKey).transferFrom(this.mockAccount.address, this.key, this.recipient1.address, amount);
+      await this.mock
+        .connect(this.sessionKey)
+        .transferFrom(this.mockAccount.address, this.key, this.recipient1.address, amount);
       await expect(
         this.mock['spent(address,bytes,uint256,uint256)'](this.mockAccount.address, this.key, 0, historicalStart),
       ).to.eventually.equal(amount);
@@ -496,7 +485,9 @@ describe('ERC7579NativeSpender', function () {
     it('transfers when called by the EOA holder of the key', async function () {
       const amount = ethers.parseEther('3');
       await expect(
-        this.mock.connect(this.sessionKey).transferFrom(this.mockAccount.address, this.key, this.recipient1.address, amount),
+        this.mock
+          .connect(this.sessionKey)
+          .transferFrom(this.mockAccount.address, this.key, this.recipient1.address, amount),
       ).to.changeEtherBalances([this.mockAccount, this.recipient1], [-amount, amount]);
       await expect(this.mock.spent(this.mockAccount.address, this.key, 0)).to.eventually.equal(amount);
     });
@@ -522,15 +513,21 @@ describe('ERC7579NativeSpender', function () {
     it('reverts when amount exceeds available limit', async function () {
       const amount = this.limit + 1n;
       await expect(
-        this.mock.connect(this.sessionKey).transferFrom(this.mockAccount.address, this.key, this.recipient1.address, amount),
+        this.mock
+          .connect(this.sessionKey)
+          .transferFrom(this.mockAccount.address, this.key, this.recipient1.address, amount),
       ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeInsufficientAvailable');
     });
 
     it('renews the limit on the next period', async function () {
-      await this.mock.connect(this.sessionKey).transferFrom(this.mockAccount.address, this.key, this.recipient1.address, this.limit);
+      await this.mock
+        .connect(this.sessionKey)
+        .transferFrom(this.mockAccount.address, this.key, this.recipient1.address, this.limit);
       await time.increaseBy.timestamp(this.renewPeriod);
       await expect(
-        this.mock.connect(this.sessionKey).transferFrom(this.mockAccount.address, this.key, this.recipient1.address, this.limit),
+        this.mock
+          .connect(this.sessionKey)
+          .transferFrom(this.mockAccount.address, this.key, this.recipient1.address, this.limit),
       ).to.changeEtherBalances([this.mockAccount, this.recipient1], [-this.limit, this.limit]);
       await expect(this.mock.spent(this.mockAccount.address, this.key, 1)).to.eventually.equal(this.limit);
     });
@@ -567,10 +564,7 @@ describe('ERC7579NativeSpender', function () {
 
       await expect(
         this.mock.connect(this.sessionKey).batchTransferFrom(this.mockAccount.address, this.key, tos, amounts),
-      ).to.changeEtherBalances(
-        [this.mockAccount, this.recipient1, this.recipient2],
-        [-total, amounts[0], amounts[1]],
-      );
+      ).to.changeEtherBalances([this.mockAccount, this.recipient1, this.recipient2], [-total, amounts[0], amounts[1]]);
       await expect(this.mock.spent(this.mockAccount.address, this.key, 0)).to.eventually.equal(total);
     });
 
@@ -578,7 +572,12 @@ describe('ERC7579NativeSpender', function () {
       await expect(
         this.mock
           .connect(this.sessionKey)
-          .batchTransferFrom(this.mockAccount.address, this.key, [this.recipient1.address, this.recipient2.address], [1n]),
+          .batchTransferFrom(
+            this.mockAccount.address,
+            this.key,
+            [this.recipient1.address, this.recipient2.address],
+            [1n],
+          ),
       ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderMismatchedBatchLengths');
     });
 
