@@ -601,6 +601,7 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         );
         bytes memory returndata = returndatas[0];
         bool standardReturn;
+        // Accept empty returndata (non-standard ERC20 with no return value) or an explicit true.
         assembly ("memory-safe") {
             standardReturn := or(iszero(mload(returndata)), eq(mload(add(returndata, 0x20)), 1))
         }
@@ -656,6 +657,7 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         for (uint256 i = 0; i < returndatas.length; ++i) {
             bytes memory returndata = returndatas[i];
             bool standardReturn;
+            // Accept empty returndata (non-standard ERC20 with no return value) or an explicit true.
             assembly ("memory-safe") {
                 standardReturn := or(iszero(mload(returndata)), eq(mload(add(returndata, 0x20)), 1))
             }
