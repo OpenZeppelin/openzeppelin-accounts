@@ -6,10 +6,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ERC7579NativeSpender} from "../../../src/modules/executors/ERC7579NativeSpender.sol";
 import {ERC7579Utils, Mode} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
-import {
-    MODULE_TYPE_VALIDATOR,
-    MODULE_TYPE_EXECUTOR
-} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
+import {MODULE_TYPE_VALIDATOR, MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {OpenAccount} from "../../../src/OpenAccount.sol";
 
 contract OpenAccountMock is OpenAccount {
