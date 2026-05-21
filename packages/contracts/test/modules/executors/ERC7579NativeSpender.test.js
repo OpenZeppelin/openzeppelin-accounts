@@ -3,66 +3,128 @@ const { expect } = require('chai');
 const { loadFixture } = require('@nomicfoundation/hardhat-network-helpers');
 
 const { impersonate } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/account');
-const { ERC4337Helper } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
-const { MODULE_TYPE_EXECUTOR } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc7579');
+const { getDomain, PackedUserOperation } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/eip712');
+const {
+  ERC4337Helper,
+  SIG_VALIDATION_FAILURE,
+  packValidationData,
+} = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc4337');
+const {
+  MODULE_TYPE_VALIDATOR,
+  MODULE_TYPE_EXECUTOR,
+} = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc7579');
+const { ValidationRange } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/enums');
 const time = require('../../../../../lib/@openzeppelin-contracts/test/helpers/time');
 
 const { shouldBehaveLikeERC7579Module } = require('../ERC7579Module.behavior');
 
-async function fixture() {
-  const [other, spender1, spender2, recipient1, recipient2] = await ethers.getSigners();
+// ERC-7579 single-execution mode (CALLTYPE_SINGLE, EXECTYPE_DEFAULT, zero selector, zero payload)
+const SINGLE_MODE = ethers.ZeroHash;
+// CALLTYPE_BATCH = 0x01 in the first byte
+const BATCH_MODE = '0x01' + '00'.repeat(31);
 
-  // Deploy ERC-7579 native spender module
+// Encode first-install (validator role) data: (bytes[] keys, uint48[] starts, uint48[] ends)
+const encodeKeysInstall = (keys, starts, ends) =>
+  ethers.AbiCoder.defaultAbiCoder().encode(['bytes[]', 'uint48[]', 'uint48[]'], [keys, starts, ends]);
+
+// Encode second-install (executor role) data: (bytes[] keys, uint160[] limits, uint48[] renewPeriods)
+const encodeConfigInstall = (keys, limits, renewPeriods) =>
+  ethers.AbiCoder.defaultAbiCoder().encode(['bytes[]', 'uint160[]', 'uint48[]'], [keys, limits, renewPeriods]);
+
+// Encode an ERC-7913 session-key signature: abi.encode(bytes key, bytes keySignature)
+const encodeSessionKeySig = (key, keySignature) =>
+  ethers.AbiCoder.defaultAbiCoder().encode(['bytes', 'bytes'], [key, keySignature]);
+
+// Encode the executionCalldata for CALLTYPE_SINGLE: abi.encodePacked(target, value, data)
+const encodeSingle = (target, value, data) => ethers.solidityPacked(['address', 'uint256', 'bytes'], [target, value, data]);
+
+async function fixture() {
+  const [other, recipient1, recipient2] = await ethers.getSigners();
+
+  // Deploy the dual-role module
   const mock = await ethers.deployContract('$ERC7579NativeSpender');
 
   // ERC-4337 env
   const helper = new ERC4337Helper();
   await helper.wait();
+  const entrypointDomain = await getDomain(predeploy.entrypoint.v09);
 
   // ERC-7579 account
   const mockAccount = await helper.newAccount('$OpenAccount', ['OpenAccount', '1']);
+  await mockAccount.deploy();
   const mockFromAccount = await impersonate(mockAccount.address).then(asAccount => mock.connect(asAccount));
   const mockAccountFromEntrypoint = await impersonate(predeploy.entrypoint.v09.target).then(asEntrypoint =>
     mockAccount.connect(asEntrypoint),
   );
 
-  const moduleType = MODULE_TYPE_EXECUTOR;
+  // Session keys: 20-byte ECDSA addresses used as ERC-7913 keys (length == 20 path)
+  const sessionKey = ethers.Wallet.createRandom().connect(ethers.provider);
+  const key = ethers.solidityPacked(['address'], [sessionKey.address]);
 
-  await mockAccount.deploy();
+  const otherSessionKey = ethers.Wallet.createRandom().connect(ethers.provider);
+  const otherKey = ethers.solidityPacked(['address'], [otherSessionKey.address]);
 
-  // Fund the account with native tokens
-  const initialBalance = ethers.parseEther('100');
-  await other.sendTransaction({
-    to: mockAccount.address,
-    value: initialBalance,
-  });
+  // Fund the account, the session key (for direct EOA self-call gas), and other
+  await other.sendTransaction({ to: mockAccount.address, value: ethers.parseEther('100') });
+  await other.sendTransaction({ to: sessionKey.address, value: ethers.parseEther('1') });
+  await other.sendTransaction({ to: otherSessionKey.address, value: ethers.parseEther('1') });
 
-  // Default spending configuration
+  // Default spending configuration for `key`
   const limit = ethers.parseEther('10');
   const renewPeriod = time.duration.days(7);
-  const start = (await time.clock.timestamp()) + time.duration.weeks(1);
+  const start = 0n; // 0 -> resolved to current clock at install
+  const end = 0n; // 0 -> stored as type(uint48).max
 
-  const installData = ethers.AbiCoder.defaultAbiCoder().encode(
-    ['address[]', 'uint48[]', 'uint160[]', 'uint48[]'],
-    [[spender1.address], [start], [limit], [renewPeriod]],
-  );
+  const keysInstallData = encodeKeysInstall([key], [start], [end]);
+  const configInstallData = encodeConfigInstall([key], [limit], [renewPeriod]);
+
+  // Install module under both module types (validator first, then executor with config bundle)
+  const installBoth = async (keysData = keysInstallData, configData = configInstallData) => {
+    await mockAccountFromEntrypoint.installModule(MODULE_TYPE_VALIDATOR, mock.target, keysData);
+    await mockAccountFromEntrypoint.installModule(MODULE_TYPE_EXECUTOR, mock.target, configData);
+  };
+
+  // ERC-4337 nonce key that routes validation through the spender module (used as validator)
+  const validatorNonceKey = BigInt(mock.target) << 32n;
+
+  // Build a UserOp that calls `account.execute(SINGLE, encodeSingle(mock, 0, transferFromCall))`
+  const buildSpendUserOp = async ({ key: usedKey = key, signer = sessionKey, to = recipient1.address, amount, batch = false, tos, amounts } = {}) => {
+    const innerCall = batch
+      ? mock.interface.encodeFunctionData('batchTransferFrom', [mockAccount.address, usedKey, tos, amounts])
+      : mock.interface.encodeFunctionData('transferFrom', [mockAccount.address, usedKey, to, amount]);
+    const execCalldata = encodeSingle(mock.target, 0, innerCall);
+    const callData = mockAccount.interface.encodeFunctionData('execute', [SINGLE_MODE, execCalldata]);
+
+    const nonce = await predeploy.entrypoint.v09.getNonce(mockAccount.address, validatorNonceKey);
+    const userOp = await mockAccount.createUserOp({ callData, nonce });
+    const keySignature = await signer.signTypedData(entrypointDomain, { PackedUserOperation }, userOp.packed);
+    userOp.signature = encodeSessionKeySig(usedKey, keySignature);
+    return userOp;
+  };
 
   return {
-    moduleType,
+    moduleType: MODULE_TYPE_VALIDATOR, // For shouldBehaveLikeERC7579Module
     mock,
     mockAccount,
     mockFromAccount,
     mockAccountFromEntrypoint,
     other,
-    spender1,
-    spender2,
     recipient1,
     recipient2,
-    initialBalance,
+    sessionKey,
+    otherSessionKey,
+    key,
+    otherKey,
     limit,
     renewPeriod,
     start,
-    installData,
+    end,
+    keysInstallData,
+    configInstallData,
+    installData: keysInstallData, // alias used by shouldBehaveLikeERC7579Module
+    installBoth,
+    buildSpendUserOp,
+    entrypointDomain,
   };
 }
 
@@ -73,919 +135,653 @@ describe('ERC7579NativeSpender', function () {
 
   shouldBehaveLikeERC7579Module();
 
+  describe('isModuleType', function () {
+    it('returns true for both validator and executor', async function () {
+      await expect(this.mock.isModuleType(MODULE_TYPE_VALIDATOR)).to.eventually.be.true;
+      await expect(this.mock.isModuleType(MODULE_TYPE_EXECUTOR)).to.eventually.be.true;
+    });
+
+    it('returns false for other module types', async function () {
+      await expect(this.mock.isModuleType(0)).to.eventually.be.false;
+      await expect(this.mock.isModuleType(3)).to.eventually.be.false;
+      await expect(this.mock.isModuleType(99)).to.eventually.be.false;
+    });
+  });
+
+  describe('isValidSignatureWithSender', function () {
+    beforeEach(async function () {
+      await this.installBoth();
+    });
+
+    it('always returns 0xffffffff (ERC-1271 signing disabled)', async function () {
+      const message = 'hello';
+      const hash = ethers.hashMessage(message);
+      const keySignature = await this.sessionKey.signMessage(message);
+      const signature = encodeSessionKeySig(this.key, keySignature);
+      await expect(this.mock.isValidSignatureWithSender(this.other.address, hash, signature)).to.eventually.equal(
+        '0xffffffff',
+      );
+    });
+
+    it('returns 0xffffffff even for an empty signature', async function () {
+      await expect(this.mock.isValidSignatureWithSender(this.other.address, ethers.ZeroHash, '0x')).to.eventually.equal(
+        '0xffffffff',
+      );
+    });
+  });
+
   describe('installed', function () {
-    it('tracks installation status', async function () {
+    it('starts false', async function () {
       await expect(this.mock.installed(this.mockAccount.address)).to.eventually.be.false;
-      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
+    });
+
+    it('flips true after the first install registers a key', async function () {
+      await this.mockAccountFromEntrypoint.installModule(
+        MODULE_TYPE_VALIDATOR,
+        this.mock.target,
+        this.keysInstallData,
+      );
       await expect(this.mock.installed(this.mockAccount.address)).to.eventually.be.true;
-      await this.mockAccountFromEntrypoint.uninstallModule(this.moduleType, this.mock.target, '0x');
+    });
+
+    it('flips false again after uninstall', async function () {
+      await this.installBoth();
+      await this.mockAccountFromEntrypoint.uninstallModule(MODULE_TYPE_VALIDATOR, this.mock.target, '0x');
       await expect(this.mock.installed(this.mockAccount.address)).to.eventually.be.false;
     });
   });
 
-  describe('installation', function () {
-    it('installs with single spender configuration', async function () {
-      await expect(this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData))
-        .to.emit(this.mock, 'ERC7579NativeSpendingConfigSet')
-        .withArgs(this.mockAccount.address, this.spender1.address, this.start, this.limit, this.renewPeriod);
+  describe('onInstall', function () {
+    describe('first call (validator install)', function () {
+      it('registers keys via the parent and emits the key-set event', async function () {
+        await expect(
+          this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_VALIDATOR, this.mock.target, this.keysInstallData),
+        ).to.emit(this.mock, 'ERC7579SessionKeysERC7913KeySet');
 
-      await expect(this.mock.spendersCount(this.mockAccount.address)).to.eventually.equal(1n);
-      await expect(this.mock.start(this.mockAccount.address, this.spender1.address)).to.eventually.equal(this.start);
-      await expect(this.mock.limit(this.mockAccount.address, this.spender1.address)).to.eventually.equal(this.limit);
-      await expect(this.mock.renewPeriod(this.mockAccount.address, this.spender1.address)).to.eventually.equal(
-        this.renewPeriod,
-      );
+        await expect(this.mock.isKey(this.mockAccount.address, this.key)).to.eventually.be.true;
+        // Limit/renewPeriod remain 0 until the executor install configures them
+        await expect(this.mock.limit(this.mockAccount.address, this.key)).to.eventually.equal(0n);
+        await expect(this.mock.renewPeriod(this.mockAccount.address, this.key)).to.eventually.equal(0n);
+      });
+
+      it('reverts when the first install registers zero keys', async function () {
+        const emptyKeys = encodeKeysInstall([], [], []);
+        await expect(this.mockFromAccount.onInstall(emptyKeys)).to.be.revertedWithCustomError(
+          this.mock,
+          'ERC7579NativeSpenderEmptyKeys',
+        );
+      });
+
+      it('reverts with ERC7579NativeSpenderInvalidStart when a start is in the past', async function () {
+        const bad = encodeKeysInstall([this.key], [1n], [0n]);
+        await expect(this.mockFromAccount.onInstall(bad))
+          .to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderInvalidStart')
+          .withArgs(1n);
+      });
+
+      it('bubbles ERC7579SessionKeysMismatchedInitDataLengths for inconsistent first-install arrays', async function () {
+        const bad = encodeKeysInstall([this.key, this.otherKey], [0n], [0n, 0n]);
+        await expect(this.mockFromAccount.onInstall(bad)).to.be.revertedWithCustomError(
+          this.mock,
+          'ERC7579SessionKeysMismatchedInitDataLengths',
+        );
+      });
     });
 
-    it('installs with multiple spender configurations', async function () {
-      const multiSpenderInstallData = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['address[]', 'uint48[]', 'uint160[]', 'uint48[]'],
-        [
-          [this.spender1.address, this.spender2.address],
-          [0n, this.start],
-          [this.limit, ethers.parseEther('5')],
-          [this.renewPeriod, time.duration.days(30)],
-        ],
-      );
+    describe('second call (executor install)', function () {
+      beforeEach(async function () {
+        await this.mockAccountFromEntrypoint.installModule(
+          MODULE_TYPE_VALIDATOR,
+          this.mock.target,
+          this.keysInstallData,
+        );
+      });
 
-      const receipt = await this.mockAccountFromEntrypoint.installModule(
-        this.moduleType,
-        this.mock.target,
-        multiSpenderInstallData,
-      );
-      const currentTime = await time.clockFromReceipt.timestamp(receipt);
-      expect(receipt)
-        .to.emit(this.mock, 'ERC7579NativeSpendingConfigSet')
-        .withArgs(this.mockAccount.address, this.spender1.address, currentTime, this.limit, this.renewPeriod)
-        .to.emit(this.mock, 'ERC7579NativeSpendingConfigSet')
-        .withArgs(
-          this.mockAccount.address,
-          this.spender2.address,
-          this.start,
-          ethers.parseEther('5'),
-          time.duration.days(30),
+      it('writes the spending config for each registered key', async function () {
+        await expect(
+          this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_EXECUTOR, this.mock.target, this.configInstallData),
+        )
+          .to.emit(this.mock, 'ERC7579NativeSpendingConfigSet')
+          .withArgs(this.mockAccount.address, this.key, this.limit, this.renewPeriod);
+
+        await expect(this.mock.limit(this.mockAccount.address, this.key)).to.eventually.equal(this.limit);
+        await expect(this.mock.renewPeriod(this.mockAccount.address, this.key)).to.eventually.equal(this.renewPeriod);
+      });
+
+      it('reverts on mismatched array lengths', async function () {
+        const bad = encodeConfigInstall([this.key], [this.limit], [this.renewPeriod, this.renewPeriod]);
+        await expect(
+          this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_EXECUTOR, this.mock.target, bad),
+        ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderMismatchedInitDataLengths');
+      });
+
+      it('reverts when a configured key was not registered by the first install', async function () {
+        const bad = encodeConfigInstall([this.otherKey], [this.limit], [this.renewPeriod]);
+        await expect(this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_EXECUTOR, this.mock.target, bad))
+          .to.be.revertedWithCustomError(this.mock, 'ERC7579SessionKeysNonexistentKey')
+          .withArgs(this.otherKey);
+      });
+
+      it('reverts on zero limit', async function () {
+        const bad = encodeConfigInstall([this.key], [0n], [this.renewPeriod]);
+        await expect(
+          this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_EXECUTOR, this.mock.target, bad),
+        ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderInvalidLimit');
+      });
+
+      it('reverts on zero renewPeriod', async function () {
+        const bad = encodeConfigInstall([this.key], [this.limit], [0n]);
+        await expect(
+          this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_EXECUTOR, this.mock.target, bad),
+        ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderInvalidRenewPeriod');
+      });
+
+      it('reverts on a too-short config bundle', async function () {
+        const shortData = '0x' + '00'.repeat(0xbf); // 191 bytes
+        await expect(
+          this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_EXECUTOR, this.mock.target, shortData),
+        ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderInvalidInitData');
+      });
+
+      it('reverts when the config bundle has zero keys', async function () {
+        const empty = encodeConfigInstall([], [], []);
+        await expect(
+          this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_EXECUTOR, this.mock.target, empty),
+        ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderEmptyKeys');
+      });
+
+      it('leaves keys not mentioned in the config bundle with zero limits', async function () {
+        // Register two keys in the first install (re-do beforeEach with extra key)
+        await this.mockAccountFromEntrypoint.uninstallModule(MODULE_TYPE_VALIDATOR, this.mock.target, '0x');
+        await this.mockAccountFromEntrypoint.installModule(
+          MODULE_TYPE_VALIDATOR,
+          this.mock.target,
+          encodeKeysInstall([this.key, this.otherKey], [0n, 0n], [0n, 0n]),
         );
 
-      await expect(this.mock.spendersCount(this.mockAccount.address)).to.eventually.equal(2n);
+        // Configure only `key`, leave `otherKey` with default zero limit
+        await this.mockAccountFromEntrypoint.installModule(
+          MODULE_TYPE_EXECUTOR,
+          this.mock.target,
+          encodeConfigInstall([this.key], [this.limit], [this.renewPeriod]),
+        );
+
+        await expect(this.mock.limit(this.mockAccount.address, this.key)).to.eventually.equal(this.limit);
+        await expect(this.mock.limit(this.mockAccount.address, this.otherKey)).to.eventually.equal(0n);
+      });
     });
 
-    it('reverts if arrays have mismatched lengths', async function () {
-      const invalidInstallData = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['address[]', 'uint48[]', 'uint160[]', 'uint48[]'],
-        [
-          [this.spender1.address, this.spender2.address], // 2 spenders
-          [this.start], // 1 start
-          [this.limit], // 1 limit
-          [this.renewPeriod], // 1 renewPeriod
-        ],
-      );
+    describe('third call (reconfiguration ban)', function () {
+      it('reverts with AlreadyInstalled when onInstall is invoked after the executor install', async function () {
+        await this.installBoth();
+        await expect(
+          this.mockFromAccount.onInstall(
+            encodeConfigInstall([this.key], [ethers.parseEther('25')], [time.duration.days(3)]),
+          ),
+        ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderAlreadyInstalled');
+      });
 
+      it('reverts even when targeting a different (unconfigured) key', async function () {
+        // Register two keys, configure only the first. A follow-up install targeting the second
+        // is still rejected: reconfiguration is banned wholesale at this nonce.
+        await this.mockAccountFromEntrypoint.installModule(
+          MODULE_TYPE_VALIDATOR,
+          this.mock.target,
+          encodeKeysInstall([this.key, this.otherKey], [0n, 0n], [0n, 0n]),
+        );
+        await this.mockAccountFromEntrypoint.installModule(
+          MODULE_TYPE_EXECUTOR,
+          this.mock.target,
+          encodeConfigInstall([this.key], [this.limit], [this.renewPeriod]),
+        );
+
+        await expect(
+          this.mockFromAccount.onInstall(encodeConfigInstall([this.otherKey], [this.limit], [this.renewPeriod])),
+        ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderAlreadyInstalled');
+      });
+    });
+  });
+
+  describe('onUninstall', function () {
+    beforeEach(async function () {
+      await this.installBoth();
+    });
+
+    it('increments the installation nonce', async function () {
+      const before = await this.mock.installation(this.mockAccount.address);
+      await this.mockAccountFromEntrypoint.uninstallModule(MODULE_TYPE_VALIDATOR, this.mock.target, '0x');
+      await expect(this.mock.installation(this.mockAccount.address)).to.eventually.equal(before + 1n);
+    });
+
+    it('makes old config unreachable from accessors', async function () {
+      await this.mockAccountFromEntrypoint.uninstallModule(MODULE_TYPE_VALIDATOR, this.mock.target, '0x');
+      await expect(this.mock.limit(this.mockAccount.address, this.key)).to.eventually.equal(0n);
+      await expect(this.mock.renewPeriod(this.mockAccount.address, this.key)).to.eventually.equal(0n);
+      await expect(this.mock.isKey(this.mockAccount.address, this.key)).to.eventually.be.false;
+    });
+  });
+
+  describe('addKeysWithConfig', function () {
+    beforeEach(async function () {
+      // Fully installed with the default `key`; add more via the post-install helper
+      await this.installBoth();
+    });
+
+    it('adds new keys with policy in a single call', async function () {
       await expect(
-        this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, invalidInstallData),
+        this.mockFromAccount.addKeysWithConfig([this.otherKey], [0n], [0n], [this.limit], [this.renewPeriod]),
+      )
+        .to.emit(this.mock, 'ERC7579SessionKeysERC7913KeySet')
+        .and.to.emit(this.mock, 'ERC7579NativeSpendingConfigSet')
+        .withArgs(this.mockAccount.address, this.otherKey, this.limit, this.renewPeriod);
+
+      await expect(this.mock.isKey(this.mockAccount.address, this.otherKey)).to.eventually.be.true;
+      await expect(this.mock.limit(this.mockAccount.address, this.otherKey)).to.eventually.equal(this.limit);
+    });
+
+    it('reverts on mismatched array lengths (limits vs keys)', async function () {
+      await expect(
+        this.mockFromAccount.addKeysWithConfig([this.otherKey], [0n], [0n], [], [this.renewPeriod]),
       ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderMismatchedInitDataLengths');
     });
 
-    it('reverts if spenders array is empty', async function () {
-      const emptyInstallData = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['address[]', 'uint48[]', 'uint160[]', 'uint48[]'],
-        [[], [], [], []],
-      );
-
+    it('reverts on mismatched array lengths (starts vs keys)', async function () {
       await expect(
-        this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, emptyInstallData),
-      ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderEmptySpenders');
-    });
-
-    it('reverts if renewPeriod is zero', async function () {
-      const invalidRenewPeriodData = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['address[]', 'uint48[]', 'uint160[]', 'uint48[]'],
-        [[this.spender1.address], [this.start], [this.limit], [0]], // renewPeriod = 0
-      );
-
-      await expect(
-        this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, invalidRenewPeriodData),
-      ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderInvalidRenewPeriod');
-    });
-
-    it('reverts if start is in the past (different from current config)', async function () {
-      const beforeTx = await time.clock.timestamp();
-      const pastStartData = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['address[]', 'uint48[]', 'uint160[]', 'uint48[]'],
-        [[this.spender1.address], [beforeTx], [this.limit], [this.renewPeriod]],
-      );
-
-      await expect(
-        this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, pastStartData),
-      ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderInvalidStart');
-    });
-
-    it('reverts if already installed', async function () {
-      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
-      await expect(this.mockFromAccount.onInstall(this.installData)).to.be.revertedWithCustomError(
-        this.mock,
-        'ERC7579NativeSpenderAlreadyInstalled',
-      );
-    });
-
-    it('reverts if initData is invalid (too short)', async function () {
-      const invalidInitData = '0x1234'; // Too short
-
-      await expect(
-        this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, invalidInitData),
-      ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderInvalidInitData');
+        this.mockFromAccount.addKeysWithConfig([this.otherKey], [0n, 0n], [0n], [this.limit], [this.renewPeriod]),
+      ).to.be.revertedWithCustomError(this.mock, 'ERC7579SessionKeysMismatchedInitDataLengths');
     });
   });
 
-  describe('uninstallation', function () {
+  describe('_addKeys past-start ban', function () {
     beforeEach(async function () {
-      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
+      await this.installBoth();
     });
 
-    it('clears spending configurations', async function () {
-      const installationBefore = await this.mock.installation(this.mockAccount.address);
-
-      await expect(this.mockAccountFromEntrypoint.uninstallModule(this.moduleType, this.mock.target, '0x'))
-        .to.emit(this.mock, 'ERC7579NativeSpendingConfigCleared')
-        .withArgs(this.mockAccount.address);
-
-      const installationAfter = await this.mock.installation(this.mockAccount.address);
-      expect(installationAfter).to.equal(installationBefore + 1n);
-    });
-
-    it('allows reinstallation with fresh configuration', async function () {
-      await this.mockAccountFromEntrypoint.uninstallModule(this.moduleType, this.mock.target, '0x');
-
-      const newStart = (await time.clock.timestamp()) + 1n;
-      const newLimit = ethers.parseEther('20');
-      const newRenewPeriod = time.duration.days(14);
-      const newInstallData = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['address[]', 'uint48[]', 'uint160[]', 'uint48[]'],
-        [[this.spender2.address], [newStart], [newLimit], [newRenewPeriod]],
-      );
-
-      await expect(this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, newInstallData)).to
-        .not.be.reverted;
-
-      await expect(this.mock.spendersCount(this.mockAccount.address)).to.eventually.equal(1n);
-      await expect(this.mock.start(this.mockAccount.address, this.spender2.address)).to.eventually.equal(newStart);
-      await expect(this.mock.limit(this.mockAccount.address, this.spender2.address)).to.eventually.equal(newLimit);
-    });
-
-    it('old storage becomes inaccessible after nonce increment', async function () {
-      await time.increaseTo.timestamp(this.start);
-
-      // Create some spending history
-      const amount = ethers.parseEther('5');
-      await this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, amount);
-
-      // Verify data is accessible with installation nonce 0
-      await expect(this.mock.installation(this.mockAccount.address)).to.eventually.equal(0n);
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(amount);
-      await expect(this.mock.spendersCount(this.mockAccount.address)).to.eventually.equal(1n);
-      await expect(this.mock.start(this.mockAccount.address, this.spender1.address)).to.eventually.equal(this.start);
-
-      // Uninstall (advances nonce to 1)
-      await this.mockAccountFromEntrypoint.uninstallModule(this.moduleType, this.mock.target, '0x');
-      await expect(this.mock.installation(this.mockAccount.address)).to.eventually.equal(1n);
-
-      // Old data should return 0/default values (reads from installation nonce 1, not 0)
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(0n);
-      await expect(this.mock.spendersCount(this.mockAccount.address)).to.eventually.equal(0n);
-      await expect(this.mock.start(this.mockAccount.address, this.spender1.address)).to.eventually.equal(0n);
-      await expect(this.mock.limit(this.mockAccount.address, this.spender1.address)).to.eventually.equal(0n);
-      await expect(this.mock.renewPeriod(this.mockAccount.address, this.spender1.address)).to.eventually.equal(0n);
-    });
-
-    it('old storage remains inaccessible across multiple reinstalls', async function () {
-      await time.increaseTo.timestamp(this.start);
-
-      const firstAmount = ethers.parseEther('3');
-      await this.mock
-        .connect(this.spender1)
-        .transferFrom(this.mockAccount.address, this.recipient1.address, firstAmount);
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(
-        firstAmount,
-      );
-
-      // Uninstall (nonce becomes 1)
-      await this.mockAccountFromEntrypoint.uninstallModule(this.moduleType, this.mock.target, '0x');
-
-      // Second installation with different configuration
-      const secondStart = (await time.clock.timestamp()) + time.duration.days(1);
-      const secondInstallData = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['address[]', 'uint48[]', 'uint160[]', 'uint48[]'],
-        [[this.spender2.address], [secondStart], [ethers.parseEther('20')], [time.duration.days(14)]],
-      );
-      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, secondInstallData);
-      await time.increaseTo.timestamp(secondStart);
-
-      const secondAmount = ethers.parseEther('15');
-      await this.mock
-        .connect(this.spender2)
-        .transferFrom(this.mockAccount.address, this.recipient1.address, secondAmount);
-
-      // First installation data should still be inaccessible
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(0n);
-      await expect(this.mock.start(this.mockAccount.address, this.spender1.address)).to.eventually.equal(0n);
-
-      // Second installation data should be accessible
-      await expect(this.mock.spent(this.mockAccount.address, this.spender2.address, 0)).to.eventually.equal(
-        secondAmount,
-      );
-      await expect(this.mock.start(this.mockAccount.address, this.spender2.address)).to.eventually.equal(secondStart);
-
-      // Uninstall again (nonce becomes 2)
-      await this.mockAccountFromEntrypoint.uninstallModule(this.moduleType, this.mock.target, '0x');
-
-      // Third installation with original spender
-      const thirdStart = (await time.clock.timestamp()) + time.duration.days(1);
-      const thirdInstallData = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['address[]', 'uint48[]', 'uint160[]', 'uint48[]'],
-        [[this.spender1.address], [thirdStart], [ethers.parseEther('5')], [time.duration.days(3)]],
-      );
-      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, thirdInstallData);
-
-      // All previous spending data should be inaccessible
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(0n);
-      await expect(this.mock.spent(this.mockAccount.address, this.spender2.address, 0)).to.eventually.equal(0n);
-
-      // Only new configuration is accessible
-      await expect(this.mock.start(this.mockAccount.address, this.spender1.address)).to.eventually.equal(thirdStart);
-      await expect(this.mock.limit(this.mockAccount.address, this.spender1.address)).to.eventually.equal(
-        ethers.parseEther('5'),
-      );
-      await expect(this.mock.renewPeriod(this.mockAccount.address, this.spender1.address)).to.eventually.equal(
-        time.duration.days(3),
-      );
-    });
-
-    it('old spenders list becomes empty after uninstall', async function () {
-      // Module already installed with one spender by beforeEach, uninstall it first
-      await this.mockAccountFromEntrypoint.uninstallModule(this.moduleType, this.mock.target, '0x');
-
-      // Install with multiple spenders
-      const multiSpenderStart = (await time.clock.timestamp()) + time.duration.days(1);
-      const multiSpenderInstallData = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['address[]', 'uint48[]', 'uint160[]', 'uint48[]'],
-        [
-          [this.spender1.address, this.spender2.address, this.other.address],
-          [multiSpenderStart, multiSpenderStart, multiSpenderStart],
-          [this.limit, ethers.parseEther('5'), ethers.parseEther('15')],
-          [this.renewPeriod, this.renewPeriod, this.renewPeriod],
-        ],
-      );
-      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, multiSpenderInstallData);
-
-      // Verify 3 spenders are registered
-      await expect(this.mock.spendersCount(this.mockAccount.address)).to.eventually.equal(3n);
-      const spendersList = await this.mock.spenders(this.mockAccount.address, 0, ethers.MaxUint256);
-      expect(spendersList).to.have.lengthOf(3);
-
-      // Uninstall
-      await this.mockAccountFromEntrypoint.uninstallModule(this.moduleType, this.mock.target, '0x');
-
-      // Spenders count should be 0 (reading from new nonce)
-      await expect(this.mock.spendersCount(this.mockAccount.address)).to.eventually.equal(0n);
-      const emptySpendersList = await this.mock.spenders(this.mockAccount.address, 0, ethers.MaxUint256);
-      expect(emptySpendersList).to.have.lengthOf(0);
-
-      // Reinstall with different spenders
-      const newStart = (await time.clock.timestamp()) + time.duration.days(1);
-      const newInstallData = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['address[]', 'uint48[]', 'uint160[]', 'uint48[]'],
-        [[this.recipient1.address], [newStart], [this.limit], [this.renewPeriod]],
-      );
-      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, newInstallData);
-
-      // Only new spender should be in the list
-      await expect(this.mock.spendersCount(this.mockAccount.address)).to.eventually.equal(1n);
-      const newSpendersList = await this.mock.spenders(this.mockAccount.address, 0, ethers.MaxUint256);
-      expect(newSpendersList).to.have.lengthOf(1);
-      expect(newSpendersList[0]).to.equal(this.recipient1.address);
-    });
-
-    it('old spending data across multiple periods becomes inaccessible', async function () {
-      // Module already installed by beforeEach
-      await time.increaseTo.timestamp(this.start);
-
-      // Spend in period 0
-      const period0Amount = ethers.parseEther('7');
-      await this.mock
-        .connect(this.spender1)
-        .transferFrom(this.mockAccount.address, this.recipient1.address, period0Amount);
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(
-        period0Amount,
-      );
-
-      // Move to period 1 and spend
-      await time.increaseBy.timestamp(this.renewPeriod);
-      const period1Amount = ethers.parseEther('8');
-      await this.mock
-        .connect(this.spender1)
-        .transferFrom(this.mockAccount.address, this.recipient1.address, period1Amount);
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 1)).to.eventually.equal(
-        period1Amount,
-      );
-
-      // Move to period 2 and spend
-      await time.increaseBy.timestamp(this.renewPeriod);
-      const period2Amount = ethers.parseEther('6');
-      await this.mock
-        .connect(this.spender1)
-        .transferFrom(this.mockAccount.address, this.recipient1.address, period2Amount);
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 2)).to.eventually.equal(
-        period2Amount,
-      );
-
-      // Verify all periods have data
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(
-        period0Amount,
-      );
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 1)).to.eventually.equal(
-        period1Amount,
-      );
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 2)).to.eventually.equal(
-        period2Amount,
-      );
-
-      // Uninstall
-      await this.mockAccountFromEntrypoint.uninstallModule(this.moduleType, this.mock.target, '0x');
-
-      // All period data should be inaccessible (returns 0)
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(0n);
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 1)).to.eventually.equal(0n);
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 2)).to.eventually.equal(0n);
-
-      // Reinstall
-      const newStart = (await time.clock.timestamp()) + time.duration.days(1);
-      const reinstallData = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['address[]', 'uint48[]', 'uint160[]', 'uint48[]'],
-        [[this.spender1.address], [newStart], [this.limit], [this.renewPeriod]],
-      );
-      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, reinstallData);
-      await time.increaseTo.timestamp(newStart);
-
-      // Old period data should still be inaccessible
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(0n);
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 1)).to.eventually.equal(0n);
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 2)).to.eventually.equal(0n);
-
-      // New spending should start fresh
-      const newAmount = ethers.parseEther('4');
-      await this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, newAmount);
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(newAmount);
-    });
-  });
-
-  describe('spenders management', function () {
-    beforeEach(async function () {
-      const multiSpenderInstallData = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['address[]', 'uint48[]', 'uint160[]', 'uint48[]'],
-        [
-          [this.spender1.address, this.spender2.address],
-          [this.start, this.start],
-          [this.limit, ethers.parseEther('5')],
-          [this.renewPeriod, this.renewPeriod],
-        ],
-      );
-      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, multiSpenderInstallData);
-    });
-
-    it('returns correct spenders count', async function () {
-      await expect(this.mock.spendersCount(this.mockAccount.address)).to.eventually.equal(2n);
-    });
-
-    it('returns spenders slice', async function () {
-      const allSpenders = await this.mock.spenders(this.mockAccount.address, 0, ethers.MaxUint256);
-      expect(allSpenders).to.have.lengthOf(2);
-      expect(allSpenders).to.include(this.spender1.address);
-      expect(allSpenders).to.include(this.spender2.address);
-    });
-
-    it('returns partial spenders slice', async function () {
-      const partialSpenders = await this.mock.spenders(this.mockAccount.address, 0, 1);
-      expect(partialSpenders).to.have.lengthOf(1);
-    });
-  });
-
-  describe('spending configuration', function () {
-    beforeEach(async function () {
-      const multiSpenderInstallData = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['address[]', 'uint48[]', 'uint160[]', 'uint48[]'],
-        [
-          [this.spender1.address, this.spender2.address],
-          [this.start, this.start],
-          [this.limit, ethers.parseEther('5')],
-          [this.renewPeriod, this.renewPeriod],
-        ],
-      );
-      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, multiSpenderInstallData);
-    });
-
-    it('allows account to update spending configuration', async function () {
-      const newLimit = ethers.parseEther('15');
-      const newRenewPeriod = time.duration.days(14);
-
+    it('reverts addKeysWithConfig when start is in the past', async function () {
       await expect(
-        this.mockFromAccount.setSpendingConfig(
-          this.spender1.address,
-          this.start + time.duration.days(3),
-          newLimit,
-          ethers.Typed.uint48(newRenewPeriod),
-        ),
+        this.mockFromAccount.addKeysWithConfig([this.otherKey], [1n], [0n], [this.limit], [this.renewPeriod]),
       )
-        .to.emit(this.mock, 'ERC7579NativeSpendingConfigSet')
-        .withArgs(
-          this.mockAccount.address,
-          this.spender1.address,
-          this.start + time.duration.days(3),
-          newLimit,
-          newRenewPeriod,
-        );
+        .to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderInvalidStart')
+        .withArgs(1n);
+    });
 
-      await expect(this.mock.start(this.mockAccount.address, this.spender1.address)).to.eventually.equal(
-        this.start + time.duration.days(3),
+    it('reverts addKeys (parent public) when start is in the past', async function () {
+      await expect(this.mockFromAccount.addKeys([this.otherKey], [1n], [0n]))
+        .to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderInvalidStart')
+        .withArgs(1n);
+    });
+
+    it('allows start = 0 (resolves to clock())', async function () {
+      await this.mockFromAccount.addKeysWithConfig(
+        [this.otherKey],
+        [0n],
+        [0n],
+        [this.limit],
+        [this.renewPeriod],
       );
-      await expect(this.mock.limit(this.mockAccount.address, this.spender1.address)).to.eventually.equal(newLimit);
-      await expect(this.mock.renewPeriod(this.mockAccount.address, this.spender1.address)).to.eventually.equal(
-        newRenewPeriod,
+      const [from] = await this.mock.validity(this.mockAccount.address, this.otherKey);
+      expect(from).to.be.gt(0n);
+    });
+
+    it('allows start in the future', async function () {
+      const future = BigInt(await time.clock.timestamp()) + time.duration.days(1);
+      await this.mockFromAccount.addKeysWithConfig(
+        [this.otherKey],
+        [future],
+        [0n],
+        [this.limit],
+        [this.renewPeriod],
       );
+      const [from] = await this.mock.validity(this.mockAccount.address, this.otherKey);
+      expect(from).to.equal(future);
     });
 
-    it('allows setting a future start time', async function () {
-      const futureStart = (await time.clock.timestamp()) + time.duration.years(3);
-      await this.mockFromAccount.setSpendingConfig(
-        this.spender2.address,
-        futureStart,
-        this.limit,
-        ethers.Typed.uint48(this.renewPeriod),
+    it('allows re-adding a removed key with start = 0', async function () {
+      await this.mockFromAccount.removeKeys([this.key]);
+      await this.mockFromAccount.addKeysWithConfig(
+        [this.key],
+        [0n],
+        [0n],
+        [this.limit],
+        [this.renewPeriod],
       );
-
-      await expect(this.mock.start(this.mockAccount.address, this.spender2.address)).to.eventually.equal(futureStart);
-    });
-
-    it('allows setting 0 start time resolving to current time', async function () {
-      const receipt = await this.mockFromAccount.setSpendingConfig(
-        this.spender1.address,
-        0,
-        this.limit,
-        ethers.Typed.uint48(this.renewPeriod),
-      );
-      const currentTime = await time.clockFromReceipt.timestamp(receipt);
-      expect(receipt)
-        .to.emit(this.mock, 'ERC7579NativeSpendingConfigSet')
-        .withArgs(this.mockAccount.address, this.spender1.address, currentTime, this.limit, this.renewPeriod);
-      await expect(this.mock.start(this.mockAccount.address, this.spender1.address)).to.eventually.equal(currentTime);
-    });
-
-    it('reverts when trying to set limit to 0', async function () {
-      await time.increaseTo.timestamp(this.start);
-      await expect(
-        this.mockFromAccount.setSpendingConfig(this.spender1.address, 0, ethers.Typed.uint48(this.renewPeriod)),
-      ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderInvalidLimit');
-    });
-
-    it('removes spender configuration', async function () {
-      await expect(this.mock.spendersCount(this.mockAccount.address)).to.eventually.equal(2n);
-
-      await expect(this.mockFromAccount.unsetSpendingConfig(this.spender1.address))
-        .to.emit(this.mock, 'ERC7579NativeSpendingConfigUnset')
-        .withArgs(this.mockAccount.address, this.spender1.address);
-
-      await expect(this.mock.spendersCount(this.mockAccount.address)).to.eventually.equal(1n);
-      await expect(this.mock.limit(this.mockAccount.address, this.spender1.address)).to.eventually.equal(0n);
-      await expect(this.mock.start(this.mockAccount.address, this.spender1.address)).to.eventually.equal(0n);
-      await expect(this.mock.renewPeriod(this.mockAccount.address, this.spender1.address)).to.eventually.equal(0n);
-    });
-
-    it('reverts when trying to remove last spender', async function () {
-      // Remove first spender
-      await this.mockFromAccount.unsetSpendingConfig(this.spender1.address);
-      await expect(this.mock.spendersCount(this.mockAccount.address)).to.eventually.equal(1n);
-
-      // Try to remove last spender
-      await expect(this.mockFromAccount.unsetSpendingConfig(this.spender2.address)).to.be.revertedWithCustomError(
-        this.mock,
-        'ERC7579NativeSpenderEmptySpenders',
-      );
-    });
-
-    it('clears spent data', async function () {
-      await time.increaseTo.timestamp(this.start);
-
-      const amount = ethers.parseEther('3');
-      await this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, amount);
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(amount);
-
-      await this.mockFromAccount.unsetSpendingConfig(this.spender1.address);
-
-      await expect(this.mock.limit(this.mockAccount.address, this.spender1.address)).to.eventually.equal(0n);
-      await expect(this.mock.start(this.mockAccount.address, this.spender1.address)).to.eventually.equal(0n);
-      await expect(this.mock.renewPeriod(this.mockAccount.address, this.spender1.address)).to.eventually.equal(0n);
+      await expect(this.mock.isKey(this.mockAccount.address, this.key)).to.eventually.be.true;
+      await expect(this.mock.limit(this.mockAccount.address, this.key)).to.eventually.equal(this.limit);
     });
   });
 
-  describe('period calculations', function () {
+  describe('removeKeys', function () {
     beforeEach(async function () {
-      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
+      await this.installBoth();
     });
 
-    it('returns correct period at start time', async function () {
-      const [start, period] = await this.mock.periodAt(this.mockAccount.address, this.spender1.address, this.start);
-      expect(start).to.equal(this.start);
-      expect(period).to.equal(0n);
+    it('removes the key and clears its spending config', async function () {
+      await expect(this.mockFromAccount.removeKeys([this.key]))
+        .to.emit(this.mock, 'ERC7579SessionKeysERC7913KeyUnset')
+        .withArgs(this.mockAccount.address, this.key)
+        .and.to.emit(this.mock, 'ERC7579NativeSpendingConfigUnset')
+        .withArgs(this.mockAccount.address, this.key);
+
+      await expect(this.mock.isKey(this.mockAccount.address, this.key)).to.eventually.be.false;
+      await expect(this.mock.limit(this.mockAccount.address, this.key)).to.eventually.equal(0n);
+      await expect(this.mock.renewPeriod(this.mockAccount.address, this.key)).to.eventually.equal(0n);
     });
 
-    it('returns correct period after one renewal period', async function () {
-      const timepoint = this.start + this.renewPeriod;
-      const [start, period] = await this.mock.periodAt(this.mockAccount.address, this.spender1.address, timepoint);
-      expect(start).to.equal(this.start);
-      expect(period).to.equal(1n);
-    });
+    it('preserves spending history at the historical start timepoint', async function () {
+      const amount = ethers.parseEther('3');
+      const before = await this.mock.validity(this.mockAccount.address, this.key);
+      const historicalStart = before[0];
 
-    it('returns correct period after multiple renewal periods', async function () {
-      const timepoint = this.start + this.renewPeriod * 5n;
-      const [start, period] = await this.mock.periodAt(this.mockAccount.address, this.spender1.address, timepoint);
-      expect(start).to.equal(this.start);
-      expect(period).to.equal(5n);
-    });
-
-    it('reverts if timepoint is before start', async function () {
-      const timepoint = this.start - 100n;
+      await this.mock.connect(this.sessionKey).transferFrom(this.mockAccount.address, this.key, this.recipient1.address, amount);
       await expect(
-        this.mock.periodAt(this.mockAccount.address, this.spender1.address, timepoint),
-      ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpendingConfigNotStarted');
-    });
+        this.mock['spent(address,bytes,uint256,uint256)'](this.mockAccount.address, this.key, 0, historicalStart),
+      ).to.eventually.equal(amount);
 
-    it('reverts if spender config is not set', async function () {
+      await this.mockFromAccount.removeKeys([this.key]);
+
+      // After removal, validity returns (0, 0) so the convenience accessor reads from start=0 (returns 0)
+      await expect(this.mock.spent(this.mockAccount.address, this.key, 0)).to.eventually.equal(0n);
+      // Historical data is still readable through the explicit-start overload
       await expect(
-        this.mock.periodAt(this.mockAccount.address, this.spender2.address, await time.clock.timestamp()),
-      ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpendingConfigNotSet');
+        this.mock['spent(address,bytes,uint256,uint256)'](this.mockAccount.address, this.key, 0, historicalStart),
+      ).to.eventually.equal(amount);
     });
   });
 
-  describe('spending tracking', function () {
+  describe('transferFrom (EOA self-call)', function () {
     beforeEach(async function () {
-      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
-      await time.increaseTo.timestamp(this.start);
+      await this.installBoth();
     });
 
-    it('returns zero spent for first period', async function () {
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(0n);
-    });
-
-    it('returns correct spending info at current period', async function () {
-      const [spending, available] = await this.mock.spendingAt(this.mockAccount.address, this.spender1.address, 0);
-      expect(spending).to.equal(0n);
-      expect(available).to.equal(this.limit);
-    });
-
-    it('tracks spent amount after transfer', async function () {
-      const amount = ethers.parseEther('3');
-      await this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, amount);
-
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(amount);
-
-      const [spending, available] = await this.mock.spendingAt(this.mockAccount.address, this.spender1.address, 0);
-      expect(spending).to.equal(amount);
-      expect(available).to.equal(this.limit - amount);
-    });
-
-    it('resets spending in new period', async function () {
-      const amount = ethers.parseEther('3');
-      await this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, amount);
-
-      await time.increaseBy.timestamp(this.renewPeriod);
-
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 1)).to.eventually.equal(0n);
-
-      const [spending, available] = await this.mock.spendingAt(this.mockAccount.address, this.spender1.address, 1);
-      expect(spending).to.equal(0n);
-      expect(available).to.equal(this.limit);
-    });
-
-    it('maintains separate spending per spender', async function () {
-      await this.mockFromAccount.setSpendingConfig(
-        this.spender2.address,
-        this.start + time.duration.days(3),
-        ethers.parseEther('5'),
-        ethers.Typed.uint48(this.renewPeriod),
-      );
-
-      await time.increaseTo.timestamp(this.start + time.duration.days(3));
-
-      const amount1 = ethers.parseEther('3');
-      const amount2 = ethers.parseEther('4');
-
-      await this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, amount1);
-      await this.mock.connect(this.spender2).transferFrom(this.mockAccount.address, this.recipient1.address, amount2);
-
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(amount1);
-      await expect(this.mock.spent(this.mockAccount.address, this.spender2.address, 0)).to.eventually.equal(amount2);
-    });
-
-    it('tracks spending for different start times', async function () {
-      const amount1 = ethers.parseEther('3');
-      await this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, amount1);
-
-      // Verify with original start
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(amount1);
-      await expect(
-        this.mock['spent(address,address,uint256,uint256)'](
-          this.mockAccount.address,
-          this.spender1.address,
-          0,
-          this.start,
-        ),
-      ).to.eventually.equal(amount1);
-
-      // Change start time
-      const newStart = (await time.clock.timestamp()) + time.duration.days(1);
-      await this.mockFromAccount.setSpendingConfig(
-        this.spender1.address,
-        newStart,
-        this.limit,
-        ethers.Typed.uint48(this.renewPeriod),
-      );
-      await time.increaseTo.timestamp(newStart);
-
-      // Spend with new start
-      const amount2 = ethers.parseEther('4');
-      await this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, amount2);
-
-      // Old start should still have old spending
-      await expect(
-        this.mock['spent(address,address,uint256,uint256)'](
-          this.mockAccount.address,
-          this.spender1.address,
-          0,
-          this.start,
-        ),
-      ).to.eventually.equal(amount1);
-
-      // New start should have new spending
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(amount2);
-      await expect(
-        this.mock['spent(address,address,uint256,uint256)'](
-          this.mockAccount.address,
-          this.spender1.address,
-          0,
-          newStart,
-        ),
-      ).to.eventually.equal(amount2);
-    });
-  });
-
-  describe('transferFrom', function () {
-    beforeEach(async function () {
-      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
-      await time.increaseTo.timestamp(this.start);
-    });
-
-    it('transfers native tokens from account to recipient', async function () {
+    it('transfers when called by the EOA holder of the key', async function () {
       const amount = ethers.parseEther('3');
       await expect(
-        this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, amount),
+        this.mock.connect(this.sessionKey).transferFrom(this.mockAccount.address, this.key, this.recipient1.address, amount),
       ).to.changeEtherBalances([this.mockAccount, this.recipient1], [-amount, amount]);
+      await expect(this.mock.spent(this.mockAccount.address, this.key, 0)).to.eventually.equal(amount);
     });
 
-    it('updates spent amount after transfer', async function () {
-      const amount = ethers.parseEther('3');
+    it('reverts when called by an EOA that does not match the key', async function () {
       await expect(
-        this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, amount),
-      ).to.changeEtherBalances([this.mockAccount, this.recipient1], [-amount, amount]);
-
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(amount);
+        this.mock.connect(this.other).transferFrom(this.mockAccount.address, this.key, this.recipient1.address, 1n),
+      )
+        .to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderUnauthorized')
+        .withArgs(this.other.address, this.key);
     });
 
-    it('allows multiple transfers within limit', async function () {
-      const amount1 = ethers.parseEther('3');
-      const amount2 = ethers.parseEther('4');
-
-      await expect(
-        this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, amount1),
-      ).to.changeEtherBalances([this.mockAccount, this.recipient1], [-amount1, amount1]);
-      await expect(
-        this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, amount2),
-      ).to.changeEtherBalances([this.mockAccount, this.recipient1], [-amount2, amount2]);
-
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(
-        amount1 + amount2,
-      );
-    });
-
-    it('reverts if amount exceeds available limit', async function () {
-      const amount = this.limit + 1n;
-      await expect(
-        this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, amount),
-      ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeInsufficientAvailable');
-    });
-
-    it('reverts if cumulative amount exceeds limit', async function () {
-      const amount1 = ethers.parseEther('6');
-      const amount2 = ethers.parseEther('5'); // Total: 11 ETH > 10 ETH limit
-
-      await expect(
-        this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, amount1),
-      ).to.changeEtherBalances([this.mockAccount, this.recipient1], [-amount1, amount1]);
-      await expect(
-        this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, amount2),
-      ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeInsufficientAvailable');
-    });
-
-    it('allows spending up to exact limit', async function () {
-      await expect(
-        this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, this.limit),
-      ).to.changeEtherBalances([this.mockAccount, this.recipient1], [-this.limit, this.limit]);
-
-      const [spending, available] = await this.mock.spendingAt(this.mockAccount.address, this.spender1.address, 0);
-      expect(spending).to.equal(this.limit);
-      expect(available).to.equal(0n);
-    });
-
-    it('allows spending again after period renewal', async function () {
-      const amount = this.limit;
-      await expect(
-        this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, amount),
-      ).to.changeEtherBalances([this.mockAccount, this.recipient1], [-amount, amount]);
-
-      await time.increaseBy.timestamp(this.renewPeriod);
-
-      await expect(
-        this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, amount),
-      ).to.changeEtherBalances([this.mockAccount, this.recipient1], [-amount, amount]);
-
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 1)).to.eventually.equal(amount);
-    });
-
-    it('reverts if called before config start time', async function () {
-      const futureStart = this.start + time.duration.years(3);
-      await this.mockFromAccount.setSpendingConfig(
-        this.spender2.address,
-        futureStart,
-        this.limit,
-        ethers.Typed.uint48(this.renewPeriod),
-      );
-
-      await expect(
-        this.mock.connect(this.spender2).transferFrom(this.mockAccount.address, this.recipient1.address, 1),
-      ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpendingConfigNotStarted');
-    });
-
-    it('respects updated limits', async function () {
-      const newLimit = ethers.parseEther('5');
-      const futureStart = (await time.clock.timestamp()) + time.duration.days(1);
-      await this.mockFromAccount.setSpendingConfig(
-        this.spender1.address,
-        futureStart,
-        newLimit,
-        ethers.Typed.uint48(this.renewPeriod),
-      );
-      await time.increaseTo.timestamp(futureStart);
-
-      const amount = ethers.parseEther('6');
-      await expect(
-        this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, amount),
-      ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeInsufficientAvailable');
-
+    it('reverts when the key is unregistered (no validity range)', async function () {
       await expect(
         this.mock
-          .connect(this.spender1)
-          .transferFrom(this.mockAccount.address, this.recipient1.address, ethers.parseEther('4')),
-      ).to.not.be.reverted;
+          .connect(this.otherSessionKey)
+          .transferFrom(this.mockAccount.address, this.otherKey, this.recipient1.address, 1n),
+      )
+        .to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderUnauthorized')
+        .withArgs(this.otherSessionKey.address, this.otherKey);
+    });
+
+    it('reverts when amount exceeds available limit', async function () {
+      const amount = this.limit + 1n;
+      await expect(
+        this.mock.connect(this.sessionKey).transferFrom(this.mockAccount.address, this.key, this.recipient1.address, amount),
+      ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeInsufficientAvailable');
+    });
+
+    it('renews the limit on the next period', async function () {
+      await this.mock.connect(this.sessionKey).transferFrom(this.mockAccount.address, this.key, this.recipient1.address, this.limit);
+      await time.increaseBy.timestamp(this.renewPeriod);
+      await expect(
+        this.mock.connect(this.sessionKey).transferFrom(this.mockAccount.address, this.key, this.recipient1.address, this.limit),
+      ).to.changeEtherBalances([this.mockAccount, this.recipient1], [-this.limit, this.limit]);
+      await expect(this.mock.spent(this.mockAccount.address, this.key, 1)).to.eventually.equal(this.limit);
+    });
+
+    it('reverts when the key is not yet active (future start)', async function () {
+      const futureStart = BigInt(await time.clock.timestamp()) + time.duration.years(1);
+      // Re-register `otherKey` with a future from
+      await this.mockFromAccount.addKeysWithConfig(
+        [this.otherKey],
+        [futureStart],
+        [0n],
+        [this.limit],
+        [this.renewPeriod],
+      );
+      await expect(
+        this.mock
+          .connect(this.otherSessionKey)
+          .transferFrom(this.mockAccount.address, this.otherKey, this.recipient1.address, 1n),
+      )
+        .to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderUnauthorized')
+        .withArgs(this.otherSessionKey.address, this.otherKey);
     });
   });
 
-  describe('batchTransferFrom', function () {
+  describe('batchTransferFrom (EOA self-call)', function () {
     beforeEach(async function () {
-      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
-      await time.increaseTo.timestamp(this.start);
+      await this.installBoth();
     });
 
     it('transfers to multiple recipients', async function () {
       const tos = [this.recipient1.address, this.recipient2.address];
       const amounts = [ethers.parseEther('3'), ethers.parseEther('4')];
-      const totalAmount = amounts.reduce((a, b) => a + b, 0n);
+      const total = amounts.reduce((a, b) => a + b, 0n);
 
       await expect(
-        this.mock.connect(this.spender1).batchTransferFrom(this.mockAccount.address, tos, amounts),
+        this.mock.connect(this.sessionKey).batchTransferFrom(this.mockAccount.address, this.key, tos, amounts),
       ).to.changeEtherBalances(
         [this.mockAccount, this.recipient1, this.recipient2],
-        [-totalAmount, amounts[0], amounts[1]],
+        [-total, amounts[0], amounts[1]],
       );
+      await expect(this.mock.spent(this.mockAccount.address, this.key, 0)).to.eventually.equal(total);
     });
 
-    it('updates spent amount for total of batch transfers', async function () {
-      const tos = [this.recipient1.address, this.recipient2.address];
-      const amounts = [ethers.parseEther('3'), ethers.parseEther('4')];
-      const totalAmount = amounts.reduce((a, b) => a + b, 0n);
-
+    it('reverts on mismatched array lengths', async function () {
       await expect(
-        this.mock.connect(this.spender1).batchTransferFrom(this.mockAccount.address, tos, amounts),
-      ).to.changeEtherBalances(
-        [this.mockAccount, this.recipient1, this.recipient2],
-        [-totalAmount, amounts[0], amounts[1]],
-      );
-
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(
-        totalAmount,
-      );
-    });
-
-    it('reverts if arrays have mismatched lengths', async function () {
-      const tos = [this.recipient1.address, this.recipient2.address];
-      const amounts = [ethers.parseEther('3')]; // Only 1 amount for 2 recipients
-
-      await expect(
-        this.mock.connect(this.spender1).batchTransferFrom(this.mockAccount.address, tos, amounts),
+        this.mock
+          .connect(this.sessionKey)
+          .batchTransferFrom(this.mockAccount.address, this.key, [this.recipient1.address, this.recipient2.address], [1n]),
       ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderMismatchedBatchLengths');
     });
 
-    it('reverts if total amount exceeds available limit', async function () {
+    it('reverts when the total exceeds available', async function () {
       const tos = [this.recipient1.address, this.recipient2.address];
-      const amounts = [ethers.parseEther('6'), ethers.parseEther('5')]; // Total: 11 ETH > 10 ETH limit
-
+      const amounts = [this.limit, 1n];
       await expect(
-        this.mock.connect(this.spender1).batchTransferFrom(this.mockAccount.address, tos, amounts),
+        this.mock.connect(this.sessionKey).batchTransferFrom(this.mockAccount.address, this.key, tos, amounts),
       ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeInsufficientAvailable');
-    });
-
-    it('allows batch transfer up to exact limit', async function () {
-      const tos = [this.recipient1.address, this.recipient2.address];
-      const amounts = [ethers.parseEther('6'), ethers.parseEther('4')]; // Total: 10 ETH = limit
-
-      await expect(
-        this.mock.connect(this.spender1).batchTransferFrom(this.mockAccount.address, tos, amounts),
-      ).to.changeEtherBalances(
-        [this.mockAccount, this.recipient1, this.recipient2],
-        [-this.limit, amounts[0], amounts[1]],
-      );
-
-      const [spending, available] = await this.mock.spendingAt(this.mockAccount.address, this.spender1.address, 0);
-      expect(spending).to.equal(this.limit);
-      expect(available).to.equal(0n);
-    });
-
-    it('handles empty arrays', async function () {
-      await expect(
-        this.mock.connect(this.spender1).batchTransferFrom(this.mockAccount.address, [], []),
-      ).to.changeEtherBalances([this.mockAccount], [0n]);
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(0n);
-    });
-
-    it('allows batch transfer after period renewal', async function () {
-      const tos = [this.recipient1.address];
-      const amounts = [this.limit];
-      await this.mock.connect(this.spender1).batchTransferFrom(this.mockAccount.address, tos, amounts);
-
-      await time.increaseBy.timestamp(this.renewPeriod);
-
-      await expect(
-        this.mock.connect(this.spender1).batchTransferFrom(this.mockAccount.address, tos, amounts),
-      ).to.changeEtherBalances([this.mockAccount, this.recipient1], [-this.limit, this.limit]);
-
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 1)).to.eventually.equal(this.limit);
     });
   });
 
-  describe('installation nonce', function () {
-    it('returns installation nonce for account', async function () {
-      await expect(this.mock.installation(this.mockAccount.address)).to.eventually.equal(0n);
+  describe('UserOp flow (validator + executor)', function () {
+    beforeEach(async function () {
+      await this.installBoth();
     });
 
-    it('increments installation nonce on uninstall', async function () {
-      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
-
-      await expect(this.mock.installation(this.mockAccount.address)).to.eventually.equal(0n);
-
-      await this.mockAccountFromEntrypoint.uninstallModule(this.moduleType, this.mock.target, '0x');
-
-      await expect(this.mock.installation(this.mockAccount.address)).to.eventually.equal(1n);
-    });
-
-    it('invalidates old spending data after uninstall/reinstall', async function () {
-      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, this.installData);
-      await time.increaseTo.timestamp(this.start);
-
+    it('processes a transferFrom UserOp end-to-end', async function () {
       const amount = ethers.parseEther('3');
-      await this.mock.connect(this.spender1).transferFrom(this.mockAccount.address, this.recipient1.address, amount);
+      const userOp = await this.buildSpendUserOp({ amount });
+      const before = await ethers.provider.getBalance(this.recipient1.address);
 
-      // Verify spending was tracked
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(amount);
+      await predeploy.entrypoint.v09.handleOps([userOp.packed], this.other.address);
 
-      // Uninstall
-      await this.mockAccountFromEntrypoint.uninstallModule(this.moduleType, this.mock.target, '0x');
+      const after = await ethers.provider.getBalance(this.recipient1.address);
+      expect(after - before).to.equal(amount);
+      await expect(this.mock.spent(this.mockAccount.address, this.key, 0)).to.eventually.equal(amount);
+    });
 
-      // Reinstall with same spender
-      const newStart = (await time.clock.timestamp()) + 1n;
-      const reinstallData = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['address[]', 'uint48[]', 'uint160[]', 'uint48[]'],
-        [[this.spender1.address], [newStart], [this.limit], [this.renewPeriod]],
+    it('processes a batchTransferFrom UserOp end-to-end', async function () {
+      const tos = [this.recipient1.address, this.recipient2.address];
+      const amounts = [ethers.parseEther('2'), ethers.parseEther('3')];
+      const total = amounts.reduce((a, b) => a + b, 0n);
+      const userOp = await this.buildSpendUserOp({ batch: true, tos, amounts });
+
+      const beforeBalances = await Promise.all(tos.map(a => ethers.provider.getBalance(a)));
+      await predeploy.entrypoint.v09.handleOps([userOp.packed], this.other.address);
+      const afterBalances = await Promise.all(tos.map(a => ethers.provider.getBalance(a)));
+
+      for (let i = 0; i < tos.length; i++) {
+        expect(afterBalances[i] - beforeBalances[i]).to.equal(amounts[i]);
+      }
+      await expect(this.mock.spent(this.mockAccount.address, this.key, 0)).to.eventually.equal(total);
+    });
+  });
+
+  describe('_validateUserOp (callData gate)', function () {
+    beforeEach(async function () {
+      await this.installBoth();
+    });
+
+    it('packs success with validity range for a valid UserOp', async function () {
+      const userOp = await this.buildSpendUserOp({ amount: 1n });
+      const [from, until] = await this.mock.validity(this.mockAccount.address, this.key);
+      const expectedReturn = ethers.toBigInt(packValidationData(from, until, true, ValidationRange.Timestamp));
+
+      await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+        .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+        .withArgs(expectedReturn);
+    });
+
+    it('returns SIG_VALIDATION_FAILURE when callData is empty', async function () {
+      const userOp = await this.mockAccount.createUserOp({ callData: '0x' });
+      const keySignature = await this.sessionKey.signTypedData(
+        this.entrypointDomain,
+        { PackedUserOperation },
+        userOp.packed,
       );
-      await this.mockAccountFromEntrypoint.installModule(this.moduleType, this.mock.target, reinstallData);
+      userOp.signature = encodeSessionKeySig(this.key, keySignature);
 
-      // Old spending should not be accessible (new installation nonce)
-      await expect(this.mock.spent(this.mockAccount.address, this.spender1.address, 0)).to.eventually.equal(0n);
+      await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+        .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+        .withArgs(SIG_VALIDATION_FAILURE);
+    });
+
+    it('returns SIG_VALIDATION_FAILURE when callData is not execute()', async function () {
+      const userOp = await this.mockAccount.createUserOp({ callData: '0xdeadbeef' + '00'.repeat(96) });
+      const keySignature = await this.sessionKey.signTypedData(
+        this.entrypointDomain,
+        { PackedUserOperation },
+        userOp.packed,
+      );
+      userOp.signature = encodeSessionKeySig(this.key, keySignature);
+
+      await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+        .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+        .withArgs(SIG_VALIDATION_FAILURE);
+    });
+
+    it('returns SIG_VALIDATION_FAILURE for CALLTYPE_BATCH outer mode', async function () {
+      const innerCall = this.mock.interface.encodeFunctionData('transferFrom', [
+        this.mockAccount.address,
+        this.key,
+        this.recipient1.address,
+        1n,
+      ]);
+      const execCalldata = encodeSingle(this.mock.target, 0, innerCall);
+      const callData = this.mockAccount.interface.encodeFunctionData('execute', [BATCH_MODE, execCalldata]);
+      const userOp = await this.mockAccount.createUserOp({ callData });
+      const keySignature = await this.sessionKey.signTypedData(
+        this.entrypointDomain,
+        { PackedUserOperation },
+        userOp.packed,
+      );
+      userOp.signature = encodeSessionKeySig(this.key, keySignature);
+
+      await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+        .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+        .withArgs(SIG_VALIDATION_FAILURE);
+    });
+
+    it('returns SIG_VALIDATION_FAILURE when target is not the module', async function () {
+      const innerCall = this.mock.interface.encodeFunctionData('transferFrom', [
+        this.mockAccount.address,
+        this.key,
+        this.recipient1.address,
+        1n,
+      ]);
+      const execCalldata = encodeSingle(this.other.address, 0, innerCall); // wrong target
+      const callData = this.mockAccount.interface.encodeFunctionData('execute', [SINGLE_MODE, execCalldata]);
+      const userOp = await this.mockAccount.createUserOp({ callData });
+      const keySignature = await this.sessionKey.signTypedData(
+        this.entrypointDomain,
+        { PackedUserOperation },
+        userOp.packed,
+      );
+      userOp.signature = encodeSessionKeySig(this.key, keySignature);
+
+      await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+        .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+        .withArgs(SIG_VALIDATION_FAILURE);
+    });
+
+    it('returns SIG_VALIDATION_FAILURE when value is non-zero', async function () {
+      const innerCall = this.mock.interface.encodeFunctionData('transferFrom', [
+        this.mockAccount.address,
+        this.key,
+        this.recipient1.address,
+        1n,
+      ]);
+      const execCalldata = encodeSingle(this.mock.target, 1, innerCall);
+      const callData = this.mockAccount.interface.encodeFunctionData('execute', [SINGLE_MODE, execCalldata]);
+      const userOp = await this.mockAccount.createUserOp({ callData });
+      const keySignature = await this.sessionKey.signTypedData(
+        this.entrypointDomain,
+        { PackedUserOperation },
+        userOp.packed,
+      );
+      userOp.signature = encodeSessionKeySig(this.key, keySignature);
+
+      await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+        .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+        .withArgs(SIG_VALIDATION_FAILURE);
+    });
+
+    it('returns SIG_VALIDATION_FAILURE when inner selector is unknown', async function () {
+      // Any non-transferFrom / non-batchTransferFrom selector on the module triggers the gate.
+      const innerCall = this.mock.interface.encodeFunctionData('addKeysWithConfig', [
+        [this.otherKey],
+        [0n],
+        [0n],
+        [this.limit],
+        [this.renewPeriod],
+      ]);
+      const execCalldata = encodeSingle(this.mock.target, 0, innerCall);
+      const callData = this.mockAccount.interface.encodeFunctionData('execute', [SINGLE_MODE, execCalldata]);
+      const userOp = await this.mockAccount.createUserOp({ callData });
+      const keySignature = await this.sessionKey.signTypedData(
+        this.entrypointDomain,
+        { PackedUserOperation },
+        userOp.packed,
+      );
+      userOp.signature = encodeSessionKeySig(this.key, keySignature);
+
+      await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+        .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+        .withArgs(SIG_VALIDATION_FAILURE);
+    });
+
+    it('returns SIG_VALIDATION_FAILURE when the callData key does not match the signature key', async function () {
+      // Register a second key
+      await this.mockFromAccount.addKeysWithConfig([this.otherKey], [0n], [0n], [this.limit], [this.renewPeriod]);
+
+      // Sign with `key` but put `otherKey` in the callData
+      const innerCall = this.mock.interface.encodeFunctionData('transferFrom', [
+        this.mockAccount.address,
+        this.otherKey,
+        this.recipient1.address,
+        1n,
+      ]);
+      const execCalldata = encodeSingle(this.mock.target, 0, innerCall);
+      const callData = this.mockAccount.interface.encodeFunctionData('execute', [SINGLE_MODE, execCalldata]);
+      const userOp = await this.mockAccount.createUserOp({ callData });
+      const keySignature = await this.sessionKey.signTypedData(
+        this.entrypointDomain,
+        { PackedUserOperation },
+        userOp.packed,
+      );
+      userOp.signature = encodeSessionKeySig(this.key, keySignature); // signed by `key`, but inner uses `otherKey`
+
+      await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+        .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+        .withArgs(SIG_VALIDATION_FAILURE);
     });
   });
 });
