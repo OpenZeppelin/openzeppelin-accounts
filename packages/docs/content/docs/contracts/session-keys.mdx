@@ -110,13 +110,19 @@ Some policies cannot be enforced at the ERC-4337 validation phase because the ph
 
 ```
 UserOp (signed by session key)
-    └─ callData → SpendLimitModule.executeWithLimit(target, value, data)
+    └─ callData → SpendLimitModule.transferFrom(account, key, ..., amount)
                          │
-                         └─ checks & updates remaining limit
+                         └─ checks & decrements per-key remaining limit
                          └─ account.executeFromExecutor(target, value, data)
 ```
 
-This is the recommended pattern for policies with mutable state (spending limits, rate limits, per-session counters).
+`ERC7579NativeSpender` and `ERC7579ERC20Spender` are the canonical implementations of this pattern. They:
+
+- Install under BOTH `MODULE_TYPE_VALIDATOR` and `MODULE_TYPE_EXECUTOR`, in that order.
+- Override `_validateUserOp` to require that `userOp.callData` is exactly `IERC7579Execution.execute(SINGLE, encodeSingle(address(this), 0, transferFromOrBatchTransferFrom(...)))`.
+- Disable ERC-1271 signing (`isValidSignatureWithSender` returns `0xffffffff`) so a spending session key cannot be repurposed to sign arbitrary off-chain digests.
+
+See [Spending Limits](/docs/contracts/executors/spending-limits) for the full install/use guide. This is the recommended pattern for any policy with mutable state (spending limits, rate limits, per-session counters).
 
 ## Installing Session Keys
 
