@@ -22,7 +22,6 @@ contract ERC7579NativeSpenderTest is Test {
     OpenAccount private _account;
 
     address private _eoa;
-    uint256 private _eoaKey;
     bytes private _key;
 
     address private _recipient;
@@ -32,7 +31,7 @@ contract ERC7579NativeSpenderTest is Test {
         _account = new OpenAccountMock();
 
         vm.deal(address(_account), MAX_ETH);
-        (_eoa, _eoaKey) = makeAddrAndKey("session-key-eoa");
+        (_eoa, ) = makeAddrAndKey("session-key-eoa");
         _key = abi.encodePacked(_eoa);
         _recipient = makeAddr("recipient");
     }

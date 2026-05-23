@@ -164,10 +164,6 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      * * Those from {_addKeys} for the key configuration requirements.
      */
     function addKeys(bytes[] calldata newKeys, uint48[] calldata starts, uint48[] calldata ends) public virtual {
-        require(
-            newKeys.length == starts.length && newKeys.length == ends.length,
-            ERC7579SessionKeysMismatchedInitDataLengths()
-        );
         _addKeys(msg.sender, installation(msg.sender), newKeys, starts, ends);
     }
 

@@ -163,14 +163,14 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         return _spent(account, installation_, keyId, period, from);
     }
 
-    /// @dev Same as {spent} but reads from an explicit `start_` timepoint (useful for inspecting history).
+    /// @dev Same as {spent} but reads from an explicit `start` timepoint (useful for inspecting history).
     function spent(
         address account,
         bytes calldata key,
         uint256 period,
-        uint256 start_
+        uint256 start
     ) public view virtual returns (uint256) {
-        return _spent(account, installation(account), _keyId(key), period, start_);
+        return _spent(account, installation(account), _keyId(key), period, start);
     }
 
     /// @dev Returns `(spending, available)` for `key` at `period` on `account`.
@@ -186,7 +186,7 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
     }
 
     /**
-     * @dev Returns `(start_, period)` for `key` on `account` at `timepoint`.
+     * @dev Returns `(start, period)` for `key` on `account` at `timepoint`.
      *
      * Requirements:
      *
@@ -197,7 +197,7 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         address account,
         bytes calldata key,
         uint48 timepoint
-    ) public view virtual returns (uint256 start_, uint256 period) {
+    ) public view virtual returns (uint256 start, uint256 period) {
         return _periodAt(account, installation(account), _keyId(key), timepoint);
     }
 
@@ -219,12 +219,12 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
      *
      * Second call requirements:
      *
-     * * The `keys` array must be non-empty. Reverts with {ERC7579NativeSpenderEmptyKeys} otherwise.
+     * * The account must not have configured the keys yet. Reverts with {ERC7579NativeSpenderAlreadyInstalled} otherwise.
      * * Those of {_decodeKeyConfigsInitData} for the decoding requirements.
      * * All arrays must have equal length. Reverts with {ERC7579NativeSpenderMismatchedInitDataLengths} if not.
+     * * The `keys` array must be non-empty. Reverts with {ERC7579NativeSpenderEmptyKeys} otherwise.
      * * Each key must be registered. Reverts with {ERC7579SessionKeysNonexistentKey} otherwise.
      * * Those from {_setConfig} for the spending config requirements.
-     * * The account must not have configured the keys yet. Reverts with {ERC7579NativeSpenderAlreadyInstalled} otherwise.
      *
      * Emits {ERC7579SessionKeysERC7913KeySet} on the first call and {ERC7579NativeSpendingConfigSet}
      * for each entry on the second call.
@@ -386,13 +386,13 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
     function _addKeys(
         address account,
         uint256 installation_,
-        bytes[] calldata keys_,
+        bytes[] calldata keys,
         uint48[] calldata starts,
         uint48[] calldata ends
     ) internal virtual override {
-        super._addKeys(account, installation_, keys_, starts, ends);
+        super._addKeys(account, installation_, keys, starts, ends);
         uint48 currentTimepoint = clock();
-        for (uint256 i = 0; i < keys_.length; ++i) {
+        for (uint256 i = 0; i < keys.length; ++i) {
             require(starts[i] == 0 || starts[i] >= currentTimepoint, ERC7579NativeSpenderInvalidStart(starts[i]));
         }
     }
@@ -438,26 +438,26 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         return _config[account][installation_][keyId].limit;
     }
 
-    /// @dev Internal version of {spent} with explicit `start_`.
+    /// @dev Internal version of {spent} with explicit `start`.
     function _spent(
         address account,
         uint256 installation_,
         bytes32 keyId,
         uint256 period,
-        uint256 start_
+        uint256 start
     ) internal view virtual returns (uint256) {
-        return _spentFor[account][installation_][keyId][start_][period];
+        return _spentFor[account][installation_][keyId][start][period];
     }
 
-    /// @dev Internal version of {spendingAt} with explicit `start_`.
+    /// @dev Internal version of {spendingAt} with explicit `start`.
     function _spendingAt(
         address account,
         uint256 installation_,
         bytes32 keyId,
         uint256 period,
-        uint256 start_
+        uint256 start
     ) internal view virtual returns (uint256 spending, uint256 available) {
-        spending = _spent(account, installation_, keyId, period, start_);
+        spending = _spent(account, installation_, keyId, period, start);
         (bool success, uint256 available_) = Math.trySub(_limit(account, installation_, keyId), spending);
         return (spending, Math.ternary(success, available_, 0));
     }
@@ -475,7 +475,7 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         uint256 installation_,
         bytes32 keyId,
         uint48 timepoint
-    ) internal view virtual returns (uint256 start_, uint256 period) {
+    ) internal view virtual returns (uint256 start, uint256 period) {
         (uint48 from, ) = _validity(account, installation_, keyId);
         (bool ok, uint256 elapsed) = Math.trySub(timepoint, from);
         require(ok, ERC7579NativeSpendingConfigNotStarted(account, keyId, timepoint, from));
@@ -511,10 +511,10 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         uint256 amount
     ) internal virtual {
         bytes32 kId = _keyId(key);
-        (uint256 start_, uint256 period) = _periodAt(account, installation_, kId, clock());
-        (, uint256 available) = _spendingAt(account, installation_, kId, period, start_);
+        (uint256 start, uint256 period) = _periodAt(account, installation_, kId, clock());
+        (, uint256 available) = _spendingAt(account, installation_, kId, period, start);
         require(amount <= available, ERC7579NativeInsufficientAvailable(account, key, amount));
-        _spentFor[account][installation_][kId][start_][period] += amount;
+        _spentFor[account][installation_][kId][start][period] += amount;
 
         _execute(
             account,
@@ -541,14 +541,14 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
     ) internal virtual {
         require(tos.length == amounts.length, ERC7579NativeSpenderMismatchedBatchLengths(tos.length, amounts.length));
         bytes32 keyId = _keyId(key);
-        (uint256 start_, uint256 period) = _periodAt(account, installation_, keyId, clock());
-        (, uint256 available) = _spendingAt(account, installation_, keyId, period, start_);
+        (uint256 start, uint256 period) = _periodAt(account, installation_, keyId, clock());
+        (, uint256 available) = _spendingAt(account, installation_, keyId, period, start);
         uint256 totalAmount = 0;
         for (uint256 i = 0; i < amounts.length; ++i) {
             totalAmount += amounts[i];
         }
         require(totalAmount <= available, ERC7579NativeInsufficientAvailable(account, key, totalAmount));
-        _spentFor[account][installation_][keyId][start_][period] += totalAmount;
+        _spentFor[account][installation_][keyId][start][period] += totalAmount;
 
         Execution[] memory executions = new Execution[](tos.length);
         for (uint256 i = 0; i < tos.length; ++i) {
@@ -612,21 +612,21 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
     function _addKeysWithConfig(
         address account,
         uint256 installation_,
-        bytes[] calldata keys_,
+        bytes[] calldata keys,
         uint48[] calldata starts,
         uint48[] calldata ends,
         uint160[] calldata limits,
         uint48[] calldata renewPeriods
     ) internal virtual {
         require(
-            keys_.length == limits.length && keys_.length == renewPeriods.length,
-            ERC7579NativeSpenderMismatchedInitDataLengths(keys_.length, limits.length, renewPeriods.length)
+            keys.length == limits.length && keys.length == renewPeriods.length,
+            ERC7579NativeSpenderMismatchedInitDataLengths(keys.length, limits.length, renewPeriods.length)
         );
         // Parent's _addKeys checks keys/starts/ends length match and emits the key-set event.
-        _addKeys(account, installation_, keys_, starts, ends);
-        for (uint256 i = 0; i < keys_.length; ++i) {
+        _addKeys(account, installation_, keys, starts, ends);
+        for (uint256 i = 0; i < keys.length; ++i) {
             // No need to check if the key is registered, they were just added in the parent's _addKeys.
-            _setConfig(account, installation_, keys_[i], limits[i], renewPeriods[i]);
+            _setConfig(account, installation_, keys[i], limits[i], renewPeriods[i]);
         }
     }
 
@@ -722,7 +722,7 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
      */
     function _decodeKeyConfigsInitData(
         bytes calldata initData
-    ) internal pure returns (bytes[] calldata keys_, uint160[] calldata limits, uint48[] calldata renewPeriods) {
+    ) internal pure returns (bytes[] calldata keys, uint160[] calldata limits, uint48[] calldata renewPeriods) {
         // Minimum length:
         // keys offset (32 bytes) + limits offset (32 bytes) + renewPeriods offset (32 bytes) +
         // keys length (32 bytes) + limits length (32 bytes) + renewPeriods length (32 bytes) = 192 bytes
@@ -735,17 +735,17 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         );
     }
 
-    function _decodeKeyConfigsInitDataKeys(bytes calldata initData) private pure returns (bytes[] calldata keys_) {
+    function _decodeKeyConfigsInitDataKeys(bytes calldata initData) private pure returns (bytes[] calldata keys) {
         uint256 keysOffset = uint256(bytes32(initData[0x00:0x20]));
         uint256 keysDataOffset = keysOffset + 0x20;
         require(keysDataOffset <= initData.length, ERC7579NativeSpenderInvalidInitData());
         uint256 keysLength = uint256(bytes32(initData[keysOffset:keysDataOffset]));
         require(keysDataOffset + keysLength * 0x20 <= initData.length, ERC7579NativeSpenderInvalidInitData());
         assembly ("memory-safe") {
-            keys_.offset := add(initData.offset, keysDataOffset)
-            keys_.length := keysLength
+            keys.offset := add(initData.offset, keysDataOffset)
+            keys.length := keysLength
         }
-        return keys_;
+        return keys;
     }
 
     function _decodeKeyConfigsInitDataLimits(bytes calldata initData) private pure returns (uint160[] calldata limits) {

@@ -204,15 +204,15 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         return _spent(account, installation_, keyId, token, period, from);
     }
 
-    /// @dev Same as {spent} but reads from an explicit `start_` timepoint.
+    /// @dev Same as {spent} but reads from an explicit `start` timepoint.
     function spent(
         address account,
         bytes calldata key,
         address token,
         uint256 period,
-        uint256 start_
+        uint256 start
     ) public view virtual returns (uint256) {
-        return _spent(account, installation(account), _keyId(key), token, period, start_);
+        return _spent(account, installation(account), _keyId(key), token, period, start);
     }
 
     /// @dev Returns `(spending, available)` for `(key, token)` at `period`.
@@ -229,7 +229,7 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
     }
 
     /**
-     * @dev Returns `(start_, period)` for `(key, token)` at `timepoint`.
+     * @dev Returns `(start, period)` for `(key, token)` at `timepoint`.
      *
      * Requirements:
      *
@@ -241,7 +241,7 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         bytes calldata key,
         address token,
         uint48 timepoint
-    ) public view virtual returns (uint256 start_, uint256 period) {
+    ) public view virtual returns (uint256 start, uint256 period) {
         return _periodAt(account, installation(account), _keyId(key), token, timepoint);
     }
 
@@ -282,28 +282,28 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
             super.onInstall(initData);
             require(installed(msg.sender), ERC7579ERC20SpenderEmptyKeys());
         } else {
+            uint256 installation_ = installation(msg.sender);
             // After the second install, there must be at least one token with a spending config.
-            require(_tokensCount(msg.sender, installation(msg.sender)) == 0, ERC7579ERC20SpenderAlreadyInstalled());
+            require(_tokensCount(msg.sender, installation_) == 0, ERC7579ERC20SpenderAlreadyInstalled());
             // Minimum length: 4 offsets + 4 lengths = 256 bytes (0x100)
             require(initData.length > 0xff, ERC7579ERC20SpenderInvalidInitData());
-            bytes[] calldata keys_ = _decodeKeyConfigsInitDataKeys(initData);
+            bytes[] calldata keys = _decodeKeyConfigsInitDataKeys(initData);
             address[] calldata tokens_ = _decodeKeyConfigsInitDataTokens(initData);
             uint160[] calldata limits = _decodeKeyConfigsInitDataLimits(initData);
             uint48[] calldata renewPeriods = _decodeKeyConfigsInitDataRenewPeriods(initData);
             require(
-                keys_.length == tokens_.length && keys_.length == limits.length && keys_.length == renewPeriods.length,
+                keys.length == tokens_.length && keys.length == limits.length && keys.length == renewPeriods.length,
                 ERC7579ERC20SpenderMismatchedInitDataLengths(
-                    keys_.length,
+                    keys.length,
                     tokens_.length,
                     limits.length,
                     renewPeriods.length
                 )
             );
-            require(keys_.length > 0, ERC7579ERC20SpenderEmptyKeys());
-            uint256 installation_ = installation(msg.sender);
-            for (uint256 i = 0; i < keys_.length; ++i) {
-                require(_isKey(msg.sender, installation_, keys_[i]), ERC7579SessionKeysNonexistentKey(keys_[i]));
-                _setConfig(msg.sender, installation_, keys_[i], tokens_[i], limits[i], renewPeriods[i]);
+            require(keys.length > 0, ERC7579ERC20SpenderEmptyKeys());
+            for (uint256 i = 0; i < keys.length; ++i) {
+                require(_isKey(msg.sender, installation_, keys[i]), ERC7579SessionKeysNonexistentKey(keys[i]));
+                _setConfig(msg.sender, installation_, keys[i], tokens_[i], limits[i], renewPeriods[i]);
             }
         }
     }
@@ -329,10 +329,6 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         uint160[] calldata limits,
         uint48[] calldata renewPeriods
     ) public virtual {
-        // Note the body is inlined (rather than delegated to an internal `_addKeysWithConfig`) because
-        // the 8-arg internal signature exceeded `hardhat-exposed`'s stack budget when wrapped as an
-        // external test helper. Downstream contracts that need to customize this path should override
-        // this public function directly.
         require(
             newKeys.length == tokens_.length &&
                 newKeys.length == limits.length &&
@@ -463,13 +459,13 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
     function _addKeys(
         address account,
         uint256 installation_,
-        bytes[] calldata keys_,
+        bytes[] calldata keys,
         uint48[] calldata starts,
         uint48[] calldata ends
     ) internal virtual override {
-        super._addKeys(account, installation_, keys_, starts, ends);
+        super._addKeys(account, installation_, keys, starts, ends);
         uint48 currentTimepoint = clock();
-        for (uint256 i = 0; i < keys_.length; ++i) {
+        for (uint256 i = 0; i < keys.length; ++i) {
             require(starts[i] == 0 || starts[i] >= currentTimepoint, ERC7579ERC20SpenderInvalidStart(starts[i]));
         }
     }
@@ -504,28 +500,28 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         return _config[account][installation_][keyId][token].limit;
     }
 
-    /// @dev Internal version of {spent} with explicit `start_`.
+    /// @dev Internal version of {spent} with explicit `start`.
     function _spent(
         address account,
         uint256 installation_,
         bytes32 keyId,
         address token,
         uint256 period,
-        uint256 start_
+        uint256 start
     ) internal view virtual returns (uint256) {
-        return _spentFor[account][installation_][keyId][token][start_][period];
+        return _spentFor[account][installation_][keyId][token][start][period];
     }
 
-    /// @dev Internal version of {spendingAt} with explicit `start_`.
+    /// @dev Internal version of {spendingAt} with explicit `start`.
     function _spendingAt(
         address account,
         uint256 installation_,
         bytes32 keyId,
         address token,
         uint256 period,
-        uint256 start_
+        uint256 start
     ) internal view virtual returns (uint256 spending, uint256 available) {
-        spending = _spent(account, installation_, keyId, token, period, start_);
+        spending = _spent(account, installation_, keyId, token, period, start);
         (bool success, uint256 available_) = Math.trySub(_limit(account, installation_, keyId, token), spending);
         return (spending, Math.ternary(success, available_, 0));
     }
@@ -544,7 +540,7 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         bytes32 keyId,
         address token,
         uint48 timepoint
-    ) internal view virtual returns (uint256 start_, uint256 period) {
+    ) internal view virtual returns (uint256 start, uint256 period) {
         (uint48 from, ) = _validity(account, installation_, keyId);
         (bool ok, uint256 elapsed) = Math.trySub(timepoint, from);
         require(ok, ERC7579ERC20SpendingConfigNotStarted(account, keyId, token, timepoint, from));
@@ -581,10 +577,10 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         uint256 amount
     ) internal virtual {
         bytes32 keyId = _keyId(key);
-        (uint256 start_, uint256 period) = _periodAt(account, installation_, keyId, token, clock());
-        (, uint256 available) = _spendingAt(account, installation_, keyId, token, period, start_);
+        (uint256 start, uint256 period) = _periodAt(account, installation_, keyId, token, clock());
+        (, uint256 available) = _spendingAt(account, installation_, keyId, token, period, start);
         require(amount <= available, ERC7579ERC20InsufficientAvailable(account, key, token, amount));
-        _spentFor[account][installation_][keyId][token][start_][period] += amount;
+        _spentFor[account][installation_][keyId][token][start][period] += amount;
 
         bytes[] memory returndatas = _execute(
             account,
@@ -625,13 +621,13 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         }
 
         bytes32 keyId = _keyId(key);
-        (uint256 start_, uint256 period) = _periodAt(account, installation_, keyId, token, clock());
+        (uint256 start, uint256 period) = _periodAt(account, installation_, keyId, token, clock());
         {
             // Avoid stack too deep error
-            (, uint256 available) = _spendingAt(account, installation_, keyId, token, period, start_);
+            (, uint256 available) = _spendingAt(account, installation_, keyId, token, period, start);
             require(totalAmount <= available, ERC7579ERC20InsufficientAvailable(account, key, token, totalAmount));
         }
-        _spentFor[account][installation_][keyId][token][start_][period] += totalAmount;
+        _spentFor[account][installation_][keyId][token][start][period] += totalAmount;
 
         Execution[] memory executions = new Execution[](tos.length);
         for (uint256 i = 0; i < tos.length; ++i) {
@@ -758,17 +754,17 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         return (true, innerData[keyDataStart:keyDataStart + keyLen]);
     }
 
-    function _decodeKeyConfigsInitDataKeys(bytes calldata initData) private pure returns (bytes[] calldata keys_) {
+    function _decodeKeyConfigsInitDataKeys(bytes calldata initData) private pure returns (bytes[] calldata keys) {
         uint256 keysOffset = uint256(bytes32(initData[0x00:0x20]));
         uint256 keysDataOffset = keysOffset + 0x20;
         require(keysDataOffset <= initData.length, ERC7579ERC20SpenderInvalidInitData());
         uint256 keysLength = uint256(bytes32(initData[keysOffset:keysDataOffset]));
         require(keysDataOffset + keysLength * 0x20 <= initData.length, ERC7579ERC20SpenderInvalidInitData());
         assembly ("memory-safe") {
-            keys_.offset := add(initData.offset, keysDataOffset)
-            keys_.length := keysLength
+            keys.offset := add(initData.offset, keysDataOffset)
+            keys.length := keysLength
         }
-        return keys_;
+        return keys;
     }
 
     function _decodeKeyConfigsInitDataTokens(

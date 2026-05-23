@@ -525,6 +525,20 @@ describe('ERC7579ERC20Spender', function () {
           .transferFrom(this.mockAccount.address, this.key, this.token1.target, this.recipient1.address, this.limit),
       ).to.changeTokenBalances(this.token1, [this.mockAccount, this.recipient1], [-this.limit, this.limit]);
     });
+
+    it('reverts when the module is uninstalled as executor (validator-only install)', async function () {
+      // Drop the executor role; the validator role still holds the keys.
+      await this.mockAccountFromEntrypoint.uninstallModule(MODULE_TYPE_EXECUTOR, this.mock.target, '0x');
+
+      // The auth path still succeeds (key is registered, msg.sender matches), but `_execute`
+      // calls `account.executeFromExecutor`, which the account rejects since this module is
+      // no longer installed under MODULE_TYPE_EXECUTOR.
+      await expect(
+        this.mock
+          .connect(this.sessionKey)
+          .transferFrom(this.mockAccount.address, this.key, this.token1.target, this.recipient1.address, 1n),
+      ).to.be.reverted;
+    });
   });
 
   describe('batchTransferFrom (EOA self-call)', function () {

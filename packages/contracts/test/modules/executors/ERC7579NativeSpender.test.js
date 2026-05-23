@@ -550,6 +550,20 @@ describe('ERC7579NativeSpender', function () {
         .to.be.revertedWithCustomError(this.mock, 'ERC7579NativeSpenderUnauthorized')
         .withArgs(this.otherSessionKey.address, this.otherKey);
     });
+
+    it('reverts when the module is uninstalled as executor (validator-only install)', async function () {
+      // Drop the executor role; the validator role still holds the keys.
+      await this.mockAccountFromEntrypoint.uninstallModule(MODULE_TYPE_EXECUTOR, this.mock.target, '0x');
+
+      // The auth path still succeeds (key is registered, msg.sender matches), but `_execute`
+      // calls `account.executeFromExecutor`, which the account rejects since this module is
+      // no longer installed under MODULE_TYPE_EXECUTOR.
+      await expect(
+        this.mock
+          .connect(this.sessionKey)
+          .transferFrom(this.mockAccount.address, this.key, this.recipient1.address, 1n),
+      ).to.be.reverted;
+    });
   });
 
   describe('batchTransferFrom (EOA self-call)', function () {
