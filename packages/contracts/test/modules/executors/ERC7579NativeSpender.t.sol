@@ -77,7 +77,7 @@ contract ERC7579NativeSpenderTest is Test {
     }
 
     function testEoaSelfCallRevertsWhenExceedingLimit(uint160 limit, uint256 amount) public {
-        limit = uint160(bound(limit, 1, MAX_ETH));
+        limit = uint160(bound(limit, 1, MAX_ETH - 1));
         amount = bound(amount, limit + 1, MAX_ETH);
 
         _installSpenderBoth(uint48(block.timestamp), 0, limit, 1 days);
