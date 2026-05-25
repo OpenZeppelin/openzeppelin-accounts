@@ -115,6 +115,11 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
         return _keys(account, installation(account), startIdx, endIdx);
     }
 
+    /// @dev Returns the number of registered session keys for an `account`.
+    function keyCount(address account) public view virtual returns (uint256) {
+        return _keyCount(account, installation(account));
+    }
+
     /**
      * @dev Sets up the module's initial configuration when installed by an account.
      * See {IERC7579Module-onInstall}. The `initData` encodes arrays of keys and their
@@ -132,7 +137,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      */
     function onInstall(bytes calldata initData) public virtual {
         (bytes[] calldata keys_, uint48[] calldata starts, uint48[] calldata ends) = _decodeKeysInitData(initData);
-        _addKeys(msg.sender, keys_, starts, ends);
+        _addKeys(msg.sender, installation(msg.sender), keys_, starts, ends);
     }
 
     /**
@@ -159,11 +164,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      * * Those from {_addKeys} for the key configuration requirements.
      */
     function addKeys(bytes[] calldata newKeys, uint48[] calldata starts, uint48[] calldata ends) public virtual {
-        require(
-            newKeys.length == starts.length && newKeys.length == ends.length,
-            ERC7579SessionKeysMismatchedInitDataLengths()
-        );
-        _addKeys(msg.sender, newKeys, starts, ends);
+        _addKeys(msg.sender, installation(msg.sender), newKeys, starts, ends);
     }
 
     /**
@@ -175,7 +176,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      * * Those from {_removeKeys} for the key configuration requirements.
      */
     function removeKeys(bytes[] calldata oldKeys) public virtual {
-        _removeKeys(msg.sender, oldKeys);
+        _removeKeys(msg.sender, installation(msg.sender), oldKeys);
     }
 
     /// @dev Internal version of {isKey} that receives an `installation_` nonce.
@@ -209,6 +210,11 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
         return _sessionKeys[account][installation_].values(startIdx, endIdx);
     }
 
+    /// @dev Internal version of {keyCount} that receives an `installation_` nonce.
+    function _keyCount(address account, uint256 installation_) internal view virtual returns (uint256) {
+        return _sessionKeys[account][installation_].length();
+    }
+
     /**
      * @dev Internal function to register session keys for an `account`.
      *
@@ -227,15 +233,15 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      */
     function _addKeys(
         address account,
+        uint256 installation_,
         bytes[] calldata keys_,
         uint48[] calldata starts,
         uint48[] calldata ends
-    ) internal {
+    ) internal virtual {
         require(
             keys_.length == starts.length && keys_.length == ends.length,
             ERC7579SessionKeysMismatchedInitDataLengths()
         );
-        uint256 installation_ = installation(account);
         for (uint256 i = 0; i < keys_.length; ++i) {
             bytes calldata key = keys_[i];
             require(_sessionKeys[account][installation_].add(key), ERC7579SessionKeysAlreadyRegisteredKey(key));
@@ -260,8 +266,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      *
      * Emits an {ERC7579SessionKeysERC7913KeyUnset} event for each key.
      */
-    function _removeKeys(address account, bytes[] calldata keys_) internal {
-        uint256 installation_ = installation(account);
+    function _removeKeys(address account, uint256 installation_, bytes[] calldata keys_) internal virtual {
         for (uint256 i = 0; i < keys_.length; ++i) {
             bytes calldata key = keys_[i];
             require(_sessionKeys[account][installation_].remove(key), ERC7579SessionKeysNonexistentKey(key));
@@ -289,13 +294,25 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
         bytes32 hash,
         bytes calldata signature
     ) internal view virtual returns (bool) {
+        return _validateSessionKey(account, installation(account), hash, signature);
+    }
+
+    /// @dev Variant of {_validateSessionKey} that receives an `installation_` nonce.
+    function _validateSessionKey(
+        address account,
+        uint256 installation_,
+        bytes32 hash,
+        bytes calldata signature
+    ) internal view virtual returns (bool) {
         (bool success, bytes calldata key, bytes calldata keySignature) = _tryDecodeSignature(signature);
-        // Validity is enforced by the caller (e.g. ERC7579SessionKeysValidator).
-        return success && isKey(account, key) && SignatureChecker.isValidSignatureNow(key, hash, keySignature);
+        return
+            success &&
+            _isKey(account, installation_, key) &&
+            SignatureChecker.isValidSignatureNow(key, hash, keySignature);
     }
 
     /// @dev Returns the storage key used to identify a session key in the validity mapping.
-    function _keyId(bytes memory key) internal pure returns (bytes32) {
+    function _keyId(bytes memory key) internal pure virtual returns (bytes32) {
         return keccak256(key);
     }
 
@@ -310,7 +327,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      */
     function _tryDecodeSignature(
         bytes calldata signature
-    ) internal pure returns (bool success, bytes calldata key, bytes calldata keySignature) {
+    ) internal pure virtual returns (bool success, bytes calldata key, bytes calldata keySignature) {
         // Minimum length: key offset (32 bytes) + signature offset (32 bytes) + key length (32 bytes) + signature length (32 bytes) = 128 bytes
         if (signature.length < 0x80) return (false, Calldata.emptyBytes(), Calldata.emptyBytes());
 
@@ -354,7 +371,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      */
     function _decodeKeysInitData(
         bytes calldata initData
-    ) internal pure returns (bytes[] calldata keys_, uint48[] calldata starts, uint48[] calldata ends) {
+    ) internal pure virtual returns (bytes[] calldata keys_, uint48[] calldata starts, uint48[] calldata ends) {
         // Minimum length:
         // keys offset (32 bytes) + starts offset (32 bytes) + ends offset (32 bytes) +
         // keys length (32 bytes) + starts length (32 bytes) + ends length (32 bytes) = 192 bytes
