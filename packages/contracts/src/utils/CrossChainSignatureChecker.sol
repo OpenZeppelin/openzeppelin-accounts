@@ -141,9 +141,7 @@ library CrossChainSignatureChecker {
         ) {
             return (0, 0, address(0), new bytes32[](0), new bytes(0));
         }
-        uint256 crossChainSignatureLength = uint256(
-            erc7964SignatureSlice.slice(crossChainSignatureOffset).load(0)
-        );
+        uint256 crossChainSignatureLength = uint256(erc7964SignatureSlice.slice(crossChainSignatureOffset).load(0));
         if (crossChainSignatureDataOffset + crossChainSignatureLength > erc7964Signature.length) {
             return (0, 0, address(0), new bytes32[](0), new bytes(0));
         }
