@@ -117,12 +117,12 @@ library CrossChainSignatureChecker {
         Memory.Slice erc7964SignatureSlice = erc7964Signature.asSlice();
         // magic (9 bytes) + fields (1 byte) + structIndex (2 bytes) + application (20 bytes) + structsArrayOffset (32 bytes) +
         // structsArrayLength (32 bytes) + crossChainSignatureOffset (32 bytes) + crossChainSignatureLength (32 bytes)
-        if (erc7964Signature.length < 0x9f || bytes9(erc7964SignatureSlice.load(0)) != ERC7964_MAGIC) {
+        if (erc7964Signature.length < 0xa0 || bytes9(erc7964SignatureSlice.load(0)) != ERC7964_MAGIC) {
             return (0, 0, address(0), new bytes32[](0), new bytes(0));
         }
-        fields = bytes1(erc7964Signature.asSlice().load(9));
-        structIndex = uint16(bytes2(erc7964Signature.asSlice().load(10)));
-        application = address(bytes20(erc7964Signature.asSlice().load(12)));
+        fields = bytes1(erc7964SignatureSlice.load(9));
+        structIndex = uint16(bytes2(erc7964SignatureSlice.load(10)));
+        application = address(bytes20(erc7964SignatureSlice.load(12)));
 
         uint256 structsArrayOffset = uint256(bytes32(erc7964SignatureSlice.load(0x20)));
         uint256 structsArrayDataOffset = structsArrayOffset + 32;
@@ -133,14 +133,17 @@ library CrossChainSignatureChecker {
         if (structsArrayDataOffset + structsArrayLength * 32 > erc7964Signature.length) {
             return (0, 0, address(0), new bytes32[](0), new bytes(0));
         }
-
-        uint256 crossChainSignatureOffset = structsArrayDataOffset + structsArrayLength * 32;
+        uint256 crossChainSignatureOffset = uint256(bytes32(erc7964SignatureSlice.load(0x40)));
         uint256 crossChainSignatureDataOffset = crossChainSignatureOffset + 32;
-        if (crossChainSignatureOffset < 0x60 || crossChainSignatureDataOffset > erc7964Signature.length) {
+        if (
+            crossChainSignatureOffset < structsArrayDataOffset + structsArrayLength * 32 ||
+            crossChainSignatureDataOffset > erc7964Signature.length
+        ) {
             return (0, 0, address(0), new bytes32[](0), new bytes(0));
         }
-        Memory.Slice crossChainSignatureSlice = erc7964SignatureSlice.slice(crossChainSignatureOffset);
-        uint256 crossChainSignatureLength = uint256(crossChainSignatureSlice.load(0));
+        uint256 crossChainSignatureLength = uint256(
+            erc7964SignatureSlice.slice(crossChainSignatureOffset).load(0)
+        );
         if (crossChainSignatureDataOffset + crossChainSignatureLength > erc7964Signature.length) {
             return (0, 0, address(0), new bytes32[](0), new bytes(0));
         }
@@ -169,7 +172,7 @@ library CrossChainSignatureChecker {
     {
         // magic (9 bytes) + fields (1 byte) + structIndex (2 bytes) + application (20 bytes) + structsArrayOffset (32 bytes) +
         // structsArrayLength (32 bytes) + crossChainSignatureOffset (32 bytes) + crossChainSignatureLength (32 bytes)
-        if (erc7964Signature.length < 0x9f || bytes9(erc7964Signature[0:9]) != ERC7964_MAGIC) {
+        if (erc7964Signature.length < 0xa0 || bytes9(erc7964Signature[0:9]) != ERC7964_MAGIC) {
             return (0, 0, address(0), _empty32BytesArrayCalldata(), Calldata.emptyBytes());
         }
         fields = erc7964Signature[9];
@@ -185,10 +188,12 @@ library CrossChainSignatureChecker {
         if (structsArrayDataOffset + structsArrayLength * 32 > erc7964Signature.length) {
             return (0, 0, address(0), _empty32BytesArrayCalldata(), Calldata.emptyBytes());
         }
-
-        uint256 crossChainSignatureOffset = structsArrayDataOffset + structsArrayLength * 32;
+        uint256 crossChainSignatureOffset = uint256(bytes32(erc7964Signature[0x40:]));
         uint256 crossChainSignatureDataOffset = crossChainSignatureOffset + 32;
-        if (crossChainSignatureOffset < 0x60 || crossChainSignatureDataOffset > erc7964Signature.length) {
+        if (
+            crossChainSignatureOffset < structsArrayDataOffset + structsArrayLength * 32 ||
+            crossChainSignatureDataOffset > erc7964Signature.length
+        ) {
             return (0, 0, address(0), _empty32BytesArrayCalldata(), Calldata.emptyBytes());
         }
         uint256 crossChainSignatureLength = uint256(bytes32(erc7964Signature[crossChainSignatureOffset:]));
