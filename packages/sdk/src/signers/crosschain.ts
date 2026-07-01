@@ -3,7 +3,6 @@ import type { Address, Hex, TypedData, TypedDataDefinition } from 'viem';
 import type { Signer } from './index.js';
 
 const ERC7964_MAGIC: Hex = '0x796479647964796479';
-const ERC7964_ENVELOPE_ABI = [{ type: 'bytes32' }, { type: 'bytes32[]' }, { type: 'bytes' }] as const;
 
 /**
  * One chain-specific operation in an ERC-7964 cross-chain signature.
@@ -47,11 +46,11 @@ type CrossChainSignerConfig = {
   message?: Record<string, unknown>;
 };
 
-const hashOperation = (op: ChainOperation): Hex =>
+const hashOperation = ({ operation }: ChainOperation): Hex =>
   hashStruct({
-    data: op.operation.message as Record<string, unknown>,
-    primaryType: op.operation.primaryType as string,
-    types: op.operation.types as TypedData,
+    data: operation.message,
+    primaryType: operation.primaryType,
+    types: operation.types,
   });
 
 const buildHeader = ({
@@ -77,10 +76,10 @@ const buildOuterTypedData = (config: CrossChainSignerConfig): TypedDataDefinitio
     primaryType: config.primaryType,
     types,
     message: {
-      operations: config.operations.map(op => op.operation.message),
+      operations: config.operations.map(({ operation }) => operation.message),
       ...(config.message ?? {}),
     },
-  } as TypedDataDefinition;
+  };
 };
 
 const packEnvelope = ({
@@ -96,11 +95,10 @@ const packEnvelope = ({
   structHashes: Hex[];
   crossChainSignature: Hex;
 }): Hex =>
-  encodeAbiParameters(ERC7964_ENVELOPE_ABI, [
-    buildHeader({ fields, currentChainIndex, application }) as `0x${string}`,
-    structHashes as `0x${string}`[],
-    crossChainSignature,
-  ]);
+  encodeAbiParameters(
+    [{ type: 'bytes32' }, { type: 'bytes32[]' }, { type: 'bytes' }],
+    [buildHeader({ fields, currentChainIndex, application }), structHashes, crossChainSignature],
+  );
 
 /**
  * Wraps `innerSigner` so it produces ERC-7964-encoded cross-chain signatures.
@@ -122,39 +120,38 @@ const toCrossChainSigner = (innerSigner: Signer, config: CrossChainSignerConfig)
 
   if (expectedCurrentHash === undefined) {
     throw new Error(
-      `toCrossChainSigner: currentChainIndex ${config.currentChainIndex} is out of bounds for operations of length ${config.operations.length}`,
+      `currentChainIndex ${config.currentChainIndex} is out of bounds for operations of length ${config.operations.length}`,
     );
   }
-
-  const signInner = async (): Promise<Hex> => innerSigner.signTypedData(buildOuterTypedData(config));
 
   return {
     ...innerSigner,
     address: innerSigner.address,
     signerBytes: innerSigner.signerBytes,
     async signMessage() {
-      throw new Error('toCrossChainSigner: signMessage is not supported (ERC-7964 is EIP-712 only)');
+      throw new Error('signMessage is not supported (ERC-7964 is EIP-712 only)');
     },
     async signTypedData(parameters) {
       const incoming = hashStruct({
-        data: parameters.message as Record<string, unknown>,
-        primaryType: parameters.primaryType as string,
-        types: parameters.types as TypedData,
+        data: parameters.message,
+        primaryType: parameters.primaryType,
+        types: parameters.types,
       });
       if (incoming !== expectedCurrentHash) {
         throw new Error(
-          `toCrossChainSigner: signTypedData parameters do not match operations[${config.currentChainIndex}]; ` +
+          `signTypedData parameters do not match operations[${config.currentChainIndex}]; ` +
             `incoming hashStruct ${incoming} !== expected ${expectedCurrentHash}`,
         );
       }
-      const crossChainSignature = await signInner();
-      return packEnvelope({
-        fields,
-        currentChainIndex: config.currentChainIndex,
-        application: config.application,
-        structHashes,
-        crossChainSignature,
-      });
+      return innerSigner.signTypedData(buildOuterTypedData(config)).then(signature =>
+        packEnvelope({
+          fields,
+          currentChainIndex: config.currentChainIndex,
+          application: config.application,
+          structHashes,
+          crossChainSignature: signature,
+        }),
+      );
     },
   };
 };

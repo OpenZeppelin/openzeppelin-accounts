@@ -1,5 +1,5 @@
 import { encodeAbiParameters, encodePacked } from 'viem';
-import type { Address, Hex, OneOf, SignableMessage, TypedDataDefinition } from 'viem';
+import type { Address, Hex, OneOf } from 'viem';
 import type { Signer } from './index.js';
 
 /**
