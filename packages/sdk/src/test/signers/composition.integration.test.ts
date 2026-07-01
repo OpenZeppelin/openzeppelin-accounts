@@ -1,13 +1,6 @@
 import 'viem/window';
 import _test, { TestFn } from 'ava';
-import {
-  encodeFunctionData,
-  getContract,
-  publicActions,
-  TypedDataDefinition,
-  type Address,
-  type Hex,
-} from 'viem';
+import { encodeFunctionData, getContract, publicActions, TypedDataDefinition, type Address, type Hex } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import ERC7913CrossChainAppMockArtifact from '@openzeppelin-accounts/contracts/out/ERC7913CrossChainAppMock.sol/ERC7913CrossChainAppMock.json' with { type: 'json' };
 import { setup, cleanup, type Context } from '../helpers/setup.js';

@@ -9,9 +9,7 @@ import type { Signer } from './types.js';
  * signer whose `signMessageRaw`/`signTypedDataRaw` methods supply the raw signature
  * paired with its `signerBytes`.
  */
-type MultisigSignerInput =
-  | { signer: Signer; signerBytes: Hex }
-  | ERC7913Signer;
+type MultisigSignerInput = { signer: Signer; signerBytes: Hex } | ERC7913Signer;
 
 const isWrapped = (input: MultisigSignerInput): input is ERC7913Signer =>
   'signMessageRaw' in input && 'signTypedDataRaw' in input;

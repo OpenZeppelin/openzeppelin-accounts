@@ -19,11 +19,7 @@ import { BundlerClient, createBundlerClient, SmartAccount } from 'viem/account-a
 import ERC7579MultisigValidatorArtifact from '@openzeppelin-accounts/contracts/out/ERC7579MultisigValidator.sol/ERC7579MultisigValidator.json' with { type: 'json' };
 import IERC1271Artifact from '@openzeppelin-accounts/contracts/out/IERC1271.sol/IERC1271.json' with { type: 'json' };
 import { setup, cleanup } from '../helpers/setup.js';
-import {
-  OpenAccountContext,
-  createAndFundEOA,
-  estimateGasOverride,
-} from '../helpers/accounts.js';
+import { OpenAccountContext, createAndFundEOA, estimateGasOverride } from '../helpers/accounts.js';
 import { erc7579Actions, ERC7579Actions } from '../../erc7579.actions.js';
 import { toOpenAccount } from '../../open-account.js';
 import { toMultisigSigner } from '../../signers/to-multisig-signer.js';
@@ -32,7 +28,10 @@ import { toERC7913Signer } from '../../signers/to-erc7913-signer.js';
 
 interface MultisigTestContext extends OpenAccountContext {
   initialValidator: GetContractReturnType<typeof ERC7579MultisigValidatorArtifact.abi>;
-  bundlerClient: Omit<BundlerClient<Transport, undefined, SmartAccount>, 'client' | 'paymaster' | 'paymasterContext' | 'userOperation'> &
+  bundlerClient: Omit<
+    BundlerClient<Transport, undefined, SmartAccount>,
+    'client' | 'paymaster' | 'paymasterContext' | 'userOperation'
+  > &
     ERC7579Actions<SmartAccount>;
   eoaA: LocalAccount;
   eoaB: LocalAccount;
@@ -146,16 +145,13 @@ const createAndFundOpenAccountWithSigner = async (
     getStubSignature: async () =>
       // For multisig stub: two 65-byte dummy ECDSA sigs in the abi.encode(bytes[],bytes[]) layout
       encodeAbiParameters(
+        [{ type: 'bytes[]' }, { type: 'bytes[]' }],
         [
-          { type: 'bytes[]' },
-          { type: 'bytes[]' },
-        ],
-        [
-          [t.context.eoaA.address.toLowerCase() as `0x${string}`, t.context.eoaB.address.toLowerCase() as `0x${string}`],
           [
-            bytesToHex(new Uint8Array(65)),
-            bytesToHex(new Uint8Array(65)),
+            t.context.eoaA.address.toLowerCase() as `0x${string}`,
+            t.context.eoaB.address.toLowerCase() as `0x${string}`,
           ],
+          [bytesToHex(new Uint8Array(65)), bytesToHex(new Uint8Array(65))],
         ],
       ),
     userOperation: {

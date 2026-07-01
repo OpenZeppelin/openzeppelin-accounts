@@ -9,11 +9,7 @@ import {
   TypedDataDefinition,
 } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import {
-  ERC7964_MAGIC,
-  signCrossChainEnvelopes,
-  toCrossChainSigner,
-} from '../../signers/to-cross-chain-signer.js';
+import { ERC7964_MAGIC, signCrossChainEnvelopes, toCrossChainSigner } from '../../signers/to-cross-chain-signer.js';
 import { toSigner } from '../../signers/to-signer.js';
 
 const application = '0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd' as const;
@@ -153,7 +149,9 @@ test('signCrossChainEnvelopes returns N envelopes from a single inner signature'
   t.is(envelopes.length, 3);
 
   // Each envelope shares the same inner signature; only structIndex differs.
-  const innerSigs = envelopes.map(e => decodeAbiParameters(parseAbiParameters(['bytes32', 'bytes32[]', 'bytes']), e)[2]);
+  const innerSigs = envelopes.map(
+    e => decodeAbiParameters(parseAbiParameters(['bytes32', 'bytes32[]', 'bytes']), e)[2],
+  );
   t.is(innerSigs[0], innerSigs[1]);
   t.is(innerSigs[1], innerSigs[2]);
 

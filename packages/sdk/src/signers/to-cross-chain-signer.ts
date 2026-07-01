@@ -54,8 +54,15 @@ const hashOperation = (op: ChainOperation): Hex =>
     types: op.operation.types as TypedData,
   });
 
-const buildHeader = ({ fields, currentChainIndex, application }: { fields: Hex; currentChainIndex: number; application: Address }): Hex =>
-  concat([ERC7964_MAGIC, fields, toHex(currentChainIndex, { size: 2 }), application]);
+const buildHeader = ({
+  fields,
+  currentChainIndex,
+  application,
+}: {
+  fields: Hex;
+  currentChainIndex: number;
+  application: Address;
+}): Hex => concat([ERC7964_MAGIC, fields, toHex(currentChainIndex, { size: 2 }), application]);
 
 const buildOuterTypedData = (config: ToCrossChainSignerConfig): TypedDataDefinition => {
   const types = {
