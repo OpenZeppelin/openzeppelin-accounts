@@ -8,8 +8,8 @@ import {
   recoverAddress,
 } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import { toERC7913Signer } from '../../signers/to-erc7913-signer.js';
-import { toSigner } from '../../signers/to-signer.js';
+import { toERC7913Signer } from '../../signers/erc7913.js';
+import { toSigner } from '../../signers/index.js';
 
 test('verifier-less shortcut: signerBytes equals 20-byte address', async t => {
   const eoa = privateKeyToAccount(generatePrivateKey());

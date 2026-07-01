@@ -23,8 +23,7 @@ import {
   OneOf,
 } from 'viem';
 import { encodeCalls, decodeCalls } from './erc7579.utils.js';
-import { toSigner } from './signers/to-signer.js';
-import type { Signer } from './signers/types.js';
+import { toSigner, type Signer } from './signers/index.js';
 
 /**
  * Signer accepted by {@link toERC7579Account} and downstream factories.

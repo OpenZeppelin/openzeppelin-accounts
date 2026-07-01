@@ -1,7 +1,7 @@
 import { encodeAbiParameters, keccak256, parseAbiParameters } from 'viem';
 import type { Hex, SignableMessage, TypedDataDefinition } from 'viem';
-import type { ERC7913Signer } from './to-erc7913-signer.js';
-import type { Signer } from './types.js';
+import type { ERC7913Signer } from './erc7913.js';
+import type { Signer } from './index.js';
 
 /**
  * One signer slot for {@link toMultisigSigner}. Either an explicit `{ signer, signerBytes }`

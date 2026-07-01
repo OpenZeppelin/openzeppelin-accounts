@@ -22,9 +22,9 @@ import { setup, cleanup } from '../helpers/setup.js';
 import { OpenAccountContext, createAndFundEOA, estimateGasOverride } from '../helpers/accounts.js';
 import { erc7579Actions, ERC7579Actions } from '../../erc7579.actions.js';
 import { toOpenAccount } from '../../open-account.js';
-import { toMultisigSigner } from '../../signers/to-multisig-signer.js';
-import { toSigner } from '../../signers/to-signer.js';
-import { toERC7913Signer } from '../../signers/to-erc7913-signer.js';
+import { toMultisigSigner } from '../../signers/multisig.js';
+import { toSigner } from '../../signers/index.js';
+import { toERC7913Signer } from '../../signers/erc7913.js';
 
 interface MultisigTestContext extends OpenAccountContext {
   initialValidator: GetContractReturnType<typeof ERC7579MultisigValidatorArtifact.abi>;

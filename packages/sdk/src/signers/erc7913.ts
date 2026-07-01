@@ -1,6 +1,6 @@
 import { encodeAbiParameters, encodePacked } from 'viem';
 import type { Address, Hex, OneOf, SignableMessage, TypedDataDefinition } from 'viem';
-import type { Signer } from './types.js';
+import type { Signer } from './index.js';
 
 const ERC7913_ABI = [{ type: 'bytes' }, { type: 'bytes' }] as const;
 

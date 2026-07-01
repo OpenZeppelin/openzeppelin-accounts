@@ -13,8 +13,8 @@ import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import CrossChainAppMockArtifact from '@openzeppelin-accounts/contracts/out/CrossChainAppMock.sol/CrossChainAppMock.json' with { type: 'json' };
 import { setup, cleanup, type Context } from '../helpers/setup.js';
 import { createAndFundEOA } from '../helpers/accounts.js';
-import { toCrossChainSigner } from '../../signers/to-cross-chain-signer.js';
-import { toSigner } from '../../signers/to-signer.js';
+import { toCrossChainSigner } from '../../signers/crosschain.js';
+import { toSigner } from '../../signers/index.js';
 
 const test = _test as TestFn<Context>;
 

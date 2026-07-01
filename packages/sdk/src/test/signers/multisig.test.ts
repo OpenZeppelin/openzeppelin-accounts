@@ -1,9 +1,9 @@
 import test from 'ava';
 import { decodeAbiParameters, hashMessage, keccak256, parseAbiParameters, recoverAddress } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import { toERC7913Signer } from '../../signers/to-erc7913-signer.js';
-import { toMultisigSigner } from '../../signers/to-multisig-signer.js';
-import { toSigner } from '../../signers/to-signer.js';
+import { toERC7913Signer } from '../../signers/erc7913.js';
+import { toMultisigSigner } from '../../signers/multisig.js';
+import { toSigner } from '../../signers/index.js';
 
 test('produces abi.encode(bytes[] signers, bytes[] sigs), sorted by keccak256(signerBytes)', async t => {
   const eoaA = privateKeyToAccount(generatePrivateKey());

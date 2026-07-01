@@ -8,9 +8,9 @@ import {
   TypedDataDefinition,
 } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import { ERC7964_MAGIC, toCrossChainSigner } from '../../signers/to-cross-chain-signer.js';
-import { toERC7913Signer } from '../../signers/to-erc7913-signer.js';
-import { toSigner } from '../../signers/to-signer.js';
+import { ERC7964_MAGIC, toCrossChainSigner } from '../../signers/crosschain.js';
+import { toERC7913Signer } from '../../signers/erc7913.js';
+import { toSigner } from '../../signers/index.js';
 
 const application = '0xcafecafecafecafecafecafecafecafecafecafe' as const;
 

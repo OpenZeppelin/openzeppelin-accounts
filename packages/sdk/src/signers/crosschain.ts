@@ -1,6 +1,6 @@
 import { concat, encodeAbiParameters, hashStruct, toHex } from 'viem';
 import type { Address, Hex, TypedData, TypedDataDefinition } from 'viem';
-import type { Signer } from './types.js';
+import type { Signer } from './index.js';
 
 const ERC7964_MAGIC: Hex = '0x796479647964796479';
 const ERC7964_ENVELOPE_ABI = [{ type: 'bytes32' }, { type: 'bytes32[]' }, { type: 'bytes' }] as const;
