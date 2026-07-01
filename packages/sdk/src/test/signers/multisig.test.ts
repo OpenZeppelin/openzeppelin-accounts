@@ -2,7 +2,7 @@ import test from 'ava';
 import { decodeAbiParameters, hashMessage, keccak256, parseAbiParameters, recoverAddress } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { toERC7913Signer } from '../../signers/erc7913.js';
-import { toMultisigSigner } from '../../signers/multisig.js';
+import { toMultisigner } from '../../signers/multisig.js';
 import { toSigner } from '../../signers/index.js';
 
 test('produces abi.encode(bytes[] signers, bytes[] sigs), sorted by keccak256(signerBytes)', async t => {
@@ -10,7 +10,7 @@ test('produces abi.encode(bytes[] signers, bytes[] sigs), sorted by keccak256(si
   const eoaB = privateKeyToAccount(generatePrivateKey());
   const message = 'multisig hello';
 
-  const multisig = toMultisigSigner([
+  const multisig = toMultisigner([
     { signer: toSigner(eoaA), signerBytes: eoaA.address.toLowerCase() as `0x${string}` },
     { signer: toSigner(eoaB), signerBytes: eoaB.address.toLowerCase() as `0x${string}` },
   ]);
@@ -36,7 +36,7 @@ test('accepts already-ERC7913-wrapped signers and uses their raw inner sigs (no 
 
   const sA = toERC7913Signer(toSigner(eoaA), { address: eoaA.address });
   const sB = toERC7913Signer(toSigner(eoaB), { address: eoaB.address });
-  const multisig = toMultisigSigner([sA, sB]);
+  const multisig = toMultisigner([sA, sB]);
 
   const envelope = await multisig.signMessage({ message: 'mixed' });
   const [, signatures] = decodeAbiParameters(parseAbiParameters(['bytes[]', 'bytes[]']), envelope);
@@ -52,7 +52,7 @@ test('mixes pair-form and wrapped-form inputs in a single multisig', async t => 
   const eoaB = privateKeyToAccount(generatePrivateKey());
 
   const sWrapped = toERC7913Signer(toSigner(eoaA), { address: eoaA.address });
-  const multisig = toMultisigSigner([
+  const multisig = toMultisigner([
     sWrapped,
     { signer: toSigner(eoaB), signerBytes: eoaB.address.toLowerCase() as `0x${string}` },
   ]);
@@ -63,5 +63,5 @@ test('mixes pair-form and wrapped-form inputs in a single multisig', async t => 
 });
 
 test('empty inputs throws', t => {
-  t.throws(() => toMultisigSigner([]), { message: /at least one signer/ });
+  t.throws(() => toMultisigner([]), { message: /at least one signer/ });
 });

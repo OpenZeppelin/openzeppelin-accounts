@@ -4,23 +4,21 @@ import type { ERC7913Signer } from './erc7913.js';
 import type { Signer } from './index.js';
 
 /**
- * One signer slot for {@link toMultisigSigner}. Either an explicit `{ signer, signerBytes }`
+ * One signer slot for {@link toMultisigner}. Either an explicit `{ signer, signerBytes }`
  * pair where `signer` produces the raw inner signature, or an already-ERC-7913-wrapped
  * signer whose `signMessageRaw`/`signTypedDataRaw` methods supply the raw signature
  * paired with its `signerBytes`.
  */
-type MultisigSignerInput = { signer: Signer; signerBytes: Hex } | ERC7913Signer;
+type MultisigSigner = { signer: Signer; signerBytes: Hex } | ERC7913Signer;
 
-const isWrapped = (input: MultisigSignerInput): input is ERC7913Signer =>
-  'signMessageRaw' in input && 'signTypedDataRaw' in input;
+const isWrapped = (signer: MultisigSigner): signer is ERC7913Signer =>
+  'signMessageRaw' in signer && 'signTypedDataRaw' in signer;
 
-const signerBytesOf = (input: MultisigSignerInput): Hex => (isWrapped(input) ? input.signerBytes : input.signerBytes);
+const signRawMessage = (signer: MultisigSigner, message: SignableMessage): Promise<Hex> =>
+  isWrapped(signer) ? signer.signMessageRaw({ message }) : signer.signer.signMessage({ message });
 
-const signRawMessage = (input: MultisigSignerInput, message: SignableMessage): Promise<Hex> =>
-  isWrapped(input) ? input.signMessageRaw({ message }) : input.signer.signMessage({ message });
-
-const signRawTypedData = (input: MultisigSignerInput, parameters: TypedDataDefinition): Promise<Hex> =>
-  isWrapped(input) ? input.signTypedDataRaw(parameters) : input.signer.signTypedData(parameters);
+const signRawTypedData = (signer: MultisigSigner, parameters: TypedDataDefinition): Promise<Hex> =>
+  isWrapped(signer) ? signer.signTypedDataRaw(parameters) : signer.signer.signTypedData(parameters);
 
 /**
  * Wraps a set of inner signers into a single signer whose output matches the encoding
@@ -34,33 +32,31 @@ const signRawTypedData = (input: MultisigSignerInput, parameters: TypedDataDefin
  * Sorts the (signer, signature) pairs by `keccak256(signerBytes)` so the on-chain
  * validator's lookups remain efficient (per `ERC7579Multisig._validateSignatures` note).
  */
-const toMultisigSigner = (inputs: MultisigSignerInput[]): Signer => {
-  if (inputs.length === 0) {
-    throw new Error('toMultisigSigner: at least one signer is required');
+const toMultisigner = (signers: MultisigSigner[]): Signer => {
+  if (signers.length === 0) {
+    throw new Error('At least one signer is required');
   }
 
   const pack = (signatures: Hex[]): Hex => {
-    const pairs = inputs.map((input, i) => {
-      const signer = signerBytesOf(input);
-      return { signer, signature: signatures[i]!, sortKey: keccak256(signer) };
+    const pairs = signers.map((signer, i) => {
+      const signerBytes = signer.signerBytes;
+      return { signerBytes, signature: signatures[i]!, sortKey: keccak256(signerBytes) };
     });
     pairs.sort((a, b) => (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0));
     return encodeAbiParameters(parseAbiParameters(['bytes[] signers', 'bytes[] signatures']), [
-      pairs.map(p => p.signer),
+      pairs.map(p => p.signerBytes),
       pairs.map(p => p.signature),
     ]);
   };
 
   return {
     async signMessage({ message }) {
-      const signatures = await Promise.all(inputs.map(input => signRawMessage(input, message)));
-      return pack(signatures);
+      return Promise.all(signers.map(signer => signRawMessage(signer, message))).then(pack);
     },
     async signTypedData(parameters) {
-      const signatures = await Promise.all(inputs.map(input => signRawTypedData(input, parameters)));
-      return pack(signatures);
+      return Promise.all(signers.map(signer => signRawTypedData(signer, parameters))).then(pack);
     },
   };
 };
 
-export { toMultisigSigner, type MultisigSignerInput };
+export { toMultisigner, type MultisigSigner };

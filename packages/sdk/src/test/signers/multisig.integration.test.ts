@@ -22,7 +22,7 @@ import { setup, cleanup } from '../helpers/setup.js';
 import { OpenAccountContext, createAndFundEOA, estimateGasOverride } from '../helpers/accounts.js';
 import { erc7579Actions, ERC7579Actions } from '../../erc7579.actions.js';
 import { toOpenAccount } from '../../open-account.js';
-import { toMultisigSigner } from '../../signers/multisig.js';
+import { toMultisigner } from '../../signers/multisig.js';
 import { toSigner } from '../../signers/index.js';
 import { toERC7913Signer } from '../../signers/erc7913.js';
 
@@ -78,7 +78,7 @@ test.beforeEach(async t => {
   ];
 
   // Build the SDK Signer first so we can pass it to toOpenAccount.
-  const signer = toMultisigSigner([
+  const signer = toMultisigner([
     { signer: toSigner(t.context.eoaA), signerBytes: signerBytes[0]! },
     toERC7913Signer(toSigner(t.context.eoaB), { address: t.context.eoaB.address }),
   ]);
@@ -105,7 +105,7 @@ const createAndFundOpenAccountWithSigner = async (
   t: { context: MultisigTestContext },
   args: {
     validator: Address;
-    signer: ReturnType<typeof toMultisigSigner>;
+    signer: ReturnType<typeof toMultisigner>;
     initData: `0x${string}`;
     salt: `0x${string}`;
   },
@@ -175,7 +175,7 @@ const createAndFundOpenAccountWithSigner = async (
 
 const ERC1271_MAGIC_VALUE = '0x1626ba7e';
 
-test('signMessage from toMultisigSigner (mixed pair + wrapped) passes ERC-1271 isValidSignature', async t => {
+test('signMessage from toMultisigner (mixed pair + wrapped) passes ERC-1271 isValidSignature', async t => {
   await t.context.deployAccount();
   const message = 'multisig signed';
   const sig = await t.context.account.signMessage({ message });
@@ -193,7 +193,7 @@ test('signMessage from toMultisigSigner (mixed pair + wrapped) passes ERC-1271 i
   t.is(result, ERC1271_MAGIC_VALUE);
 });
 
-test('signTypedData from toMultisigSigner passes ERC-1271 isValidSignature', async t => {
+test('signTypedData from toMultisigner passes ERC-1271 isValidSignature', async t => {
   await t.context.deployAccount();
   const { hashTypedData } = await import('viem');
   const typedData = {
@@ -212,7 +212,7 @@ test('signTypedData from toMultisigSigner passes ERC-1271 isValidSignature', asy
   t.is(result, ERC1271_MAGIC_VALUE);
 });
 
-test('UserOp signed by toMultisigSigner is executed by the bundler', async t => {
+test('UserOp signed by toMultisigner is executed by the bundler', async t => {
   const client = t.context.bundlerClient;
   const receiver = privateKeyToAccount(generatePrivateKey());
   await client

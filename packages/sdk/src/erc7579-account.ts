@@ -29,7 +29,7 @@ import { toSigner, type Signer } from './signers/index.js';
  * Signer accepted by {@link toERC7579Account} and downstream factories.
  *
  * Either the SDK's narrow {@link Signer} interface (returned by wrappers like
- * `toERC7913Signer`, `toCrossChainSigner`, `toMultisigSigner`) or a viem
+ * `toERC7913Signer`, `toCrossChainSigner`, `toMultisigner`) or a viem
  * `LocalAccount` / `WebAuthnAccount`, which is normalized via {@link toSigner}.
  */
 type ERC7579AccountSigner =
@@ -101,7 +101,7 @@ const toERC7579Account = async (parameters: ToERC7579AccountParameters): Promise
         },
         chainId: client.chain?.id ?? 1,
       });
-      return signer.signTypedData(typedData as Parameters<Signer['signTypedData']>[0]);
+      return signer.signTypedData(typedData);
     },
     ...override,
   });

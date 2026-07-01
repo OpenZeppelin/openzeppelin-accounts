@@ -26,7 +26,7 @@ type ERC7913SignerConfig = OneOf<
 
 /**
  * Signer returned by {@link toERC7913Signer}. Exposes the raw inner sign methods alongside
- * the wrapped ones so composing wrappers (notably {@link toMultisigSigner}) can pair the
+ * the wrapped ones so composing wrappers (notably {@link toMultisigner}) can pair the
  * wrapper's `signerBytes` with the raw inner signature without double-wrapping.
  */
 type ERC7913Signer = Signer & {

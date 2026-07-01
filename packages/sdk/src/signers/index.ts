@@ -9,7 +9,7 @@ export {
   type ChainOperation,
   type CrossChainSignerConfig,
 } from './crosschain.js';
-export { toMultisigSigner, type MultisigSignerInput } from './multisig.js';
+export { toMultisigner, type MultisigSigner } from './multisig.js';
 
 /**
  * Minimal signer surface consumed by {@link toERC7579Account}, {@link toOpenAccount},
