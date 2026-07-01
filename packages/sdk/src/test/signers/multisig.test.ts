@@ -63,5 +63,5 @@ test('mixes pair-form and wrapped-form inputs in a single multisig', async t => 
 });
 
 test('empty inputs throws', t => {
-  t.throws(() => toMultisigner([]), { message: /at least one signer/ });
+  t.throws(() => toMultisigner([]), { message: /At least one signer/ });
 });
