@@ -44,15 +44,14 @@ type Signer = {
  * verifier consumes; this adapter unwraps it so downstream code only sees `Hex`.
  */
 const toSigner = (account: OneOf<LocalAccount | WebAuthnAccount>): Signer => {
-  const inner = account as LocalAccount;
   return {
     address: 'address' in account ? account.address : undefined,
     async signMessage({ message }) {
-      const result = await inner.signMessage({ message });
+      const result = await account.signMessage({ message });
       return typeof result === 'object' ? (result as WebAuthnSignReturnType).signature : (result as Hex);
     },
     async signTypedData(parameters) {
-      const result = await inner.signTypedData(parameters);
+      const result = await (account as LocalAccount).signTypedData(parameters);
       return typeof result === 'object' ? (result as WebAuthnSignReturnType).signature : (result as Hex);
     },
   };
