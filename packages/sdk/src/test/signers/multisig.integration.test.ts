@@ -22,7 +22,6 @@ import { setup, cleanup } from '../helpers/setup.js';
 import {
   OpenAccountContext,
   createAndFundEOA,
-  createAndFundOpenAccount,
   estimateGasOverride,
 } from '../helpers/accounts.js';
 import { erc7579Actions, ERC7579Actions } from '../../erc7579.actions.js';

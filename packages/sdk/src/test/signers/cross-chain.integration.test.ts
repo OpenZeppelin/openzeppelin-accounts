@@ -4,7 +4,6 @@ import {
   bytesToHex,
   encodeFunctionData,
   getContract,
-  http,
   publicActions,
   TypedDataDefinition,
   type Address,
