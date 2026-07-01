@@ -11,7 +11,7 @@ const ERC7913_ABI = [{ type: 'bytes' }, { type: 'bytes' }] as const;
  * passkeys or RSA), or use the verifier-less shortcut where `signerBytes` collapses to
  * `abi.encodePacked(address)` and on-chain validation falls into the EOA / ERC-1271 path.
  */
-type ToERC7913SignerConfig = OneOf<
+type ERC7913SignerConfig = OneOf<
   | {
       /** Address of an `IERC7913SignatureVerifier`. Combined with `key` to produce `signerBytes`. */
       verifier: Address;
@@ -47,7 +47,7 @@ type ERC7913Signer = Signer & {
  * signers (`{ verifier, key }`), `signerBytes` is `verifier(20) || key(rest)` and the
  * verifier contract decides how to validate the inner signature against the `key`.
  */
-const toERC7913Signer = (innerSigner: Signer, config: ToERC7913SignerConfig): ERC7913Signer => {
+const toERC7913Signer = (innerSigner: Signer, config: ERC7913SignerConfig): ERC7913Signer => {
   const signerBytes: Hex =
     config.verifier !== undefined
       ? encodePacked(['address', 'bytes'], [config.verifier, config.key as Hex])
@@ -69,4 +69,4 @@ const toERC7913Signer = (innerSigner: Signer, config: ToERC7913SignerConfig): ER
   };
 };
 
-export { toERC7913Signer, type ToERC7913SignerConfig, type ERC7913Signer };
+export { toERC7913Signer, type ERC7913SignerConfig, type ERC7913Signer };

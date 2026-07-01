@@ -32,7 +32,7 @@ import { toSigner, type Signer } from './signers/index.js';
  * `toERC7913Signer`, `toCrossChainSigner`, `toMultisigSigner`) or a viem
  * `LocalAccount` / `WebAuthnAccount`, which is normalized via {@link toSigner}.
  */
-type ToERC7579AccountSigner =
+type ERC7579AccountSigner =
   | Signer
   | OneOf<Omit<LocalAccount, 'address' | 'signTransaction' | 'source'> | WebAuthnAccount>;
 
@@ -40,7 +40,7 @@ type ToERC7579AccountSigner =
  * Parameters required to create an ERC-7579 account.
  *
  * @property {Client} client The viem client to use for blockchain interactions
- * @property {ToERC7579AccountSigner} signer The signer to use for signing messages and operations. Accepts the SDK's {@link Signer} interface (from `toERC7913Signer`, `toCrossChainSigner`, ...) or a viem `LocalAccount` / `WebAuthnAccount`.
+ * @property {ERC7579AccountSigner} signer The signer to use for signing messages and operations. Accepts the SDK's {@link Signer} interface (from `toERC7913Signer`, `toCrossChainSigner`, ...) or a viem `LocalAccount` / `WebAuthnAccount`.
  * @property {function(): Promise<Address>} getAddress Function that resolves to the account's address
  * @property {function(): Promise<{factory?: Address, factoryData?: Hex}>} getFactoryArgs Function that returns the factory address and data for account deployment
  * @property {function(UserOperationRequest?): Promise<Hex>} getStubSignature Function that returns a stub signature for gas estimation
@@ -52,7 +52,7 @@ type ToERC7579AccountParameters<
   rpcSchema extends RpcSchema | undefined = undefined,
 > = {
   client: Client<transport, chain, account, rpcSchema>;
-  signer: ToERC7579AccountSigner;
+  signer: ERC7579AccountSigner;
   getAddress: () => Promise<Address>;
   getFactoryArgs: () => Promise<{
     factory?: Address | undefined;
@@ -67,7 +67,7 @@ const entryPointV09 = {
   version: '0.9' as EntryPointVersion,
 } as const;
 
-const isSigner = (candidate: ToERC7579AccountSigner): candidate is Signer =>
+const isSigner = (candidate: ERC7579AccountSigner): candidate is Signer =>
   'signMessage' in candidate && 'signTypedData' in candidate && !('source' in candidate) && !('type' in candidate);
 
 /**
@@ -107,4 +107,4 @@ const toERC7579Account = async (parameters: ToERC7579AccountParameters): Promise
   });
 };
 
-export { ToERC7579AccountParameters, ToERC7579AccountSigner, toERC7579Account };
+export { ToERC7579AccountParameters, ERC7579AccountSigner, toERC7579Account };

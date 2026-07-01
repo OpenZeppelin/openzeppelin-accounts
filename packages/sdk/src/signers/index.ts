@@ -1,13 +1,13 @@
 import { type Address, type Hex, type SignableMessage, type TypedDataDefinition, OneOf, LocalAccount } from 'viem';
 import type { WebAuthnAccount, WebAuthnSignReturnType } from 'viem/account-abstraction';
 
-export { toERC7913Signer, type ToERC7913SignerConfig, type ERC7913Signer } from './erc7913.js';
+export { toERC7913Signer, type ERC7913SignerConfig, type ERC7913Signer } from './erc7913.js';
 export {
   toCrossChainSigner,
   signCrossChainEnvelopes,
   ERC7964_MAGIC,
   type ChainOperation,
-  type ToCrossChainSignerConfig,
+  type CrossChainSignerConfig,
 } from './crosschain.js';
 export { toMultisigSigner, type MultisigSignerInput } from './multisig.js';
 

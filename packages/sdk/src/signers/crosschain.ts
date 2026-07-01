@@ -36,7 +36,7 @@ type ChainOperation = {
  * @property message Optional extra top-level fields (e.g. `nonce`, `deadline`) alongside
  *   the `operations` field in the outer message.
  */
-type ToCrossChainSignerConfig = {
+type CrossChainSignerConfig = {
   application: Address;
   currentChainIndex: number;
   operations: ChainOperation[];
@@ -64,7 +64,7 @@ const buildHeader = ({
   application: Address;
 }): Hex => concat([ERC7964_MAGIC, fields, toHex(currentChainIndex, { size: 2 }), application]);
 
-const buildOuterTypedData = (config: ToCrossChainSignerConfig): TypedDataDefinition => {
+const buildOuterTypedData = (config: CrossChainSignerConfig): TypedDataDefinition => {
   const types = {
     ...(config.types as Record<string, readonly { name: string; type: string }[]>),
     EIP712Domain: [
@@ -115,7 +115,7 @@ const packEnvelope = ({
  * common foot-gun where the caller's `operations` array drifts from the per-chain typed
  * data that `toERC7579Account` is asking the signer to authorize.
  */
-const toCrossChainSigner = (innerSigner: Signer, config: ToCrossChainSignerConfig): Signer => {
+const toCrossChainSigner = (innerSigner: Signer, config: CrossChainSignerConfig): Signer => {
   const fields: Hex = config.fields ?? '0x03';
   const structHashes = config.operations.map(hashOperation);
   const expectedCurrentHash = structHashes[config.currentChainIndex];
@@ -170,7 +170,7 @@ const toCrossChainSigner = (innerSigner: Signer, config: ToCrossChainSignerConfi
  */
 const signCrossChainEnvelopes = async (
   innerSigner: Signer,
-  config: Omit<ToCrossChainSignerConfig, 'currentChainIndex'>,
+  config: Omit<CrossChainSignerConfig, 'currentChainIndex'>,
 ): Promise<Hex[]> => {
   const fields: Hex = config.fields ?? '0x03';
   const structHashes = config.operations.map(hashOperation);
@@ -186,10 +186,4 @@ const signCrossChainEnvelopes = async (
   );
 };
 
-export {
-  toCrossChainSigner,
-  signCrossChainEnvelopes,
-  ERC7964_MAGIC,
-  type ChainOperation,
-  type ToCrossChainSignerConfig,
-};
+export { toCrossChainSigner, signCrossChainEnvelopes, ERC7964_MAGIC, type ChainOperation, type CrossChainSignerConfig };
