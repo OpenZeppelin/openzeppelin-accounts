@@ -1,0 +1,288 @@
+---
+title: Signers
+description: Composable off-chain signer wrappers that produce ERC-7913, ERC-7964, and multisig envelopes
+---
+
+The `signers/` module is the off-chain counterpart to the on-chain signature-verification primitives shipped by the contracts package. It provides a narrow `Signer` interface that `toERC7579Account` and `toOpenAccount` accept alongside Viem's `LocalAccount | WebAuthnAccount`, and a set of composable wrappers that produce the exact wire formats the on-chain validators expect.
+
+Each wrapper is a pure function that takes an inner `Signer` (and a config object) and returns a new `Signer`. Wrappers compose — the outermost wrapper is the outermost envelope, matching the order the on-chain verifier strips.
+
+## The Signer interface
+
+```typescript
+import type { Address, Hex, SignableMessage, TypedDataDefinition } from 'viem';
+
+type Signer = {
+  signMessage: (parameters: { message: SignableMessage }) => Promise<Hex>;
+  signTypedData: (parameters: TypedDataDefinition) => Promise<Hex>;
+  address?: Address;
+  signerBytes?: Hex;
+};
+```
+
+`Signer` is a structural subset of Viem's `LocalAccount`, so any `LocalAccount` already satisfies it without an adapter. `WebAuthnAccount` returns a `{ signature, webauthn, ... }` object from `signMessage`, so it needs a small normalization step — that's what `toSigner` does.
+
+The two optional fields carry cross-wrapper metadata:
+
+| Field | Purpose |
+|---|---|
+| `address` | Underlying EOA / smart-account address, when one exists. Used by the ERC-1271 fallback path. |
+| `signerBytes` | ERC-7913 signer bytes (`verifier(20) \|\| key(rest)`), present on wrappers that change the on-chain identity of the signer. See [ERC-7913 Signature Verifiers](/docs/contracts/erc7913) for the encoding. |
+
+## toSigner
+
+Normalizes Viem's signer types into the SDK's `Signer` interface.
+
+```typescript
+import { toSigner } from '@openzeppelin-accounts/sdk';
+import { privateKeyToAccount } from 'viem/accounts';
+import { toWebAuthnAccount } from 'viem/account-abstraction';
+
+const eoaSigner = toSigner(privateKeyToAccount('0x...'));
+const passkeySigner = toSigner(toWebAuthnAccount({ credential: { id: '...', publicKey: '0x...' } }));
+```
+
+`toSigner` is idempotent for `LocalAccount` (the structural fields are already present) and unwraps the WebAuthn discriminated return shape so downstream code only ever handles `Hex`.
+
+<Callout type="info">
+  Passing a raw `LocalAccount` or `WebAuthnAccount` directly to `toERC7579Account` / `toOpenAccount` still works —
+  the SDK calls `toSigner` internally at the boundary. Call `toSigner` yourself when you're composing wrappers and
+  want the input type-narrowed to `Signer` up front.
+</Callout>
+
+## toERC7913Signer
+
+Wraps an inner signer so its output matches the [ERC-7913](/docs/contracts/erc7913) wire format:
+`abi.encode(bytes signer, bytes rawSig)`. This is the format `SignatureChecker.isValidSignatureNow` decodes when the signer length differs from 20.
+
+```typescript
+import { toERC7913Signer } from '@openzeppelin-accounts/sdk';
+```
+
+Two config shapes are accepted.
+
+**Verifier-less shortcut** — for EOAs (or ERC-1271 contracts) registered into an ERC-7913 key store by address:
+
+```typescript
+const signer = toERC7913Signer(toSigner(eoa), { address: eoa.address });
+// signer.signerBytes === encodePacked(['address'], [eoa.address])       // 20 bytes
+// signer.signMessage(msg) === abi.encode(bytes signer, bytes rawSig)
+```
+
+**Verifier + key** — for algorithm-specific signers (P-256, WebAuthn, RSA, ...) whose public key material lives behind a stateless verifier contract:
+
+```typescript
+import { encodeAbiParameters } from 'viem';
+
+const signer = toERC7913Signer(toSigner(passkey), {
+  verifier: '0x<WebAuthnVerifier>',
+  key: encodeAbiParameters([{ type: 'bytes32' }, { type: 'bytes32' }], [qx, qy]),
+});
+// signer.signerBytes === concat([verifier, key])   // 20 + N bytes
+```
+
+See the [Signer Types table](/docs/contracts/erc7913#signer-types) for the `verifier || key` layout of each key type.
+
+### Raw inner signatures
+
+`toERC7913Signer` also exposes `signMessageRaw` / `signTypedDataRaw`, which return the inner signature without the ERC-7913 envelope. These are consumed by `toMultisigner` when composing wrapped signers into a multisig, avoiding a double-wrap.
+
+```typescript
+const wrapped = toERC7913Signer(toSigner(eoa), { address: eoa.address });
+const envelope = await wrapped.signMessage({ message: 'hi' });     // abi.encode(signer, rawSig)
+const raw      = await wrapped.signMessageRaw({ message: 'hi' });  // just the ECDSA rawSig
+```
+
+## toCrossChainSigner
+
+Wraps an inner signer so it produces [ERC-7964](/docs/contracts/erc7964) cross-chain envelopes.
+
+```typescript
+import { toCrossChainSigner } from '@openzeppelin-accounts/sdk';
+```
+
+The wrapper takes the full list of chain-specific operations, hashes each one off-chain via viem's `hashStruct`, asks the inner signer to sign a `chainId`-free outer typed data, and packs the result into the canonical envelope:
+
+```
+abi.encode(
+  bytes32 header,     // ERC7964_MAGIC || fields || structIndex || application
+  bytes32[] structsArray,
+  bytes crossChainSignature
+)
+```
+
+```typescript
+import { encodeAbiParameters } from 'viem';
+
+const setValueOp = (chainId: bigint, verifyingContract: Address, value: bigint) => ({
+  types: {
+    ChainOperation: [
+      { name: 'domain', type: 'EIP712ChainDomain' },
+      { name: 'value',  type: 'uint256' },
+    ],
+    EIP712ChainDomain: [
+      { name: 'chainId',           type: 'uint256' },
+      { name: 'verifyingContract', type: 'address' },
+    ],
+  },
+  primaryType: 'ChainOperation' as const,
+  domain: { name: 'CrossChainApp', version: '1' },
+  message: { domain: { chainId, verifyingContract }, value },
+});
+
+const operations = [
+  { operation: setValueOp(1n,     app, 42n) },
+  { operation: setValueOp(42161n, app, 42n) },
+];
+
+// On Ethereum (structIndex = 0)
+const signer = toCrossChainSigner(toSigner(eoa), {
+  application: app,
+  currentChainIndex: 0,
+  operations,
+  domain: { name: 'CrossChainApp', version: '1' },
+  primaryType: 'SetValue',
+  types: {
+    SetValue:      [{ name: 'operations', type: 'ChainOperation[]' }],
+    ChainOperation: [
+      { name: 'domain', type: 'EIP712ChainDomain' },
+      { name: 'value',  type: 'uint256' },
+    ],
+    EIP712ChainDomain: [
+      { name: 'chainId',           type: 'uint256' },
+      { name: 'verifyingContract', type: 'address' },
+    ],
+  },
+});
+
+const envelope = await signer.signTypedData(operations[0].operation);
+```
+
+<Callout type="warning">
+  `signTypedData(parameters)` asserts that the incoming payload's `hashStruct` matches
+  `operations[currentChainIndex].operation`. This catches the common foot-gun where the caller's `operations` array
+  drifts from the per-chain typed data the smart account is being asked to authorize — the wrapper throws instead
+  of producing an envelope that would silently fail on-chain.
+</Callout>
+
+<Callout type="info">
+  `signMessage` is intentionally unsupported on a cross-chain signer — ERC-7964 is EIP-712-only by spec. Calling it
+  throws a typed error rather than returning a signature that no on-chain verifier would accept.
+</Callout>
+
+### signCrossChainEnvelopes
+
+`toCrossChainSigner` covers the single-chain composable case. When a single user signature should be dispatched to many chains, use `signCrossChainEnvelopes` — it asks the inner signer for one signature and packs `N` envelopes (one per chain, each with its own `structIndex`) that share the same inner signature:
+
+```typescript
+import { signCrossChainEnvelopes } from '@openzeppelin-accounts/sdk';
+
+const envelopes = await signCrossChainEnvelopes(toSigner(passkey), {
+  application: app,
+  operations,
+  domain: { name: 'CrossChainApp', version: '1' },
+  primaryType: 'SetValue',
+  types: /* same as above */,
+});
+// envelopes[0] is for operations[0]'s chain, envelopes[1] for operations[1]'s, ...
+```
+
+This matters for passkey and hardware-wallet flows: users are prompted for the inner signature exactly once.
+
+## toMultisigner
+
+Wraps a set of inner signers into a single signer whose output matches the encoding consumed by `Multisig.tryDecodeMultisignatureCalldata` and the multisig validators — see [Multisig Modules](/docs/contracts/multisig) for the on-chain side:
+
+```
+abi.encode(bytes[] signers, bytes[] signatures)
+```
+
+```typescript
+import { toMultisigner } from '@openzeppelin-accounts/sdk';
+```
+
+Two input shapes are accepted and can be mixed freely in the same call:
+
+| Shape | When to use |
+|---|---|
+| `{ signer: Signer, signerBytes: Hex }` | Explicit pair. Use when you're wiring an unwrapped inner signer with an externally-known ERC-7913 identity. |
+| `ERC7913Signer` (returned by `toERC7913Signer`) | Already-wrapped signer. `toMultisigner` uses its raw sign methods so the multisig envelope contains raw inner signatures, not double-wrapped ones. |
+
+```typescript
+const multisig = toMultisigner([
+  // Verifier-less EOA in pair form
+  { signer: toSigner(alice), signerBytes: alice.address },
+  // ERC-7913-wrapped passkey
+  toERC7913Signer(toSigner(passkey), {
+    verifier: webAuthnVerifier,
+    key: encodeAbiParameters([{ type: 'bytes32' }, { type: 'bytes32' }], [qx, qy]),
+  }),
+]);
+
+const envelope = await multisig.signTypedData(typedData);
+// abi.encode(
+//   [alice.address, webAuthnVerifier || key],
+//   [aliceEcdsaSig,  passkeyWebAuthnSig],
+// )
+```
+
+Signer/signature pairs are sorted by `keccak256(signerBytes)` before encoding. The on-chain `SignatureChecker.areValidSignaturesNow` uses that same key for its efficient duplicate check, so a sorted input skips the O(n²) fallback.
+
+## Composition
+
+Wrappers are pure functions of shape `(inner, config) => Signer`; the composition order matches the order the on-chain verifier strips envelopes. The design doc's canonical example — an EOA whose cross-chain envelope is further wrapped for an ERC-7913 validator — reads left-to-right from inner to outer:
+
+```typescript
+const signer = toERC7913Signer(
+  toCrossChainSigner(toSigner(eoa), {
+    application,
+    currentChainIndex,
+    operations,
+    domain: { name: 'App', version: '1' },
+    primaryType: 'SetValue',
+    types,
+  }),
+  { address: eoa.address },
+);
+
+const envelope = await signer.signTypedData(operations[currentChainIndex].operation);
+```
+
+Verifying it on-chain unwraps in the reverse order: the ERC-7913 layer first (`abi.decode(bytes signer, bytes rawSig)`), then the cross-chain layer via `CrossChainSignatureChecker.isValidCrossChainSignatureNow`.
+
+Fields like `signerBytes` propagate through outer wrappers via a spread. `toCrossChainSigner` doesn't change the signer identity — only the envelope around the signature bytes — so composing it inside an ERC-7913 wrapper preserves the outer wrapper's `signerBytes` for downstream consumers.
+
+## Using signers with toOpenAccount / toERC7579Account
+
+`toOpenAccount` and `toERC7579Account` accept `Signer | LocalAccount | WebAuthnAccount`. Passing an SDK `Signer` (from any wrapper) works the same way as passing a raw Viem account:
+
+```typescript
+import { toOpenAccount, toMultisigner, toERC7913Signer, toSigner } from '@openzeppelin-accounts/sdk';
+
+const signer = toMultisigner([
+  { signer: toSigner(alice), signerBytes: alice.address },
+  { signer: toSigner(bob),   signerBytes: bob.address   },
+]);
+
+const account = await toOpenAccount({
+  client,
+  signer,
+  validator: '0x<multisigValidatorAddress>',
+  address: '0x<deployedAccountAddress>',
+  getStubSignature: async () =>
+    // Match the shape of a real multisig envelope for gas estimation
+    encodeAbiParameters(
+      [{ type: 'bytes[]' }, { type: 'bytes[]' }],
+      [[alice.address, bob.address], [`0x${'ff'.repeat(65)}`, `0x${'ff'.repeat(65)}`]],
+    ),
+});
+```
+
+The `getStubSignature` must have the byte layout of the real envelope the validator expects — the outer multisig wrapper for multisig validators, an ERC-7913 envelope for `ERC7579Signature`, and so on.
+
+## Security Considerations
+
+- **Signer identity is data**: `signerBytes` is passed through to the on-chain multisig / validator verbatim. Make sure the value you use matches what was installed at `onInstall` time. For verifier-less EOAs this is `abi.encodePacked(address)`; for ERC-7913 signers, `verifier || key`. See [ERC-7913 Signer Types](/docs/contracts/erc7913#signer-types).
+- **Sort by identity, encode raw**: `toMultisigner` sorts pairs by `keccak256(signerBytes)` for on-chain gas efficiency but encodes the raw `signerBytes` and raw inner signatures into the output. Do not pre-hash `signerBytes` in the input.
+- **Replay protection is the application's job**: `toCrossChainSigner` implements the wire format only. Nonces, deadlines, and per-application replay scope must be part of the operation's typed data (see [ERC-7964 Security Considerations](/docs/contracts/erc7964#security-considerations)).
+- **Wrappers do not touch keys**: none of the wrappers persist, encrypt, or rotate key material. WebAuthn ceremonies, KMS adapters, and secure enclaves live behind the inner signer.

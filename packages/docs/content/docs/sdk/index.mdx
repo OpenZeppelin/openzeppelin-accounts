@@ -66,9 +66,9 @@ The `OpenAccountFactory` is deployed at the same deterministic address on all ma
 ```
 
 <Callout type="info">
-  The factory encodes the module list, init data, and salt into the CREATE2 salt, so every unique combination of
-  modules and initialization arguments produces a unique account address. Include the signer address in the `initData`
-  to prevent frontrunning.
+  The factory encodes the module list, init data, and salt into the CREATE2 salt, so every unique combination of modules
+  and initialization arguments produces a unique account address. Include the signer address in the `initData` to
+  prevent frontrunning.
 </Callout>
 
 #### Using an existing deployed account
@@ -113,12 +113,7 @@ Both functions return a Viem [`SmartAccount`](https://viem.sh/account-abstractio
 
 ### Signers
 
-Both `toOpenAccount` and `toERC7579Account` accept a `signer` argument that determines how user operations and messages are signed. Two signer types are currently supported:
-
-| Signer | Type | Description |
-|---|---|---|
-| ECDSA | `LocalAccount` | A standard Ethereum private key account (`privateKeyToAccount`). Signatures are produced with `signTypedData`. |
-| WebAuthn | `WebAuthnAccount` | A passkey (P-256) account. Signatures are produced by the authenticator and encoded according to the WebAuthn specification. |
+Both `toOpenAccount` and `toERC7579Account` accept a `signer` argument that determines how user operations and messages are signed. Viem's `LocalAccount` (ECDSA) and `WebAuthnAccount` (passkey) are accepted directly:
 
 ```typescript
 import { privateKeyToAccount } from 'viem/accounts';
@@ -131,8 +126,4 @@ const ecdsaSigner = privateKeyToAccount('0x...');
 const webAuthnSigner = toWebAuthnAccount({ credential: { id: '...', publicKey: '0x...' } });
 ```
 
-<Callout type="info">
-  The `signer` abstraction is intentionally open: any object that implements the `signMessage` / `signTypedData`
-  interface of a `LocalAccount` or a `WebAuthnAccount` can be passed in. Additional validation mechanisms
-  (e.g. multisig aggregators, HSM-backed signers) can be integrated by conforming to this interface.
-</Callout>
+The SDK also exposes a narrow `Signer` interface and a set of composable wrappers (`toERC7913Signer`, `toCrossChainSigner`, `toMultisigner`) that produce the wire formats expected by the on-chain validators — ERC-7913 envelopes, ERC-7964 cross-chain envelopes, and the multisig `bytes[]` layout. See the [Signers](/docs/sdk/signers) page for the full API.
