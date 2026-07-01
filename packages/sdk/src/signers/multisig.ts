@@ -50,12 +50,9 @@ const toMultisigner = (signers: MultisigSigner[]): Signer => {
   };
 
   return {
-    async signMessage({ message }) {
-      return Promise.all(signers.map(signer => signRawMessage(signer, message))).then(pack);
-    },
-    async signTypedData(parameters) {
-      return Promise.all(signers.map(signer => signRawTypedData(signer, parameters))).then(pack);
-    },
+    signMessage: async ({ message }) => Promise.all(signers.map(signer => signRawMessage(signer, message))).then(pack),
+    signTypedData: async parameters =>
+      Promise.all(signers.map(signer => signRawTypedData(signer, parameters))).then(pack),
   };
 };
 

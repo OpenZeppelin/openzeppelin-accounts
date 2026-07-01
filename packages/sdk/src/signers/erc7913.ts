@@ -2,8 +2,6 @@ import { encodeAbiParameters, encodePacked } from 'viem';
 import type { Address, Hex, OneOf, SignableMessage, TypedDataDefinition } from 'viem';
 import type { Signer } from './index.js';
 
-const ERC7913_ABI = [{ type: 'bytes' }, { type: 'bytes' }] as const;
-
 /**
  * Configuration for {@link toERC7913Signer}.
  *
@@ -32,9 +30,9 @@ type ERC7913SignerConfig = OneOf<
 type ERC7913Signer = Signer & {
   signerBytes: Hex;
   /** Inner signature for a `message`, without the ERC-7913 envelope. */
-  signMessageRaw: (parameters: { message: SignableMessage }) => Promise<Hex>;
+  signMessageRaw: Signer['signMessage'];
   /** Inner signature for a typed-data payload, without the ERC-7913 envelope. */
-  signTypedDataRaw: (parameters: TypedDataDefinition) => Promise<Hex>;
+  signTypedDataRaw: Signer['signTypedData'];
 };
 
 /**
@@ -47,25 +45,21 @@ type ERC7913Signer = Signer & {
  * signers (`{ verifier, key }`), `signerBytes` is `verifier(20) || key(rest)` and the
  * verifier contract decides how to validate the inner signature against the `key`.
  */
-const toERC7913Signer = (innerSigner: Signer, config: ERC7913SignerConfig): ERC7913Signer => {
+const toERC7913Signer = (signer: Signer, config: ERC7913SignerConfig): ERC7913Signer => {
   const signerBytes: Hex =
     config.verifier !== undefined
-      ? encodePacked(['address', 'bytes'], [config.verifier, config.key as Hex])
-      : encodePacked(['address'], [config.address as Address]);
+      ? encodePacked(['address', 'bytes'], [config.verifier, config.key])
+      : encodePacked(['address'], [config.address]);
 
-  const wrap = (rawSig: Hex): Hex => encodeAbiParameters(ERC7913_ABI, [signerBytes, rawSig]);
+  const wrap = (rawSig: Hex): Hex => encodeAbiParameters([{ type: 'bytes' }, { type: 'bytes' }], [signerBytes, rawSig]);
 
   return {
-    ...innerSigner,
+    ...signer,
     signerBytes,
-    signMessageRaw: parameters => innerSigner.signMessage(parameters),
-    signTypedDataRaw: parameters => innerSigner.signTypedData(parameters),
-    async signMessage(parameters) {
-      return wrap(await innerSigner.signMessage(parameters));
-    },
-    async signTypedData(parameters) {
-      return wrap(await innerSigner.signTypedData(parameters));
-    },
+    signMessageRaw: signer.signMessage,
+    signTypedDataRaw: signer.signTypedData,
+    signMessage: async parameters => signer.signMessage(parameters).then(wrap),
+    signTypedData: async parameters => signer.signTypedData(parameters).then(wrap),
   };
 };
 
