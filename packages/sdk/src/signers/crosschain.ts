@@ -4,17 +4,20 @@ import type { Signer } from './index.js';
 
 const ERC7964_MAGIC: Hex = '0x796479647964796479';
 
+// ERC-5267 domain-field bit flags.
+const FIELD_NAME = 0x01;
+const FIELD_VERSION = 0x02;
+const FIELD_VERIFYING_CONTRACT = 0x08;
+
 /**
  * One chain-specific operation in an ERC-7964 cross-chain signature.
  *
- * `operation` is the EIP-712 typed data for this chain — including a `domain` field of
- * type `EIP712ChainDomain` carrying the per-chain `chainId` and `verifyingContract`.
+ * A `ChainOperation` is the EIP-712 typed data for this chain — including its own `domain`
+ * (typically an `EIP712ChainDomain` carrying the per-chain `chainId` and `verifyingContract`).
  * Its struct hash becomes one element of the on-chain `structsArray` that the verifier
  * checks against the locally reconstructed hash.
  */
-type ChainOperation = {
-  operation: TypedDataDefinition;
-};
+type ChainOperation = TypedDataDefinition;
 
 /**
  * Configuration for {@link toCrossChainSigner}.
@@ -24,14 +27,15 @@ type ChainOperation = {
  * @property currentChainIndex Index in `operations` of this chain's leg. Packed into
  *   the header as `structIndex`.
  * @property operations All chain-specific operations being authorized. Each entry's
- *   `operation.message` is hashed via EIP-712 `hashStruct` to populate the on-chain
- *   `structsArray`.
- * @property fields ERC-5267 fields byte (default `0x03` — name + version, chainId omitted).
- * @property domain Outer-envelope domain (`name`, `version`); `chainId` is omitted per
- *   ERC-7964.
+ *   `message` is hashed via EIP-712 `hashStruct` to populate the on-chain `structsArray`.
+ * @property fields ERC-5267 fields byte. When omitted, defaults to `0x03` (name + version)
+ *   or `0x0b` (name + version + verifyingContract) depending on `domain.verifyingContract`.
+ * @property domain Outer-envelope domain. `chainId` is always omitted per ERC-7964; a
+ *   `verifyingContract` may be included when the application is deployed deterministically
+ *   at the same address on every target chain.
  * @property primaryType Primary type of the outer cross-chain envelope (e.g. `SetValue`).
  * @property types Full type map for the cross-chain typed data; the wrapper injects an
- *   `EIP712Domain` entry containing only `name` and `version`.
+ *   `EIP712Domain` entry containing the domain fields it uses.
  * @property message Optional extra top-level fields (e.g. `nonce`, `deadline`) alongside
  *   the `operations` field in the outer message.
  */
@@ -40,18 +44,39 @@ type CrossChainSignerConfig = {
   currentChainIndex: number;
   operations: ChainOperation[];
   fields?: Hex;
-  domain: { name: string; version: string };
+  domain: { name: string; version: string; verifyingContract?: Address };
   primaryType: string;
   types: TypedData;
   message?: Record<string, unknown>;
 };
 
-const hashOperation = ({ operation }: ChainOperation): Hex =>
+const hashOperation = (op: ChainOperation): Hex =>
   hashStruct({
-    data: operation.message,
-    primaryType: operation.primaryType,
-    types: operation.types,
+    data: op.message,
+    primaryType: op.primaryType,
+    types: op.types,
   });
+
+const computeFields = (domain: CrossChainSignerConfig['domain']): Hex => {
+  let bits = FIELD_NAME | FIELD_VERSION;
+  if (domain.verifyingContract !== undefined) bits |= FIELD_VERIFYING_CONTRACT;
+  return toHex(bits, { size: 1 });
+};
+
+const resolveFields = (config: Pick<CrossChainSignerConfig, 'domain' | 'fields'>): Hex => {
+  if (config.fields === undefined) return computeFields(config.domain);
+  // Guard against a mismatch that would silently reconstruct a different domain separator on-chain.
+  const fieldsBit = Number(BigInt(config.fields)) & FIELD_VERIFYING_CONTRACT;
+  const hasVC = config.domain.verifyingContract !== undefined;
+  if (Boolean(fieldsBit) !== hasVC) {
+    throw new Error(
+      `fields byte ${config.fields} and domain.verifyingContract disagree: bit ${FIELD_VERIFYING_CONTRACT} is ${
+        fieldsBit ? 'set' : 'unset'
+      } but verifyingContract is ${hasVC ? 'set' : 'unset'}`,
+    );
+  }
+  return config.fields;
+};
 
 const buildHeader = ({
   fields,
@@ -64,19 +89,30 @@ const buildHeader = ({
 }): Hex => concat([ERC7964_MAGIC, fields, toHex(currentChainIndex, { size: 2 }), application]);
 
 const buildOuterTypedData = (config: CrossChainSignerConfig): TypedDataDefinition => {
+  const eip712Domain: { name: string; type: string }[] = [
+    { name: 'name', type: 'string' },
+    { name: 'version', type: 'string' },
+  ];
+  if (config.domain.verifyingContract !== undefined) {
+    eip712Domain.push({ name: 'verifyingContract', type: 'address' });
+  }
+
   const types = {
     ...(config.types as Record<string, readonly { name: string; type: string }[]>),
-    EIP712Domain: [
-      { name: 'name', type: 'string' },
-      { name: 'version', type: 'string' },
-    ],
+    EIP712Domain: eip712Domain,
   };
+  const domain: Record<string, unknown> = {
+    name: config.domain.name,
+    version: config.domain.version,
+  };
+  if (config.domain.verifyingContract !== undefined) domain.verifyingContract = config.domain.verifyingContract;
+
   return {
-    domain: { name: config.domain.name, version: config.domain.version },
+    domain,
     primaryType: config.primaryType,
     types,
     message: {
-      operations: config.operations.map(({ operation }) => operation.message),
+      operations: config.operations.map(op => op.message),
       ...(config.message ?? {}),
     },
   };
@@ -109,12 +145,12 @@ const packEnvelope = ({
  * spec is EIP-712-only.
  *
  * When `signTypedData(parameters)` is called, the wrapper asserts that the incoming
- * `parameters` hash matches `operations[currentChainIndex].operation`. This catches the
- * common foot-gun where the caller's `operations` array drifts from the per-chain typed
- * data that `toERC7579Account` is asking the signer to authorize.
+ * `parameters` hash matches `operations[currentChainIndex]`. This catches the common
+ * foot-gun where the caller's `operations` array drifts from the per-chain typed data
+ * that `toERC7579Account` is asking the signer to authorize.
  */
 const toCrossChainSigner = (innerSigner: Signer, config: CrossChainSignerConfig): Signer => {
-  const fields: Hex = config.fields ?? '0x03';
+  const fields = resolveFields(config);
   const structHashes = config.operations.map(hashOperation);
   const expectedCurrentHash = structHashes[config.currentChainIndex];
 
@@ -169,7 +205,7 @@ const signCrossChainEnvelopes = async (
   innerSigner: Signer,
   config: Omit<CrossChainSignerConfig, 'currentChainIndex'>,
 ): Promise<Hex[]> => {
-  const fields: Hex = config.fields ?? '0x03';
+  const fields = resolveFields(config);
   const structHashes = config.operations.map(hashOperation);
   const crossChainSignature = await innerSigner.signTypedData(buildOuterTypedData({ ...config, currentChainIndex: 0 }));
   return config.operations.map((_, currentChainIndex) =>

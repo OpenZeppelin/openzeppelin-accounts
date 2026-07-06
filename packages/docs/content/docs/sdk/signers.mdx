@@ -131,8 +131,8 @@ const setValueOp = (chainId: bigint, verifyingContract: Address, value: bigint) 
 });
 
 const operations = [
-  { operation: setValueOp(1n,     app, 42n) },
-  { operation: setValueOp(42161n, app, 42n) },
+  setValueOp(1n,     app, 42n),
+  setValueOp(42161n, app, 42n),
 ];
 
 // On Ethereum (structIndex = 0)
@@ -155,15 +155,40 @@ const signer = toCrossChainSigner(toSigner(eoa), {
   },
 });
 
-const envelope = await signer.signTypedData(operations[0].operation);
+const envelope = await signer.signTypedData(operations[0]);
 ```
+
+`ChainOperation` is a type alias for viem's `TypedDataDefinition`, so each entry in `operations` is a plain typed-data payload — no wrapping object around it.
 
 <Callout type="warning">
   `signTypedData(parameters)` asserts that the incoming payload's `hashStruct` matches
-  `operations[currentChainIndex].operation`. This catches the common foot-gun where the caller's `operations` array
+  `operations[currentChainIndex]`. This catches the common foot-gun where the caller's `operations` array
   drifts from the per-chain typed data the smart account is being asked to authorize — the wrapper throws instead
   of producing an envelope that would silently fail on-chain.
 </Callout>
+
+### Outer domain and the `fields` byte
+
+The outer `domain` config accepts `name`, `version`, and optionally `verifyingContract`. `chainId` is intentionally omitted per ERC-7964 — that's what makes the signature crosschain-reusable.
+
+```typescript
+domain: {
+  name: 'CrossChainApp',
+  version: '1',
+  verifyingContract: '0x<applicationAddress>',   // optional, spec's Crosschain Domain Semantics
+},
+```
+
+Include `verifyingContract` when the application is deployed deterministically at the same address on every target chain — this binds the outer signature to that address so per-chain operation structs can omit `verifyingContract`.
+
+The ERC-5267 `fields` byte is derived automatically from the domain shape:
+
+| Domain shape                                 | Auto-computed `fields` |
+| -------------------------------------------- | ---------------------- |
+| `{ name, version }`                          | `0x03` (name + version) |
+| `{ name, version, verifyingContract }`       | `0x0b` (name + version + verifyingContract) |
+
+Callers can still pass an explicit `fields` byte for other ERC-5267 bits (e.g. salt). The wrapper throws at construction time if an explicit `fields` disagrees with `domain.verifyingContract` — a mismatch would silently reconstruct a different domain separator on-chain and every signature would fail.
 
 <Callout type="info">
   `signMessage` is intentionally unsupported on a cross-chain signer — ERC-7964 is EIP-712-only by spec. Calling it

@@ -41,10 +41,7 @@ const makeOperation = (chainId: bigint, verifyingContract: `0x${string}`, value:
 test('envelope layout: magic, fields, structIndex, application, structsArray, signature', async t => {
   const eoa = privateKeyToAccount(generatePrivateKey());
   const inner = toSigner(eoa);
-  const operations = [
-    { operation: makeOperation(1n, application, 42n) },
-    { operation: makeOperation(42161n, application, 42n) },
-  ];
+  const operations = [makeOperation(1n, application, 42n), makeOperation(42161n, application, 42n)];
 
   const wrapper = toCrossChainSigner(inner, {
     application,
@@ -55,7 +52,7 @@ test('envelope layout: magic, fields, structIndex, application, structsArray, si
     types: crossChainTypes as unknown as TypedDataDefinition['types'],
   });
 
-  const envelope = await wrapper.signTypedData(operations[1]!.operation);
+  const envelope = await wrapper.signTypedData(operations[1]!);
 
   const [header, structsArray, crossChainSignature] = decodeAbiParameters(
     parseAbiParameters(['bytes32', 'bytes32[]', 'bytes']),
@@ -70,7 +67,7 @@ test('envelope layout: magic, fields, structIndex, application, structsArray, si
   t.is(
     structsArray[1],
     hashStruct({
-      data: operations[1]!.operation.message as Record<string, unknown>,
+      data: operations[1]!.message as Record<string, unknown>,
       primaryType: 'ChainOperation',
       types: operationTypes as Record<string, readonly { name: string; type: string }[]>,
     }),
@@ -89,7 +86,7 @@ test('envelope layout: magic, fields, structIndex, application, structsArray, si
       ],
       ...crossChainTypes,
     } as unknown as TypedDataDefinition['types'],
-    message: { operations: operations.map(o => o.operation.message) },
+    message: { operations: operations.map(o => o.message) },
   });
   const recovered = await recoverAddress({ hash: outerDigest, signature: crossChainSignature });
   t.is(recovered.toLowerCase(), eoa.address.toLowerCase());
@@ -98,7 +95,7 @@ test('envelope layout: magic, fields, structIndex, application, structsArray, si
 test('signTypedData with a mismatched payload throws', async t => {
   const eoa = privateKeyToAccount(generatePrivateKey());
   const inner = toSigner(eoa);
-  const operations = [{ operation: makeOperation(1n, application, 42n) }];
+  const operations = [makeOperation(1n, application, 42n)];
 
   const wrapper = toCrossChainSigner(inner, {
     application,
@@ -114,13 +111,88 @@ test('signTypedData with a mismatched payload throws', async t => {
   });
 });
 
+test('domain.verifyingContract: envelope fields=0x0b, inner sig recovers against verifyingContract-included domain', async t => {
+  const eoa = privateKeyToAccount(generatePrivateKey());
+  const inner = toSigner(eoa);
+  const operations = [makeOperation(1n, application, 42n)];
+
+  const wrapper = toCrossChainSigner(inner, {
+    application,
+    currentChainIndex: 0,
+    operations,
+    domain: { name: 'CrossChainApp', version: '1', verifyingContract: application },
+    primaryType: 'SetValue',
+    types: crossChainTypes as unknown as TypedDataDefinition['types'],
+  });
+
+  const envelope = await wrapper.signTypedData(operations[0]!);
+  const [header, structsArray, crossChainSignature] = decodeAbiParameters(
+    parseAbiParameters(['bytes32', 'bytes32[]', 'bytes']),
+    envelope,
+  );
+  t.is(slice(header, 9, 10), '0x0b', 'fields = name | version | verifyingContract');
+
+  const outerDigest = hashTypedData({
+    domain: { name: 'CrossChainApp', version: '1', verifyingContract: application },
+    primaryType: 'SetValue',
+    types: {
+      EIP712Domain: [
+        { name: 'name', type: 'string' },
+        { name: 'version', type: 'string' },
+        { name: 'verifyingContract', type: 'address' },
+      ],
+      ...crossChainTypes,
+    } as unknown as TypedDataDefinition['types'],
+    message: { operations: operations.map(o => o.message) },
+  });
+  t.is(structsArray.length, 1);
+  const recovered = await recoverAddress({ hash: outerDigest, signature: crossChainSignature });
+  t.is(recovered.toLowerCase(), eoa.address.toLowerCase());
+});
+
+test('explicit fields byte disagreeing with domain.verifyingContract throws at construction', t => {
+  const eoa = privateKeyToAccount(generatePrivateKey());
+  const inner = toSigner(eoa);
+  const operations = [makeOperation(1n, application, 1n)];
+
+  // fields says verifyingContract is set (0x0b), but domain omits it.
+  t.throws(
+    () =>
+      toCrossChainSigner(inner, {
+        application,
+        currentChainIndex: 0,
+        operations,
+        fields: '0x0b',
+        domain: { name: 'CrossChainApp', version: '1' },
+        primaryType: 'SetValue',
+        types: crossChainTypes as unknown as TypedDataDefinition['types'],
+      }),
+    { message: /disagree/ },
+  );
+
+  // fields says verifyingContract is unset (0x03), but domain sets it.
+  t.throws(
+    () =>
+      toCrossChainSigner(inner, {
+        application,
+        currentChainIndex: 0,
+        operations,
+        fields: '0x03',
+        domain: { name: 'CrossChainApp', version: '1', verifyingContract: application },
+        primaryType: 'SetValue',
+        types: crossChainTypes as unknown as TypedDataDefinition['types'],
+      }),
+    { message: /disagree/ },
+  );
+});
+
 test('signMessage on a cross-chain signer throws', async t => {
   const eoa = privateKeyToAccount(generatePrivateKey());
   const inner = toSigner(eoa);
   const wrapper = toCrossChainSigner(inner, {
     application,
     currentChainIndex: 0,
-    operations: [{ operation: makeOperation(1n, application, 1n) }],
+    operations: [makeOperation(1n, application, 1n)],
     domain: { name: 'CrossChainApp', version: '1' },
     primaryType: 'SetValue',
     types: crossChainTypes as unknown as TypedDataDefinition['types'],
@@ -133,9 +205,9 @@ test('signCrossChainEnvelopes returns N envelopes from a single inner signature'
   const eoa = privateKeyToAccount(generatePrivateKey());
   const inner = toSigner(eoa);
   const operations = [
-    { operation: makeOperation(1n, application, 7n) },
-    { operation: makeOperation(42161n, application, 7n) },
-    { operation: makeOperation(10n, application, 7n) },
+    makeOperation(1n, application, 7n),
+    makeOperation(42161n, application, 7n),
+    makeOperation(10n, application, 7n),
   ];
 
   const envelopes = await signCrossChainEnvelopes(inner, {
@@ -171,7 +243,7 @@ test('out-of-bounds currentChainIndex throws', t => {
       toCrossChainSigner(inner, {
         application,
         currentChainIndex: 5,
-        operations: [{ operation: makeOperation(1n, application, 1n) }],
+        operations: [makeOperation(1n, application, 1n)],
         domain: { name: 'CrossChainApp', version: '1' },
         primaryType: 'SetValue',
         types: crossChainTypes as unknown as TypedDataDefinition['types'],

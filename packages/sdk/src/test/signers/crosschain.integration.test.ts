@@ -75,7 +75,7 @@ test('toCrossChainSigner: ValueSet emitted by every deployed CrossChainAppMock f
   const eoa = privateKeyToAccount(generatePrivateKey());
   const chainId = BigInt((await deployer.extend(publicActions).getChainId()) as number);
   const value = 1234n;
-  const operations = apps.map(app => ({ operation: makeOperation(chainId, app.address as Address, value) }));
+  const operations = apps.map(app => makeOperation(chainId, app.address as Address, value));
 
   // Build a separate signer per chain index — same operations, same eventual inner
   // signature, but distinct structIndex packed into the envelope header.
@@ -91,7 +91,7 @@ test('toCrossChainSigner: ValueSet emitted by every deployed CrossChainAppMock f
   );
 
   for (let i = 0; i < apps.length; i++) {
-    const envelope = await signers[i]!.signTypedData(operations[i]!.operation);
+    const envelope = await signers[i]!.signTypedData(operations[i]!);
     const callData = encodeFunctionData({
       abi: CrossChainAppMockArtifact.abi,
       functionName: 'setValueCalldata',
@@ -115,7 +115,7 @@ test('signing with the wrong structIndex reverts on-chain', async t => {
   const eoa = privateKeyToAccount(generatePrivateKey());
   const chainId = BigInt((await deployer.extend(publicActions).getChainId()) as number);
   const value = 7n;
-  const operations = apps.map(app => ({ operation: makeOperation(chainId, app.address as Address, value) }));
+  const operations = apps.map(app => makeOperation(chainId, app.address as Address, value));
 
   // Sign for app 0 but submit to app 1 — structIndex mismatch should revert.
   const signer = toCrossChainSigner(toSigner(eoa), {
@@ -126,7 +126,7 @@ test('signing with the wrong structIndex reverts on-chain', async t => {
     primaryType: 'SetValue',
     types: crossChainTypes as unknown as TypedDataDefinition['types'],
   });
-  const envelope = await signer.signTypedData(operations[0]!.operation);
+  const envelope = await signer.signTypedData(operations[0]!);
 
   await t.throwsAsync(() =>
     deployer.sendTransaction({

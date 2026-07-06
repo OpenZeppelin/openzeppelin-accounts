@@ -61,7 +61,7 @@ test('composition: toERC7913Signer(toCrossChainSigner(eoa)) verifies on-chain vi
   const eoa = privateKeyToAccount(generatePrivateKey());
   const chainId = BigInt((await deployer.extend(publicActions).getChainId()) as number);
   const value = 5678n;
-  const operations = apps.map(app => ({ operation: makeOperation(chainId, app.address as Address, value) }));
+  const operations = apps.map(app => makeOperation(chainId, app.address as Address, value));
 
   for (let i = 0; i < apps.length; i++) {
     const composed = toERC7913Signer(
@@ -76,7 +76,7 @@ test('composition: toERC7913Signer(toCrossChainSigner(eoa)) verifies on-chain vi
       { address: eoa.address },
     );
 
-    const composedSig = await composed.signTypedData(operations[i]!.operation);
+    const composedSig = await composed.signTypedData(operations[i]!);
 
     const txHash = await deployer.sendTransaction({
       to: apps[i]!.address as Address,

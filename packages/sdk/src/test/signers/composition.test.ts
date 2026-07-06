@@ -40,10 +40,7 @@ const makeOperation = (chainId: bigint, verifyingContract: `0x${string}`, value:
 
 test('toERC7913Signer(toCrossChainSigner(eoa)): unwraps in two passes to recover the EOA', async t => {
   const eoa = privateKeyToAccount(generatePrivateKey());
-  const operations = [
-    { operation: makeOperation(1n, application, 100n) },
-    { operation: makeOperation(42161n, application, 100n) },
-  ];
+  const operations = [makeOperation(1n, application, 100n), makeOperation(42161n, application, 100n)];
 
   const crossChainSigner = toCrossChainSigner(toSigner(eoa), {
     application,
@@ -56,7 +53,7 @@ test('toERC7913Signer(toCrossChainSigner(eoa)): unwraps in two passes to recover
   const composed = toERC7913Signer(crossChainSigner, { address: eoa.address });
 
   // Composed signature is abi.encode(signerBytes, crossChainEnvelope).
-  const composedSig = await composed.signTypedData(operations[0]!.operation);
+  const composedSig = await composed.signTypedData(operations[0]!);
 
   // Pass 1: strip ERC-7913 envelope.
   const [signerBytes, crossChainEnvelope] = decodeAbiParameters(parseAbiParameters(['bytes', 'bytes']), composedSig);
@@ -80,7 +77,7 @@ test('toERC7913Signer(toCrossChainSigner(eoa)): unwraps in two passes to recover
       ],
       ...crossChainTypes,
     } as unknown as TypedDataDefinition['types'],
-    message: { operations: operations.map(o => o.operation.message) },
+    message: { operations: operations.map(o => o.message) },
   });
   const recovered = await recoverAddress({ hash: outerDigest, signature: crossChainSignature });
   t.is(recovered.toLowerCase(), eoa.address.toLowerCase());
