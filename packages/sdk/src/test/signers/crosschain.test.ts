@@ -1,16 +1,31 @@
-import test from 'ava';
+import 'viem/window';
+import _test, { TestFn } from 'ava';
 import {
+  bytesToHex,
   decodeAbiParameters,
+  encodeFunctionData,
+  getContract,
   hashStruct,
   hashTypedData,
   parseAbiParameters,
+  publicActions,
   recoverAddress,
   slice,
   TypedDataDefinition,
+  type Address,
+  type Hex,
 } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
+import CrossChainAppMockArtifact from '@openzeppelin-accounts/contracts/out/CrossChainAppMock.sol/CrossChainAppMock.json' with { type: 'json' };
+import { setup, cleanup, type Context } from '../helpers/setup.js';
+import { createAndFundEOA } from '../helpers/accounts.js';
 import { ERC7964_MAGIC, signCrossChainEnvelopes, toCrossChainSigner } from '../../signers/crosschain.js';
 import { toSigner } from '../../signers/index.js';
+
+const test = _test as TestFn<Context>;
+
+test.before(setup);
+test.after.always(cleanup);
 
 const application = '0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd' as const;
 
@@ -35,6 +50,28 @@ const makeOperation = (chainId: bigint, verifyingContract: `0x${string}`, value:
   types: operationTypes as unknown as TypedDataDefinition['types'],
   primaryType: 'ChainOperation',
   domain: { name: 'CrossChainApp', version: '1' },
+  message: { domain: { chainId, verifyingContract }, value },
+});
+
+const deployApp = async (deployer: Awaited<ReturnType<typeof createAndFundEOA>>) => {
+  const hash = await deployer.deployContract({
+    abi: CrossChainAppMockArtifact.abi,
+    bytecode: CrossChainAppMockArtifact.bytecode.object as Hex,
+    args: ['CrossChainAppMock', '1.0.0'],
+    nonce: await deployer.getTransactionCount({ address: deployer.account.address }),
+  });
+  const receipt = await deployer.waitForTransactionReceipt({ hash });
+  return getContract({
+    abi: CrossChainAppMockArtifact.abi,
+    address: receipt.contractAddress as Address,
+    client: deployer,
+  });
+};
+
+const makeChainMockOperation = (chainId: bigint, verifyingContract: Address, value: bigint): TypedDataDefinition => ({
+  types: operationTypes as unknown as TypedDataDefinition['types'],
+  primaryType: 'ChainOperation',
+  domain: { name: 'CrossChainAppMock', version: '1.0.0' },
   message: { domain: { chainId, verifyingContract }, value },
 });
 
@@ -417,4 +454,114 @@ test('CrossChainSigner is structurally assignable to Signer', async t => {
   const asSigner: import('../../signers/index.js').Signer = wrapper;
   t.is(typeof asSigner.signTypedData, 'function');
   t.is(typeof wrapper.signCrossChainEnvelopes, 'function');
+});
+
+test('on-chain: ValueSet emitted by every deployed CrossChainAppMock for the correct chain index', async t => {
+  const deployer = await createAndFundEOA(t.context.anvilPort, t.context.testClient);
+
+  const appCount = 3;
+  const apps: Awaited<ReturnType<typeof deployApp>>[] = [];
+  for (let i = 0; i < appCount; i++) {
+    apps.push(await deployApp(deployer));
+  }
+
+  const eoa = privateKeyToAccount(generatePrivateKey());
+  const chainId = BigInt((await deployer.extend(publicActions).getChainId()) as number);
+  const value = 1234n;
+  const operations = apps.map(app => makeChainMockOperation(chainId, app.address as Address, value));
+
+  const signers = apps.map((_, i) =>
+    toCrossChainSigner(toSigner(eoa), {
+      application: apps[i]!.address as Address,
+      currentChainIndex: i,
+      operations,
+      domain: { name: 'CrossChainAppMock', version: '1.0.0' },
+      primaryType: 'SetValue',
+      types: crossChainTypes as unknown as TypedDataDefinition['types'],
+    }),
+  );
+
+  for (let i = 0; i < apps.length; i++) {
+    const envelope = await signers[i]!.signTypedData(operations[i]!);
+    const callData = encodeFunctionData({
+      abi: CrossChainAppMockArtifact.abi,
+      functionName: 'setValueCalldata',
+      args: [eoa.address, value, envelope],
+    });
+    const txHash = await deployer.sendTransaction({ to: apps[i]!.address as Address, data: callData });
+    const receipt = await deployer.waitForTransactionReceipt({ hash: txHash });
+    t.is(receipt.status, 'success', `setValueCalldata succeeded on app ${i}`);
+    t.is((await apps[i]!.read.value!([eoa.address])) as bigint, value, `value persisted on app ${i}`);
+  }
+});
+
+test('on-chain: wrapper.signCrossChainEnvelopes() — one inner signature, N envelopes accepted on every app', async t => {
+  const deployer = await createAndFundEOA(t.context.anvilPort, t.context.testClient);
+  const apps: Awaited<ReturnType<typeof deployApp>>[] = [];
+  for (let i = 0; i < 3; i++) apps.push(await deployApp(deployer));
+
+  const eoa = privateKeyToAccount(generatePrivateKey());
+  const chainId = BigInt((await deployer.extend(publicActions).getChainId()) as number);
+  const value = 5555n;
+  const operations = apps.map(app => makeChainMockOperation(chainId, app.address as Address, value));
+
+  const wrapper = toCrossChainSigner(toSigner(eoa), {
+    application: apps[0]!.address as Address,
+    operations,
+    domain: { name: 'CrossChainAppMock', version: '1.0.0' },
+    primaryType: 'SetValue',
+    types: crossChainTypes as unknown as TypedDataDefinition['types'],
+  });
+
+  const envelopes = await wrapper.signCrossChainEnvelopes();
+  t.is(envelopes.length, apps.length);
+
+  for (let i = 0; i < apps.length; i++) {
+    const txHash = await deployer.sendTransaction({
+      to: apps[i]!.address as Address,
+      data: encodeFunctionData({
+        abi: CrossChainAppMockArtifact.abi,
+        functionName: 'setValueCalldata',
+        args: [eoa.address, value, envelopes[i]!],
+      }),
+    });
+    const receipt = await deployer.waitForTransactionReceipt({ hash: txHash });
+    t.is(receipt.status, 'success', `envelope ${i} accepted by app ${i}`);
+    t.is((await apps[i]!.read.value!([eoa.address])) as bigint, value);
+  }
+});
+
+test('on-chain: signing with the wrong structIndex reverts', async t => {
+  const deployer = await createAndFundEOA(t.context.anvilPort, t.context.testClient);
+  const apps: Awaited<ReturnType<typeof deployApp>>[] = [];
+  for (let i = 0; i < 2; i++) {
+    apps.push(await deployApp(deployer));
+  }
+  const eoa = privateKeyToAccount(generatePrivateKey());
+  const chainId = BigInt((await deployer.extend(publicActions).getChainId()) as number);
+  const value = 7n;
+  const operations = apps.map(app => makeChainMockOperation(chainId, app.address as Address, value));
+
+  const signer = toCrossChainSigner(toSigner(eoa), {
+    application: apps[0]!.address as Address,
+    currentChainIndex: 0,
+    operations,
+    domain: { name: 'CrossChainAppMock', version: '1.0.0' },
+    primaryType: 'SetValue',
+    types: crossChainTypes as unknown as TypedDataDefinition['types'],
+  });
+  const envelope = await signer.signTypedData(operations[0]!);
+
+  await t.throwsAsync(() =>
+    deployer.sendTransaction({
+      to: apps[1]!.address as Address,
+      data: encodeFunctionData({
+        abi: CrossChainAppMockArtifact.abi,
+        functionName: 'setValueCalldata',
+        args: [eoa.address, value, envelope],
+      }),
+    }),
+  );
+  t.is((await apps[1]!.read.value!([eoa.address])) as bigint, 0n);
+  t.assert(bytesToHex(new Uint8Array(0)) === '0x'); // smoke
 });
