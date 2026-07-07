@@ -16,7 +16,6 @@ import {
   type Address,
   type Chain,
   type Client,
-  type GetContractReturnType,
   type LocalAccount,
   type RpcSchema,
   type Transport,
