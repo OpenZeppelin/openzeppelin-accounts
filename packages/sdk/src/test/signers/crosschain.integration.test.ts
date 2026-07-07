@@ -106,6 +106,47 @@ test('toCrossChainSigner: ValueSet emitted by every deployed CrossChainAppMock f
   }
 });
 
+test('wrapper.signCrossChainEnvelopes(): one inner signature, N envelopes accepted on every app', async t => {
+  const deployer = await createAndFundEOA(t.context.anvilPort, t.context.testClient);
+  const apps: Awaited<ReturnType<typeof deployApp>>[] = [];
+  for (let i = 0; i < 3; i++) apps.push(await deployApp(deployer));
+
+  const eoa = privateKeyToAccount(generatePrivateKey());
+  const chainId = BigInt((await deployer.extend(publicActions).getChainId()) as number);
+  const value = 5555n;
+  const operations = apps.map(app => makeOperation(chainId, app.address as Address, value));
+
+  const wrapper = toCrossChainSigner(toSigner(eoa), {
+    application: apps[0]!.address as Address,
+    operations,
+    domain: { name: 'CrossChainAppMock', version: '1.0.0' },
+    primaryType: 'SetValue',
+    types: crossChainTypes as unknown as TypedDataDefinition['types'],
+  });
+
+  // Sign once, dispatch to N apps.
+  const envelopes = await wrapper.signCrossChainEnvelopes();
+  t.is(envelopes.length, apps.length);
+
+  for (let i = 0; i < apps.length; i++) {
+    // Each envelope's application header carries apps[0]'s address (config-wide), but the
+    // verifier reads eip712Domain() from that application and the fields byte says name +
+    // version only, so any app on the same chain that shares the domain name/version
+    // reconstructs the same domain separator.
+    const txHash = await deployer.sendTransaction({
+      to: apps[i]!.address as Address,
+      data: encodeFunctionData({
+        abi: CrossChainAppMockArtifact.abi,
+        functionName: 'setValueCalldata',
+        args: [eoa.address, value, envelopes[i]!],
+      }),
+    });
+    const receipt = await deployer.waitForTransactionReceipt({ hash: txHash });
+    t.is(receipt.status, 'success', `envelope ${i} accepted by app ${i}`);
+    t.is((await apps[i]!.read.value!([eoa.address])) as bigint, value);
+  }
+});
+
 test('signing with the wrong structIndex reverts on-chain', async t => {
   const deployer = await createAndFundEOA(t.context.anvilPort, t.context.testClient);
   const apps: Awaited<ReturnType<typeof deployApp>>[] = [];

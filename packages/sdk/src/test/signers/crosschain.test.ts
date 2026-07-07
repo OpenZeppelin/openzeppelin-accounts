@@ -235,19 +235,186 @@ test('signCrossChainEnvelopes returns N envelopes from a single inner signature'
   t.deepEqual(indices, [0, 1, 2]);
 });
 
-test('out-of-bounds currentChainIndex throws', t => {
+test('out-of-bounds currentChainIndex throws on signTypedData', async t => {
   const eoa = privateKeyToAccount(generatePrivateKey());
   const inner = toSigner(eoa);
-  t.throws(
-    () =>
-      toCrossChainSigner(inner, {
-        application,
-        currentChainIndex: 5,
-        operations: [makeOperation(1n, application, 1n)],
-        domain: { name: 'CrossChainApp', version: '1' },
-        primaryType: 'SetValue',
-        types: crossChainTypes as unknown as TypedDataDefinition['types'],
-      }),
-    { message: /out of bounds/ },
+  const operations = [makeOperation(1n, application, 1n)];
+  const wrapper = toCrossChainSigner(inner, {
+    application,
+    currentChainIndex: 5,
+    operations,
+    domain: { name: 'CrossChainApp', version: '1' },
+    primaryType: 'SetValue',
+    types: crossChainTypes as unknown as TypedDataDefinition['types'],
+  });
+  await t.throwsAsync(() => wrapper.signTypedData(operations[0]!), { message: /out of bounds/ });
+});
+
+test('resolves currentChainIndex from explicit chainId', async t => {
+  const eoa = privateKeyToAccount(generatePrivateKey());
+  const inner = toSigner(eoa);
+  const operations = [
+    makeOperation(1n, application, 42n),
+    makeOperation(42161n, application, 42n),
+    makeOperation(10n, application, 42n),
+  ];
+
+  const wrapper = toCrossChainSigner(inner, {
+    application,
+    chainId: 42161n,
+    operations,
+    domain: { name: 'CrossChainApp', version: '1' },
+    primaryType: 'SetValue',
+    types: crossChainTypes as unknown as TypedDataDefinition['types'],
+  });
+
+  const envelope = await wrapper.signTypedData(operations[1]!);
+  const [header] = decodeAbiParameters(parseAbiParameters(['bytes32', 'bytes32[]', 'bytes']), envelope);
+  t.is(slice(header, 10, 12), '0x0001', 'structIndex = 1 (Arbitrum)');
+});
+
+test('selector precedence: currentChainIndex wins over chainId', async t => {
+  const eoa = privateKeyToAccount(generatePrivateKey());
+  const inner = toSigner(eoa);
+  const operations = [makeOperation(1n, application, 42n), makeOperation(42161n, application, 42n)];
+
+  const wrapper = toCrossChainSigner(inner, {
+    application,
+    currentChainIndex: 0,
+    chainId: 42161n,
+    operations,
+    domain: { name: 'CrossChainApp', version: '1' },
+    primaryType: 'SetValue',
+    types: crossChainTypes as unknown as TypedDataDefinition['types'],
+  });
+  const [header] = decodeAbiParameters(
+    parseAbiParameters(['bytes32', 'bytes32[]', 'bytes']),
+    await wrapper.signTypedData(operations[0]!),
   );
+  t.is(slice(header, 10, 12), '0x0000', 'currentChainIndex wins');
+});
+
+test('no selector throws on signTypedData', async t => {
+  const eoa = privateKeyToAccount(generatePrivateKey());
+  const inner = toSigner(eoa);
+  const operations = [makeOperation(1n, application, 42n)];
+  const wrapper = toCrossChainSigner(inner, {
+    application,
+    operations,
+    domain: { name: 'CrossChainApp', version: '1' },
+    primaryType: 'SetValue',
+    types: crossChainTypes as unknown as TypedDataDefinition['types'],
+  });
+  await t.throwsAsync(() => wrapper.signTypedData(operations[0]!), {
+    message: /currentChainIndex or chainId/,
+  });
+});
+
+test('chainId not matching any operation throws', async t => {
+  const eoa = privateKeyToAccount(generatePrivateKey());
+  const inner = toSigner(eoa);
+  const operations = [makeOperation(1n, application, 42n), makeOperation(42161n, application, 42n)];
+  const wrapper = toCrossChainSigner(inner, {
+    application,
+    chainId: 999n,
+    operations,
+    domain: { name: 'CrossChainApp', version: '1' },
+    primaryType: 'SetValue',
+    types: crossChainTypes as unknown as TypedDataDefinition['types'],
+  });
+  await t.throwsAsync(() => wrapper.signTypedData(operations[0]!), {
+    message: /no operation matches chainId 999/,
+  });
+});
+
+test('chainId lookup finds field at any nesting depth', async t => {
+  const eoa = privateKeyToAccount(generatePrivateKey());
+  const inner = toSigner(eoa);
+
+  // Operations with chainId at different nesting depths — top-level, one-nested, two-nested.
+  const topLevelOp: TypedDataDefinition = {
+    types: {
+      Op: [
+        { name: 'chainId', type: 'uint256' },
+        { name: 'value', type: 'uint256' },
+      ],
+    } as unknown as TypedDataDefinition['types'],
+    primaryType: 'Op',
+    domain: { name: 'X', version: '1' },
+    message: { chainId: 7n, value: 1n },
+  };
+  const oneNestedOp: TypedDataDefinition = makeOperation(11n, application, 1n); // chainId inside .domain
+  const twoNestedOp: TypedDataDefinition = {
+    types: {
+      Outer: [{ name: 'inner', type: 'Middle' }],
+      Middle: [{ name: 'deep', type: 'Deep' }],
+      Deep: [{ name: 'chainId', type: 'uint256' }],
+    } as unknown as TypedDataDefinition['types'],
+    primaryType: 'Outer',
+    domain: { name: 'X', version: '1' },
+    message: { inner: { deep: { chainId: 22n } } },
+  };
+
+  const operations = [topLevelOp, oneNestedOp, twoNestedOp];
+
+  for (const [chainId, expectedIdx] of [
+    [7n, 0],
+    [11n, 1],
+    [22n, 2],
+  ] as const) {
+    const wrapper = toCrossChainSigner(inner, {
+      application,
+      chainId,
+      operations,
+      domain: { name: 'X', version: '1' },
+      primaryType: 'SetValue',
+      types: {
+        SetValue: [{ name: 'operations', type: 'string[]' }], // types don't matter for the resolve path
+      } as unknown as TypedDataDefinition['types'],
+    });
+    const envelope = await wrapper.signTypedData(operations[expectedIdx]!);
+    const [header] = decodeAbiParameters(parseAbiParameters(['bytes32', 'bytes32[]', 'bytes']), envelope);
+    t.is(Number(BigInt(slice(header, 10, 12))), expectedIdx, `chainId ${chainId} → index ${expectedIdx}`);
+  }
+});
+
+test('wrapper.signCrossChainEnvelopes matches standalone signCrossChainEnvelopes', async t => {
+  const eoa = privateKeyToAccount(generatePrivateKey());
+  const inner = toSigner(eoa);
+  const operations = [
+    makeOperation(1n, application, 3n),
+    makeOperation(42161n, application, 3n),
+    makeOperation(10n, application, 3n),
+  ];
+  const baseConfig = {
+    application,
+    operations,
+    domain: { name: 'CrossChainApp', version: '1' },
+    primaryType: 'SetValue',
+    types: crossChainTypes as unknown as TypedDataDefinition['types'],
+  } as const;
+
+  const wrapper = toCrossChainSigner(inner, baseConfig);
+  const fromMethod = await wrapper.signCrossChainEnvelopes();
+  const fromStandalone = await signCrossChainEnvelopes(inner, baseConfig);
+
+  t.deepEqual(fromMethod, fromStandalone);
+});
+
+test('CrossChainSigner is structurally assignable to Signer', async t => {
+  const eoa = privateKeyToAccount(generatePrivateKey());
+  const operations = [makeOperation(1n, application, 1n)];
+  const wrapper = toCrossChainSigner(toSigner(eoa), {
+    application,
+    currentChainIndex: 0,
+    operations,
+    domain: { name: 'CrossChainApp', version: '1' },
+    primaryType: 'SetValue',
+    types: crossChainTypes as unknown as TypedDataDefinition['types'],
+  });
+
+  // Compile-time assignability: passes if it type-checks.
+  const asSigner: import('../../signers/index.js').Signer = wrapper;
+  t.is(typeof asSigner.signTypedData, 'function');
+  t.is(typeof wrapper.signCrossChainEnvelopes, 'function');
 });

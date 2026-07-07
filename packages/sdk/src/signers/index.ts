@@ -1,4 +1,11 @@
-import { type Address, type Hex, type SignableMessage, type TypedDataDefinition, OneOf, LocalAccount } from 'viem';
+import {
+  type Address,
+  type Hex,
+  type LocalAccount,
+  type OneOf,
+  type SignableMessage,
+  type TypedDataDefinition,
+} from 'viem';
 import type { WebAuthnAccount, WebAuthnSignReturnType } from 'viem/account-abstraction';
 
 export { toERC7913Signer, type ERC7913SignerConfig, type ERC7913Signer } from './erc7913.js';
@@ -8,6 +15,7 @@ export {
   ERC7964_MAGIC,
   type ChainOperation,
   type CrossChainSignerConfig,
+  type CrossChainSigner,
 } from './crosschain.js';
 export { toMultisigner, type MultisigSigner } from './multisig.js';
 

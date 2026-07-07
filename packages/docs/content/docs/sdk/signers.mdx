@@ -135,10 +135,10 @@ const operations = [
   setValueOp(42161n, app, 42n),
 ];
 
-// On Ethereum (structIndex = 0)
+// Select the chain by its id — the wrapper scans operations for a matching `chainId` field.
 const signer = toCrossChainSigner(toSigner(eoa), {
   application: app,
-  currentChainIndex: 0,
+  chainId: 1n,
   operations,
   domain: { name: 'CrossChainApp', version: '1' },
   primaryType: 'SetValue',
@@ -160,12 +160,58 @@ const envelope = await signer.signTypedData(operations[0]);
 
 `ChainOperation` is a type alias for viem's `TypedDataDefinition`, so each entry in `operations` is a plain typed-data payload — no wrapping object around it.
 
+### Selecting the current chain
+
+The wrapper needs to know which entry in `operations` corresponds to the chain it's signing for. Two selectors are accepted; the first non-`undefined` one wins:
+
+| Selector | Behaviour |
+|---|---|
+| `config.currentChainIndex` | Explicit index into `operations` |
+| `config.chainId` | Scans `operations` for a message field named `chainId` matching this value |
+
+Per [ERC-7964 §Message Array Encoding](/docs/contracts/erc7964#how-erc-7964-works), each operation MUST include the target `chainId` under a field named exactly `chainId` at any depth within the struct. That canonical field name is what lets `chainId`-driven lookup work regardless of the application-specific struct layout — the wrapper walks the operation's message recursively for the field.
+
+```typescript
+// (a) Explicit index — v1 escape hatch, still supported.
+toCrossChainSigner(inner, { currentChainIndex: 1, ...rest });
+
+// (b) By chainId — wrapper finds the operation whose message includes `chainId: 42161n`.
+toCrossChainSigner(inner, { chainId: 42161n, ...rest });
+```
+
 <Callout type="warning">
-  `signTypedData(parameters)` asserts that the incoming payload's `hashStruct` matches
-  `operations[currentChainIndex]`. This catches the common foot-gun where the caller's `operations` array
-  drifts from the per-chain typed data the smart account is being asked to authorize — the wrapper throws instead
-  of producing an envelope that would silently fail on-chain.
+  `signTypedData(parameters)` asserts that the incoming payload's `hashStruct` matches the resolved operation.
+  This catches the common foot-gun where the caller's `operations` array drifts from the per-chain typed data the
+  smart account is being asked to authorize — the wrapper throws instead of producing an envelope that would
+  silently fail on-chain.
 </Callout>
+
+### signCrossChainEnvelopes
+
+`toCrossChainSigner` returns a `CrossChainSigner` — a `Signer & { signCrossChainEnvelopes: () => Promise<Hex[]> }`. When you have a wrapper instance and want to dispatch to every chain in the config at once, call the method:
+
+```typescript
+const wrapper = toCrossChainSigner(toSigner(eoa), config);
+
+const envelopeForCurrentChain = await wrapper.signTypedData(operations[0]);
+const envelopesForEveryChain  = await wrapper.signCrossChainEnvelopes();
+```
+
+The inner signer is asked for the cross-chain signature exactly once — the N envelopes share it and differ only in their header's `structIndex`. This matters for passkey and hardware-wallet flows where each `signTypedData` call prompts the user.
+
+A standalone `signCrossChainEnvelopes(inner, config)` is also exported for the case where you don't have (or don't want) a wrapper instance:
+
+```typescript
+import { signCrossChainEnvelopes } from '@openzeppelin-accounts/sdk';
+
+const envelopes = await signCrossChainEnvelopes(toSigner(passkey), {
+  application: app,
+  operations,
+  domain: { name: 'CrossChainApp', version: '1' },
+  primaryType: 'SetValue',
+  types,
+});
+```
 
 ### Outer domain and the `fields` byte
 
@@ -194,25 +240,6 @@ Callers can still pass an explicit `fields` byte for other ERC-5267 bits (e.g. s
   `signMessage` is intentionally unsupported on a cross-chain signer — ERC-7964 is EIP-712-only by spec. Calling it
   throws a typed error rather than returning a signature that no on-chain verifier would accept.
 </Callout>
-
-### signCrossChainEnvelopes
-
-`toCrossChainSigner` covers the single-chain composable case. When a single user signature should be dispatched to many chains, use `signCrossChainEnvelopes` — it asks the inner signer for one signature and packs `N` envelopes (one per chain, each with its own `structIndex`) that share the same inner signature:
-
-```typescript
-import { signCrossChainEnvelopes } from '@openzeppelin-accounts/sdk';
-
-const envelopes = await signCrossChainEnvelopes(toSigner(passkey), {
-  application: app,
-  operations,
-  domain: { name: 'CrossChainApp', version: '1' },
-  primaryType: 'SetValue',
-  types: /* same as above */,
-});
-// envelopes[0] is for operations[0]'s chain, envelopes[1] for operations[1]'s, ...
-```
-
-This matters for passkey and hardware-wallet flows: users are prompted for the inner signature exactly once.
 
 ## toMultisigner
 
@@ -261,7 +288,7 @@ Wrappers are pure functions of shape `(inner, config) => Signer`; the compositio
 const signer = toERC7913Signer(
   toCrossChainSigner(toSigner(eoa), {
     application,
-    currentChainIndex,
+    chainId,
     operations,
     domain: { name: 'App', version: '1' },
     primaryType: 'SetValue',
@@ -270,7 +297,7 @@ const signer = toERC7913Signer(
   { address: eoa.address },
 );
 
-const envelope = await signer.signTypedData(operations[currentChainIndex].operation);
+const envelope = await signer.signTypedData(operationForChain);
 ```
 
 Verifying it on-chain unwraps in the reverse order: the ERC-7913 layer first (`abi.decode(bytes signer, bytes rawSig)`), then the cross-chain layer via `CrossChainSignatureChecker.isValidCrossChainSignatureNow`.
