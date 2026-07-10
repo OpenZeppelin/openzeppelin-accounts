@@ -24,9 +24,11 @@ async function fixture() {
   const getProxyCodeHash = () =>
     ethers.keccak256(
       ethers.concat([
-        '0x60395f8160225f3973',
+        '0x60395f8160475f3973',
         implementation,
-        '0x60095155f3365f5f375f5f365f7f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc545af43d5f5f3e5f3d91603757fd5bf3',
+        '0x807f',
+        ethers.id('Upgraded(address)'),
+        '0x5f5fa260095155f3365f5f375f5f365f7f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc545af43d5f5f3e5f3d91603757fd5bf3',
       ]),
     );
 
