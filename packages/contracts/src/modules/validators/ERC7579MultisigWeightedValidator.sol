@@ -55,4 +55,14 @@ contract ERC7579MultisigWeightedValidator is ERC7579MultisigValidator, ERC7579Mu
     ) internal view virtual override(ERC7579Multisig, ERC7579MultisigWeighted) returns (bool) {
         return super._validateThreshold(account, validatingSigners);
     }
+
+    /// @inheritdoc ERC7579MultisigWeighted
+    function _validateMultisig(
+        address account,
+        bytes32 hash,
+        bytes[] calldata signingSigners,
+        bytes[] calldata signatures
+    ) internal view virtual override(ERC7579Multisig, ERC7579MultisigWeighted) returns (bool) {
+        return super._validateMultisig(account, hash, signingSigners, signatures);
+    }
 }

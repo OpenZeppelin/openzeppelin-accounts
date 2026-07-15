@@ -3,6 +3,7 @@ pragma solidity ^0.8.27;
 
 import {ERC7579Multisig} from "./ERC7579Multisig.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 /**
@@ -25,6 +26,7 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
  */
 abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
     using EnumerableSet for EnumerableSet.BytesSet;
+    using SignatureChecker for bytes32;
     using SafeCast for *;
 
     // Sum of all the extra weights of all signers. Each signer has a base weight of 1.
@@ -277,6 +279,31 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
                 weight += signerWeight(account, validatingSigners[i]);
             }
             return weight >= threshold(account);
+        }
+    }
+
+    /**
+     * @dev Single-pass override of {ERC7579Multisig-_validateMultisig}. The base version validates the
+     * threshold and the signatures in two loops, each performing a signer-membership lookup per signer.
+     * {signerWeight} already returns 0 for non-authorized signers, so weight accumulation and membership
+     * are folded into one pass, halving the membership lookups on the hot validation path. Signatures are
+     * still verified last, so an insufficient-weight operation short-circuits before the expensive check.
+     */
+    function _validateMultisig(
+        address account,
+        bytes32 hash,
+        bytes[] calldata signingSigners,
+        bytes[] calldata signatures
+    ) internal view virtual override returns (bool) {
+        unchecked {
+            uint64 weight = 0;
+            for (uint256 i = 0; i < signingSigners.length; ++i) {
+                uint64 w = signerWeight(account, signingSigners[i]);
+                if (w == 0) return false; // not an authorized signer
+                // Overflow impossible: weight values are bounded by uint64 and economic constraints
+                weight += w;
+            }
+            return weight >= threshold(account) && hash.areValidSignaturesNow(signingSigners, signatures);
         }
     }
 }
