@@ -148,5 +148,4 @@ contract ERC8043UtilsTest is Test {
         // Should never revert regardless of input shape; validity is not asserted.
         this.tryDecodeInitMode(data);
     }
-
 }

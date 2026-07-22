@@ -134,8 +134,8 @@ The full init mode validation flow implemented by `AccountERC8043Upgradeable`:
 Check whether `userOp.initCode` starts with the magic value. If not, fall through to normal `_validateUserOp`.
 
 ```solidity
-if (userOp.initCode.length >= 4 && bytes4(userOp.initCode[:4]) == INIT_MODE_MAGIC_VALUE) {
-    return _validateInitMode(userOp, userOpHash);
+if (userOp.initCode.length >= 4 && bytes4(userOp.initCode[:4]) == ERC8043Utils.INIT_MODE_MAGIC_VALUE) {
+    // ...decode, verify, and install (steps below)...
 }
 return super._validateUserOp(userOp, userOpHash, signature);
 ```
@@ -155,7 +155,7 @@ Decode `(moduleTypeIds, modules, initDatas, installationSignature)` from `userOp
 Compute the EIP-712 struct hash and validate `installationSignature` via `isValidSignature`. If the signature is empty, skip this step and proceed without installing any modules.
 
 ```solidity
-bytes32 structHash = _installModulesStructHash(moduleTypeIds, modules, initDatas, userOp.nonce);
+bytes32 structHash = ERC8043Utils.initModulesStructHash(moduleTypeIds, modules, initDatas, userOp.nonce);
 if (isValidSignature(_hashTypedDataV4(structHash), installationSignature) != IERC1271.isValidSignature.selector) {
     return ERC4337Utils.SIG_VALIDATION_FAILED;
 }
@@ -179,10 +179,10 @@ for (uint256 i = 0; i < modules.length; i++) {
 <Step>
 **Delegate to normal validation**
 
-Continue with `super._validateUserOp` using `userOp.signature`. This validates the user operation itself through the appropriate installed validator (e.g. the one just installed).
+Continue with `super._validateUserOp` using the forwarded `signature`. This validates the user operation itself through the appropriate installed validator (e.g. the one just installed).
 
 ```solidity
-return super._validateUserOp(userOp, userOpHash, userOp.signature);
+return super._validateUserOp(userOp, userOpHash, signature);
 ```
 
 </Step>
