@@ -1,131 +1,44 @@
 // SPDX-License-Identifier: MIT
+
 pragma solidity ^0.8.27;
 
-import {OpenAccount} from "../OpenAccount.sol";
-import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/IERC4337.sol";
-import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/ERC4337Utils.sol";
-import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import {Calldata} from "@openzeppelin/contracts/utils/Calldata.sol";
 
 /**
- * @dev Extension of `OpenAccount` that implements atomic module installation and usage through
- * _init mode_ following https://eip.tools/eip/8043[ERC-8043].
+ * @dev Utility functions for the https://eip.tools/eip/8043[ERC-8043] init mode.
  *
- * This extension allows installing and using one or more modules within the same user operation.
- * Init mode is triggered when `userOp.initCode` starts with the 4-byte magic value `0x80438043`.
- * The remaining bytes of `initCode` carry the ABI-encoded module installation payload and an
- * EIP-712 installation signature from the account owner.
- *
- * Because the {ERC-4337} EntryPoint v0.9 silently ignores `initCode` for already-deployed accounts,
- * and because `initCode` is included in the `userOpHash`, the module installation parameters are
- * both inert at the EntryPoint level and cryptographically committed to by the user operation signature.
- *
- * This pattern is particularly useful for session keys and other modules that need to be
- * installed and immediately used, reducing user operation count from N+1 to 1.
- *
- * NOTE: Requires EntryPoint v0.9 or later.
+ * Init mode allows an ERC-4337 user operation to install one or more ERC-7579 modules
+ * atomically alongside its regular execution. It is triggered by prefixing the user
+ * operation's `initCode` with {INIT_MODE_MAGIC_VALUE}; the remaining bytes carry an
+ * ABI-encoded installation payload followed by an EIP-712 signature over the
+ * {InitModules} struct authorizing the installation.
  */
-abstract contract OpenAccountERC8043 is OpenAccount {
-    bytes4 private constant INIT_MODE_MAGIC_VALUE = 0x80438043;
-    bytes32 private constant INIT_MODULES_TYPEHASH =
+library ERC8043Utils {
+    /// @dev 4-byte prefix marking a user operation's `initCode` as an ERC-8043 init mode payload.
+    bytes4 internal constant INIT_MODE_MAGIC_VALUE = 0x80438043;
+
+    /// @dev EIP-712 type hash of the `InitModules` struct signed by the account owner.
+    bytes32 internal constant INIT_MODULES_TYPEHASH =
         keccak256("InitModules(uint256[] moduleTypeIds,address[] modules,bytes[] initDatas,uint256 nonce)");
 
     /**
-     * @dev Validates a user operation, checking for the init mode magic value in `initCode`.
-     *
-     * If `userOp.initCode` starts with `INIT_MODE_MAGIC_VALUE`, enters init mode:
-     *
-     * 1. Decodes module installation data from `userOp.initCode[4:]`
-     * 2. Validates the EIP-712 `installationSignature` over the module installation parameters
-     * 3. Installs the modules if validation succeeds
-     * 4. Continues with normal user operation validation using `userOp.signature`
-     *
-     * Otherwise, falls back to `OpenAccount`'s `_validateUserOp`.
-     */
-    function _validateUserOp(
-        PackedUserOperation calldata userOp,
-        bytes32 userOpHash,
-        bytes calldata signature
-    ) internal virtual override returns (uint256) {
-        if (userOp.initCode.length >= 4 && bytes4(userOp.initCode[:4]) == INIT_MODE_MAGIC_VALUE) {
-            return _validateInitMode(userOp, userOpHash);
-        }
-        return super._validateUserOp(userOp, userOpHash, signature);
-    }
-
-    /**
-     * @dev Validates and installs modules in init mode, then validates the user operation.
-     *
-     * Decodes `(moduleTypeIds, modules, initDatas, installationSignature)` from
-     * `userOp.initCode[4:]`. Validates the EIP-712 `installationSignature` from the account
-     * owner and installs all modules before delegating to normal user operation validation.
-     *
-     * The encoding format is:
-     *
-     * ```
-     * abi.encode(uint256[] moduleTypeIds, address[] modules, bytes[] initDatas, bytes installationSignature)
-     * ```
-     *
-     * Where `installationSignature` is an EIP-712 signature over the {InitModules} struct.
-     */
-    function _validateInitMode(
-        PackedUserOperation calldata userOp,
-        bytes32 userOpHash
-    ) internal virtual returns (uint256) {
-        // Minimum length to hold 4 offset pointers and 4 length words: 4 * 32 + 4 * 32 = 256 bytes (0x100)
-        bytes calldata data = userOp.initCode[4:];
-        if (data.length < 0x100) {
-            return ERC4337Utils.SIG_VALIDATION_FAILED;
-        }
-
-        uint256[] calldata moduleTypeIds = _tryDecodeInstallModulesModuleTypeIds(data);
-        address[] calldata modules = _tryDecodeInstallModulesModules(data);
-        bytes[] calldata initDatas = _tryDecodeInstallModulesInitDatas(data);
-        bytes calldata installationSignature = _tryDecodeInstallModulesInstallationSignature(data);
-
-        if (
-            moduleTypeIds.length != modules.length ||
-            modules.length != initDatas.length ||
-            moduleTypeIds.length == 0 ||
-            modules.length == 0 ||
-            initDatas.length == 0
-        ) {
-            return ERC4337Utils.SIG_VALIDATION_FAILED;
-        }
-
-        if (installationSignature.length > 0) {
-            uint256 nonce = userOp.nonce;
-            bytes32 structHash = _installModulesStructHash(moduleTypeIds, modules, initDatas, nonce);
-            if (
-                isValidSignature(_hashTypedDataV4(structHash), installationSignature) !=
-                IERC1271.isValidSignature.selector
-            ) {
-                return ERC4337Utils.SIG_VALIDATION_FAILED;
-            }
-            for (uint256 i = 0; i < modules.length; i++) {
-                _installModule(moduleTypeIds[i], modules[i], initDatas[i]);
-            }
-        }
-
-        return super._validateUserOp(userOp, userOpHash, userOp.signature);
-    }
-
-    /**
-     * @dev Computes the struct hash for the InitModules EIP-712 message.
+     * @dev Computes the EIP-712 struct hash of the `InitModules` message.
      *
      * ```
      * InitModules(uint256[] moduleTypeIds, address[] modules, bytes[] initDatas, uint256 nonce)
      * ```
      *
-     * Where `nonce` is `userOp.nonce`. Caller must wrap with `_hashTypedDataV4` before
-     * passing to signature verification.
+     * `nonce` is the user operation's nonce; combining it into the signed payload binds
+     * the installation authorization to a specific user operation. Callers must wrap the
+     * returned struct hash with the account's EIP-712 domain separator (e.g.
+     * `_hashTypedDataV4`) before verifying `installationSignature`.
      */
-    function _installModulesStructHash(
+    function initModulesStructHash(
         uint256[] calldata moduleTypeIds,
         address[] calldata modules,
         bytes[] calldata initDatas,
         uint256 nonce
-    ) internal pure virtual returns (bytes32) {
+    ) internal pure returns (bytes32) {
         bytes32[] memory initDataHashes = new bytes32[](initDatas.length);
         for (uint256 i = 0; i < initDatas.length; i++) {
             initDataHashes[i] = keccak256(initDatas[i]);
@@ -143,7 +56,61 @@ abstract contract OpenAccountERC8043 is OpenAccount {
             );
     }
 
-    /// @dev Attempts to decode module type ids from `userOp.initCode[4:]`.
+    /**
+     * @dev Attempts to decode an ERC-8043 init mode payload from `data`.
+     *
+     * `data` must be the user operation's `initCode` with the {INIT_MODE_MAGIC_VALUE}
+     * 4-byte prefix already stripped. Callers are expected to detect init mode
+     * themselves — typically by comparing `initCode[:4]` against {INIT_MODE_MAGIC_VALUE}
+     * — before invoking this function.
+     *
+     * `valid` is `true` when the payload decodes into four consistent, non-empty
+     * arrays: `moduleTypeIds.length == modules.length == initDatas.length > 0`. When
+     * `valid` is `false` the returned slices should not be relied on; individual
+     * fields whose sub-decoder failed are returned as empty slices, but fields that
+     * decoded before the inconsistency was detected may be populated. Callers that
+     * want strict init-mode semantics should reject the user operation in that case.
+     *
+     * The decoding never reverts on malformed input: length and offset checks are
+     * performed inline before any calldata slice is materialized.
+     */
+    function tryDecodeInitMode(
+        bytes calldata data
+    )
+        internal
+        pure
+        returns (
+            bool valid,
+            uint256[] calldata moduleTypeIds,
+            address[] calldata modules,
+            bytes[] calldata initDatas,
+            bytes calldata installationSignature
+        )
+    {
+        // Minimum length to hold 4 offset pointers and 4 length words: 4 * 32 + 4 * 32 = 256 bytes (0x100)
+        if (data.length < 0x100) {
+            return (false, _emptyUint256Array(), _emptyAddressArray(), _emptyBytesArray(), Calldata.emptyBytes());
+        }
+
+        moduleTypeIds = _tryDecodeInstallModulesModuleTypeIds(data);
+        modules = _tryDecodeInstallModulesModules(data);
+        initDatas = _tryDecodeInstallModulesInitDatas(data);
+        installationSignature = _tryDecodeInstallModulesInstallationSignature(data);
+
+        return (
+            moduleTypeIds.length == modules.length &&
+                modules.length == initDatas.length &&
+                moduleTypeIds.length > 0 &&
+                modules.length > 0 &&
+                initDatas.length > 0,
+            moduleTypeIds,
+            modules,
+            initDatas,
+            installationSignature
+        );
+    }
+
+    /// @dev Attempts to decode module type ids from `userOp.initCode[4:]`. Returns an empty uint256[] calldata slice if the array is invalid.
     function _tryDecodeInstallModulesModuleTypeIds(
         bytes calldata data
     ) private pure returns (uint256[] calldata moduleTypeIds) {
@@ -166,7 +133,7 @@ abstract contract OpenAccountERC8043 is OpenAccount {
         return moduleTypeIds;
     }
 
-    /// @dev Attempts to decode modules from `userOp.initCode[4:]`.
+    /// @dev Attempts to decode modules from `userOp.initCode[4:]`. Returns an empty address[] calldata slice if the array is invalid.
     function _tryDecodeInstallModulesModules(bytes calldata data) private pure returns (address[] calldata modules) {
         uint256 modulesOffset = uint256(bytes32(data[0x20:0x40]));
         if (modulesOffset < 0x80 || data.length < modulesOffset + 0x20) {
@@ -186,7 +153,7 @@ abstract contract OpenAccountERC8043 is OpenAccount {
         return modules;
     }
 
-    /// @dev Attempts to decode init datas from `userOp.initCode[4:]`.
+    /// @dev Attempts to decode init datas from `userOp.initCode[4:]`. Returns an empty bytes[] calldata slice if the array is invalid.
     function _tryDecodeInstallModulesInitDatas(bytes calldata data) private pure returns (bytes[] calldata initDatas) {
         uint256 initDatasOffset = uint256(bytes32(data[0x40:0x60]));
         if (initDatasOffset < 0x80 || data.length < initDatasOffset + 0x20) {
@@ -200,7 +167,7 @@ abstract contract OpenAccountERC8043 is OpenAccount {
         return initDatas;
     }
 
-    /// @dev Attempts to decode installation signature from `userOp.initCode[4:]`.
+    /// @dev Attempts to decode installation signature from `userOp.initCode[4:]`. Returns an empty bytes calldata slice if the signature is invalid.
     function _tryDecodeInstallModulesInstallationSignature(
         bytes calldata data
     ) private pure returns (bytes calldata installationSignature) {
@@ -217,6 +184,7 @@ abstract contract OpenAccountERC8043 is OpenAccount {
 
     /**
      * @dev Validates and determines the end offset of a bytes[] array structure.
+     * Returns an empty bytes[] calldata slice if the array is invalid.
      *
      * This function checks that:
      * 1. The array length is within bounds
@@ -257,21 +225,6 @@ abstract contract OpenAccountERC8043 is OpenAccount {
         }
 
         return result;
-    }
-
-    /// @dev Returns empty arrays for module type ids, modules, init datas, installation signature, and user operation signature.
-    function _emptyDecodeInstallModules()
-        private
-        pure
-        returns (
-            bool success,
-            uint256[] calldata moduleTypeIds,
-            address[] calldata modules,
-            bytes[] calldata initDatas,
-            bytes calldata installationSignature
-        )
-    {
-        return (false, _emptyUint256Array(), _emptyAddressArray(), _emptyBytesArray(), Calldata.emptyBytes());
     }
 
     /// @dev Returns an empty bytes[] calldata slice.

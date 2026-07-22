@@ -47,7 +47,7 @@ The `OpenAccountFactory` is deployed across all major EVM chains at the same det
 
 This factory creates minimal ERC-1967 proxy clones of the `OpenAccountImplementation` contract, providing deterministic addresses and efficient ERC-1967 proxy deployment. By design, the account is upgradeable, allowing the account itself (or the entrypoint) to upgrade the implementation contract.
 
-`OpenAccountImplementation` inherits from both `OpenAccount` and `OpenAccountERC8043`, so every account deployed through this factory supports [init mode (ERC-8043)](/docs/contracts/erc8043) out of the box, so no extra setup required to install and use modules atomically in a single user operation.
+`OpenAccountImplementation` inherits from both `OpenAccount` and `AccountERC8043Upgradeable`, so every account deployed through this factory supports [init mode (ERC-8043)](/docs/contracts/erc8043) out of the box, so no extra setup required to install and use modules atomically in a single user operation.
 
 <Callout type="info">
   ZKSync has a different CREATE2 derivation scheme making it impossible to deploy deterministically in chains using the

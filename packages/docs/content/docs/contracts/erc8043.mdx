@@ -124,7 +124,7 @@ The `userOp.nonce` is included in the `InitModules` struct. Once the user operat
 
 ## Validation Flow
 
-The full init mode validation flow implemented by `OpenAccountERC8043`:
+The full init mode validation flow implemented by `AccountERC8043Upgradeable`:
 
 <Steps>
 
@@ -189,9 +189,9 @@ return super._validateUserOp(userOp, userOpHash, userOp.signature);
 
 </Steps>
 
-## Using `OpenAccountERC8043`
+## Using `AccountERC8043Upgradeable`
 
-`OpenAccountERC8043` is an abstract extension of `OpenAccount`. It is already included in `OpenAccountImplementation`, the contract deployed by [`OpenAccountFactory`](/docs/contracts#using-openaccountfactory), so every account created through the factory supports init mode out of the box with no extra setup.
+`AccountERC8043Upgradeable` is an abstract extension of `AccountERC7579Upgradeable`. It is already included in `OpenAccountImplementation`, the contract deployed by [`OpenAccountFactory`](/docs/contracts#using-openaccountfactory), so every account created through the factory supports init mode out of the box with no extra setup.
 
 ### Building an Init Mode User Operation
 

@@ -19,7 +19,7 @@ import {ERC7579ValidatorMock} from "../../src/mocks/modules/ERC7579Mock.sol";
 import {CallReceiverMock} from "../../src/mocks/CallReceiverMock.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
-contract OpenAccountERC8043Test is Test {
+contract AccountERC8043UpgradeableTest is Test {
     using ERC7579Utils for *;
     using ERC4337Utils for PackedUserOperation;
     using Strings for *;
