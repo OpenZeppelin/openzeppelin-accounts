@@ -1,7 +1,7 @@
 ## 22-07-2026
 
 - Renamed `OpenAccountERC8043` to `AccountERC8043Upgradeable` and retargeted it to extend `AccountERC7579Upgradeable` directly, so the ERC-8043 init mode extension can be composed with any ERC-7579-based account instead of only `OpenAccount`.
-- Add `ERC8043Utils` library exposing pure decoding and EIP-712 struct-hash helpers for ERC-8043 init mode payloads.
+- Added `ERC8043Utils` library exposing pure decoding and EIP-712 struct-hash helpers for ERC-8043 init mode payloads.
 
 ## 23-05-2026
 
