@@ -37,8 +37,7 @@ abstract contract AccountERC8043Upgradeable is Initializable, Account, EIP712, A
      * 1. Decodes module installation data from `userOp.initCode[4:]`
      * 2. Validates the EIP-712 `installationSignature` over the module installation parameters
      * 3. Installs the modules if validation succeeds
-     * 4. Continues with normal user operation validation using `userOp.signature`
-     *
+     * 4. Continues with normal user operation validation using the forwarded `signature`
      * Otherwise, falls back to `super._validateUserOp`.
      */
     function _validateUserOp(
