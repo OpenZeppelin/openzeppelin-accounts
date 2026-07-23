@@ -6,11 +6,11 @@ import {ERC1967Clones} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Clones
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {Mode} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {OpenAccount} from "./OpenAccount.sol";
-import {OpenAccountERC8043} from "./extensions/OpenAccountERC8043.sol";
+import {AccountERC8043Upgradeable} from "./extensions/AccountERC8043Upgradeable.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/IERC4337.sol";
 
 /// @dev Implementation contract for the OpenAccount factory.
-contract OpenAccountImplementation is OpenAccount, OpenAccountERC8043, UUPSUpgradeable {
+contract OpenAccountImplementation is OpenAccount, AccountERC8043Upgradeable, UUPSUpgradeable {
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() EIP712("OpenAccount", "1") {
         _disableInitializers();
@@ -22,7 +22,7 @@ contract OpenAccountImplementation is OpenAccount, OpenAccountERC8043, UUPSUpgra
         PackedUserOperation calldata userOp,
         bytes32 userOpHash,
         bytes calldata signature
-    ) internal override(OpenAccount, OpenAccountERC8043) returns (uint256) {
+    ) internal override(OpenAccount, AccountERC8043Upgradeable) returns (uint256) {
         return super._validateUserOp(userOp, userOpHash, signature);
     }
 

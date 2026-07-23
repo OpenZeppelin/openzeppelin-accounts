@@ -1,3 +1,8 @@
+## 22-07-2026
+
+- Renamed `OpenAccountERC8043` to `AccountERC8043Upgradeable` and retargeted it to extend `AccountERC7579Upgradeable` directly, so the ERC-8043 init mode extension can be composed with any ERC-7579-based account instead of only `OpenAccount`.
+- Added `ERC8043Utils` library exposing pure decoding and EIP-712 struct-hash helpers for ERC-8043 init mode payloads.
+
 ## 23-05-2026
 
 - `ERC7579NativeSpender` and `ERC7579ERC20Spender`: Redesigned as session-key-driven spending policies. Both modules now extend `ERC7579SessionKeysValidator` and are installed under BOTH the validator (`MODULE_TYPE_VALIDATOR = 1`) and executor (`MODULE_TYPE_EXECUTOR = 2`) module types. Spending is gated by ERC-7913 session keys instead of `address spender`. **Breaking change** to all public surfaces (function signatures, install data layout, events, errors).
