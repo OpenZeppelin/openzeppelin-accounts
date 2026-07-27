@@ -98,35 +98,35 @@ describe('Multisig', function () {
     });
 
     const word = v => ethers.zeroPadValue(ethers.toBeHex(v), 0x20);
+    const encode = (...items) => ethers.concat(items.map(word));
     const MAX_UINT64 = 2n ** 64n - 1n;
 
+    it('supports minimal encoding', async function () {
+      // Two offsets = 0 → both lengths read from position 0 = 0 → decode succeeds with empty arrays.
+      // Two offsets = 0x20 / 0 → decodes successfully but head-bounds trip on the swapped length; here we
+      // just assert the outer decoder handles the 64-byte minimum shape without reverting.
+      let result = await this.mock.$tryDecodeMultisignatureCalldata(encode(0, 0));
+      expect(result.success).to.be.true;
+      expect(result.signingSigners).to.deep.equal([]);
+      expect(result.signatures).to.deep.equal([]);
+
+      result = await this.mock.$tryDecodeMultisignatureCalldata(encode(0x20, 0));
+      expect(result.success).to.be.false;
+    });
+
     for (const [description, invalidData] of [
-      ['first offset too small', ethers.concat([word(0x20), word(0x40), word(0), word(0)])],
-      ['second offset too small', ethers.concat([word(0x40), word(0x20), word(0), word(0)])],
-      ['first offset out of bounds', ethers.concat([word(0x1000), word(0x40), word(0)])],
-      ['second offset out of bounds', ethers.concat([word(0x40), word(0x1000), word(0)])],
+      ['first offset too small', encode(0x20, 0x40, 0, 0)],
+      ['second offset too small', encode(0x40, 0x20, 0, 0)],
+      ['first offset out of bounds', encode(0x1000, 0x40, 0)],
+      ['second offset out of bounds', encode(0x40, 0x1000, 0)],
       [
         'truncated data at first array length',
-        ethers.concat([
-          word(0x40), // offset1
-          word(0x60), // offset2
-          word(1), // length of first array
-          // missing element offset word
-        ]),
+        encode(0x40, 0x60, 1), // length = 1 but missing element offset word
       ],
       // Attacker-crafted values that must not overflow checked arithmetic.
-      [
-        'offset near type(uint256).max (would overflow signersOffset + 0x20)',
-        ethers.concat([word(ethers.MaxUint256), word(ethers.MaxUint256), word(0), word(0)]),
-      ],
-      [
-        'array length above type(uint64).max (would overflow length * 0x20)',
-        ethers.concat([word(0x40), word(0x60), word(MAX_UINT64 + 1n), word(MAX_UINT64 + 1n)]),
-      ],
-      [
-        'array length exceeds remaining buffer (correct head bound uses signersDataOffset)',
-        ethers.concat([word(0x40), word(0x60), word(10), word(0)]),
-      ],
+      ['offset near type(uint256).max (would overflow signersOffset + 0x20)', encode(ethers.MaxUint256, ethers.MaxUint256, 0, 0)],
+      ['array length above type(uint64).max (would overflow length * 0x20)', encode(0x40, 0x60, MAX_UINT64 + 1n, MAX_UINT64 + 1n)],
+      ['array length exceeds remaining buffer (correct head bound uses signersDataOffset)', encode(0x40, 0x60, 10, 0)],
     ]) {
       it(`returns false for invalid data (${description})`, async function () {
         const result = await this.mock.$tryDecodeMultisignatureCalldata(invalidData);
