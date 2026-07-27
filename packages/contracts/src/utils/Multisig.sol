@@ -35,19 +35,20 @@ library Multisig {
         // Get offset to the second array (signatures)
         uint256 signaturesOffset = uint256(bytes32(multisignature[0x20:0x40]));
 
-        // The array data starts after the length field
-        uint256 signersDataOffset = signersOffset + 0x20;
-        uint256 signaturesDataOffset = signaturesOffset + 0x20;
-
-        // Validate offsets are within bounds and properly aligned
+        // Each offset must sit past the two head words and leave a length word within the buffer.
+        // `multisignature.length >= 0x80` makes the subtraction safe.
         if (
             signersOffset < 0x40 ||
-            signersDataOffset > multisignature.length ||
+            signersOffset > multisignature.length - 0x20 ||
             signaturesOffset < 0x40 ||
-            signaturesDataOffset > multisignature.length
+            signaturesOffset > multisignature.length - 0x20
         ) {
             return (false, _emptyBytesArray(), _emptyBytesArray());
         }
+
+        // The array data starts after the length field. Safe from overflow now that offsets are bounded.
+        uint256 signersDataOffset = signersOffset + 0x20;
+        uint256 signaturesDataOffset = signaturesOffset + 0x20;
 
         // Get the signers array length
         uint256 signersLength = uint256(bytes32(multisignature[signersOffset:signersDataOffset]));
@@ -55,10 +56,16 @@ library Multisig {
         // Get the signatures array length
         uint256 signaturesLength = uint256(bytes32(multisignature[signaturesOffset:signaturesDataOffset]));
 
-        // Validate array lengths are within bounds
+        // Cap lengths at 2**64-1 (Solidity's own dynamic-array limit) so `length * 0x20` cannot overflow.
+        if (signersLength > type(uint64).max || signaturesLength > type(uint64).max) {
+            return (false, _emptyBytesArray(), _emptyBytesArray());
+        }
+
+        // Validate array heads are within bounds. Each head is the length word followed by
+        // `length` element-offset words, so the correct end is `dataOffset + length * 0x20`.
         if (
-            signersOffset + signersLength * 0x20 > multisignature.length ||
-            signaturesOffset + signaturesLength * 0x20 > multisignature.length
+            signersDataOffset + signersLength * 0x20 > multisignature.length ||
+            signaturesDataOffset + signaturesLength * 0x20 > multisignature.length
         ) {
             return (false, _emptyBytesArray(), _emptyBytesArray());
         }

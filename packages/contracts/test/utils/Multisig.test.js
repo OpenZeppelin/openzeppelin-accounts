@@ -97,49 +97,35 @@ describe('Multisig', function () {
       expect(result.signatures).to.deep.equal([]);
     });
 
+    const word = v => ethers.zeroPadValue(ethers.toBeHex(v), 0x20);
+    const MAX_UINT64 = 2n ** 64n - 1n;
+
     for (const [description, invalidData] of [
-      [
-        'first offset too small',
-        ethers.concat([
-          ethers.zeroPadValue('0x20', 32), // offset1 = 32 (too small, should be >= 64)
-          ethers.zeroPadValue('0x40', 32), // offset2 = 64
-          ethers.zeroPadValue('0x00', 32), // length of first array
-          ethers.zeroPadValue('0x00', 32), // length of second array
-        ]),
-      ],
-      [
-        'second offset too small',
-        ethers.concat([
-          ethers.zeroPadValue('0x40', 32), // offset1 = 64
-          ethers.zeroPadValue('0x20', 32), // offset2 = 32 (too small, should be >= 64)
-          ethers.zeroPadValue('0x00', 32), // length of first array
-          ethers.zeroPadValue('0x00', 32), // length of second array
-        ]),
-      ],
-      [
-        'first offset out of bounds',
-        ethers.concat([
-          ethers.zeroPadValue('0x1000', 32), // offset1 way beyond actual data
-          ethers.zeroPadValue('0x40', 32), // offset2
-          ethers.zeroPadValue('0x00', 32), // some data
-        ]),
-      ],
-      [
-        'second offset out of bounds',
-        ethers.concat([
-          ethers.zeroPadValue('0x40', 32), // offset1
-          ethers.zeroPadValue('0x1000', 32), // offset2 way beyond actual data
-          ethers.zeroPadValue('0x00', 32), // some data
-        ]),
-      ],
+      ['first offset too small', ethers.concat([word(0x20), word(0x40), word(0), word(0)])],
+      ['second offset too small', ethers.concat([word(0x40), word(0x20), word(0), word(0)])],
+      ['first offset out of bounds', ethers.concat([word(0x1000), word(0x40), word(0)])],
+      ['second offset out of bounds', ethers.concat([word(0x40), word(0x1000), word(0)])],
       [
         'truncated data at first array length',
         ethers.concat([
-          ethers.zeroPadValue('0x40', 32), // offset1
-          ethers.zeroPadValue('0x60', 32), // offset2
-          ethers.zeroPadValue('0x01', 32), // length of first array
-          // Missing second array length and data
+          word(0x40), // offset1
+          word(0x60), // offset2
+          word(1), // length of first array
+          // missing element offset word
         ]),
+      ],
+      // Attacker-crafted values that must not overflow checked arithmetic.
+      [
+        'offset near type(uint256).max (would overflow signersOffset + 0x20)',
+        ethers.concat([word(ethers.MaxUint256), word(ethers.MaxUint256), word(0), word(0)]),
+      ],
+      [
+        'array length above type(uint64).max (would overflow length * 0x20)',
+        ethers.concat([word(0x40), word(0x60), word(MAX_UINT64 + 1n), word(MAX_UINT64 + 1n)]),
+      ],
+      [
+        'array length exceeds remaining buffer (correct head bound uses signersDataOffset)',
+        ethers.concat([word(0x40), word(0x60), word(10), word(0)]),
       ],
     ]) {
       it(`returns false for invalid data (${description})`, async function () {
