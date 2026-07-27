@@ -35,14 +35,9 @@ library Multisig {
         // Get offset to the second array (signatures)
         uint256 signaturesOffset = uint256(bytes32(multisignature[0x20:0x40]));
 
-        // Each offset must sit past the two head words and leave a length word within the buffer.
+        // Each offset must leave a length word within the buffer.
         // `multisignature.length >= 0x80` makes the subtraction safe.
-        if (
-            signersOffset < 0x40 ||
-            signersOffset > multisignature.length - 0x20 ||
-            signaturesOffset < 0x40 ||
-            signaturesOffset > multisignature.length - 0x20
-        ) {
+        if (signersOffset > multisignature.length - 0x20 || signaturesOffset > multisignature.length - 0x20) {
             return (false, _emptyBytesArray(), _emptyBytesArray());
         }
 
