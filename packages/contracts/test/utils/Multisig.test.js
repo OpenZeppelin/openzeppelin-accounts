@@ -97,50 +97,36 @@ describe('Multisig', function () {
       expect(result.signatures).to.deep.equal([]);
     });
 
+    const word = v => ethers.zeroPadValue(ethers.toBeHex(v), 0x20);
+    const encode = (...items) => ethers.concat(items.map(word));
+    const MAX_UINT64 = 2n ** 64n - 1n;
+
+    it('supports minimal encoding', async function () {
+      // Two offsets = 0 → both lengths read from position 0 = 0 → decode succeeds with empty arrays.
+      // Two offsets = 0x20 / 0 → decodes successfully but head-bounds trip on the swapped length; here we
+      // just assert the outer decoder handles the 64-byte minimum shape without reverting.
+      let result = await this.mock.$tryDecodeMultisignatureCalldata(encode(0, 0));
+      expect(result.success).to.be.true;
+      expect(result.signingSigners).to.deep.equal([]);
+      expect(result.signatures).to.deep.equal([]);
+
+      result = await this.mock.$tryDecodeMultisignatureCalldata(encode(0x20, 0));
+      expect(result.success).to.be.false;
+    });
+
     for (const [description, invalidData] of [
-      [
-        'first offset too small',
-        ethers.concat([
-          ethers.zeroPadValue('0x20', 32), // offset1 = 32 (too small, should be >= 64)
-          ethers.zeroPadValue('0x40', 32), // offset2 = 64
-          ethers.zeroPadValue('0x00', 32), // length of first array
-          ethers.zeroPadValue('0x00', 32), // length of second array
-        ]),
-      ],
-      [
-        'second offset too small',
-        ethers.concat([
-          ethers.zeroPadValue('0x40', 32), // offset1 = 64
-          ethers.zeroPadValue('0x20', 32), // offset2 = 32 (too small, should be >= 64)
-          ethers.zeroPadValue('0x00', 32), // length of first array
-          ethers.zeroPadValue('0x00', 32), // length of second array
-        ]),
-      ],
-      [
-        'first offset out of bounds',
-        ethers.concat([
-          ethers.zeroPadValue('0x1000', 32), // offset1 way beyond actual data
-          ethers.zeroPadValue('0x40', 32), // offset2
-          ethers.zeroPadValue('0x00', 32), // some data
-        ]),
-      ],
-      [
-        'second offset out of bounds',
-        ethers.concat([
-          ethers.zeroPadValue('0x40', 32), // offset1
-          ethers.zeroPadValue('0x1000', 32), // offset2 way beyond actual data
-          ethers.zeroPadValue('0x00', 32), // some data
-        ]),
-      ],
+      ['first offset too small', encode(0x20, 0x40, 0, 0)],
+      ['second offset too small', encode(0x40, 0x20, 0, 0)],
+      ['first offset out of bounds', encode(0x1000, 0x40, 0)],
+      ['second offset out of bounds', encode(0x40, 0x1000, 0)],
       [
         'truncated data at first array length',
-        ethers.concat([
-          ethers.zeroPadValue('0x40', 32), // offset1
-          ethers.zeroPadValue('0x60', 32), // offset2
-          ethers.zeroPadValue('0x01', 32), // length of first array
-          // Missing second array length and data
-        ]),
+        encode(0x40, 0x60, 1), // length = 1 but missing element offset word
       ],
+      // Attacker-crafted values that must not overflow checked arithmetic.
+      ['offset near type(uint256).max (would overflow signersOffset + 0x20)', encode(ethers.MaxUint256, ethers.MaxUint256, 0, 0)],
+      ['array length above type(uint64).max (would overflow length * 0x20)', encode(0x40, 0x60, MAX_UINT64 + 1n, MAX_UINT64 + 1n)],
+      ['array length exceeds remaining buffer (correct head bound uses signersDataOffset)', encode(0x40, 0x60, 10, 0)],
     ]) {
       it(`returns false for invalid data (${description})`, async function () {
         const result = await this.mock.$tryDecodeMultisignatureCalldata(invalidData);

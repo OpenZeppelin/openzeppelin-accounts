@@ -24,54 +24,58 @@ library Multisig {
     function tryDecodeMultisignatureCalldata(
         bytes calldata multisignature
     ) internal pure returns (bool success, bytes[] calldata signingSigners, bytes[] calldata signatures) {
-        // Minimum length: offset1(32) + offset2(32) + array1_length(32) + array2_length(32) = 128 bytes
-        if (multisignature.length < 0x80) {
-            return (false, _emptyBytesArray(), _emptyBytesArray());
+        unchecked {
+            uint256 bufferLength = multisignature.length;
+
+            // Check #1: Theoretical minimum length of a valid multisignature encoding is 0x40 bytes.
+            // 64 bytes of zero is a valid encoding for two empty arrays.
+            if (bufferLength < 0x40) return (false, _emptyBytesArray(), _emptyBytesArray());
+
+            // Read the offset pointers to the signers and signatures arrays
+            // Read is done in assembly to avoid the cost of creating calldata slices.
+            uint256 signersOffset;
+            uint256 signaturesOffset;
+            assembly ("memory-safe") {
+                signersOffset := calldataload(multisignature.offset)
+                signaturesOffset := calldataload(add(multisignature.offset, 0x20))
+            }
+
+            // Check #2: The length fields that the offset pointers point to must be within the bounds of the buffer.
+            if (signersOffset > bufferLength - 0x20 || signaturesOffset > bufferLength - 0x20)
+                return (false, _emptyBytesArray(), _emptyBytesArray());
+
+            // Read the length fields
+            // Read is done in assembly to avoid the cost of creating calldata slices.
+            uint256 signersLength;
+            uint256 signaturesLength;
+            assembly ("memory-safe") {
+                signersLength := calldataload(add(multisignature.offset, signersOffset))
+                signaturesLength := calldataload(add(multisignature.offset, signaturesOffset))
+            }
+
+            // Data is just after the length fields
+            uint256 signersDataOffset = signersOffset + 0x20;
+            uint256 signaturesDataOffset = signaturesOffset + 0x20;
+
+            // Check #3 & #4:
+            // - Cap lengths at 2**64-1 (Solidity's own dynamic-array limit) so `length * 0x20` cannot overflow.
+            // - The data for each array must fit within the bounds of the buffer.
+            if (
+                signersLength > type(uint64).max ||
+                signaturesLength > type(uint64).max ||
+                0x20 * signersLength > bufferLength - signersDataOffset ||
+                0x20 * signaturesLength > bufferLength - signaturesDataOffset
+            ) return (false, _emptyBytesArray(), _emptyBytesArray());
+
+            // Assembly cast
+            assembly ("memory-safe") {
+                success := 1 // true
+                signingSigners.offset := add(multisignature.offset, signersDataOffset)
+                signingSigners.length := signersLength
+                signatures.offset := add(multisignature.offset, signaturesDataOffset)
+                signatures.length := signaturesLength
+            }
         }
-
-        // Get offset to the first array (signingSigners)
-        uint256 signersOffset = uint256(bytes32(multisignature[:0x20]));
-
-        // Get offset to the second array (signatures)
-        uint256 signaturesOffset = uint256(bytes32(multisignature[0x20:0x40]));
-
-        // The array data starts after the length field
-        uint256 signersDataOffset = signersOffset + 0x20;
-        uint256 signaturesDataOffset = signaturesOffset + 0x20;
-
-        // Validate offsets are within bounds and properly aligned
-        if (
-            signersOffset < 0x40 ||
-            signersDataOffset > multisignature.length ||
-            signaturesOffset < 0x40 ||
-            signaturesDataOffset > multisignature.length
-        ) {
-            return (false, _emptyBytesArray(), _emptyBytesArray());
-        }
-
-        // Get the signers array length
-        uint256 signersLength = uint256(bytes32(multisignature[signersOffset:signersDataOffset]));
-
-        // Get the signatures array length
-        uint256 signaturesLength = uint256(bytes32(multisignature[signaturesOffset:signaturesDataOffset]));
-
-        // Validate array lengths are within bounds
-        if (
-            signersOffset + signersLength * 0x20 > multisignature.length ||
-            signaturesOffset + signaturesLength * 0x20 > multisignature.length
-        ) {
-            return (false, _emptyBytesArray(), _emptyBytesArray());
-        }
-
-        // Set up the calldata slices for both arrays
-        assembly ("memory-safe") {
-            signingSigners.offset := add(multisignature.offset, signersDataOffset)
-            signingSigners.length := signersLength
-            signatures.offset := add(multisignature.offset, signaturesDataOffset)
-            signatures.length := signaturesLength
-        }
-
-        return (true, signingSigners, signatures);
     }
 
     /**
@@ -79,7 +83,7 @@ library Multisig {
      *
      * Requirements:
      *
-     * * The `multisignature` must be at least 128 bytes long to contain the minimum ABI-encoded structure.
+     * * The `multisignature` must be at least 64 bytes long to contain the two offset words.
      * * Both array offsets must be properly aligned and within bounds.
      * * Both array length fields must be accessible within the provided data.
      * * The arrays should have the same length for proper signature validation.
