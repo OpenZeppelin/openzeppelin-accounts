@@ -5,20 +5,35 @@ import type { Signer } from './index.js';
 
 /**
  * One signer slot for {@link toMultisigner}. Either an explicit `{ signer, signerBytes }`
- * pair where `signer` produces the raw inner signature, or an already-ERC-7913-wrapped
- * signer whose `signMessageRaw`/`signTypedDataRaw` methods supply the raw signature
- * paired with its `signerBytes`.
+ * pair, or an already-ERC-7913-wrapped signer — in which case the multisig wrapper calls
+ * `.unwrap()` to reach the pre-ERC-7913 signature material and pairs it with the wrapper's
+ * `signerBytes`.
+ *
+ * Composition rule: if the "already-wrapped" signer nests further wrappers, `unwrap()`
+ * only strips the outermost ERC-7913 layer. Feeding e.g. `toERC7913Signer(toCrossChainSigner(...))`
+ * into a multisig will unwrap the ERC-7913 layer but leave the ERC-7964 envelope inside,
+ * which is not what the on-chain multisig verifier expects. Prefer flat compositions
+ * (raw signer → ERC-7913 → multisig) unless you know the on-chain validator can decode
+ * whatever layered envelope you're producing.
  */
 type MultisigSigner = { signer: Signer; signerBytes: Hex } | ERC7913Signer;
 
 const isWrapped = (signer: MultisigSigner): signer is ERC7913Signer =>
-  'signMessageRaw' in signer && 'signTypedDataRaw' in signer;
+  typeof (signer as ERC7913Signer).unwrap === 'function';
+
+const innerSignerOf = (signer: MultisigSigner): Signer => (isWrapped(signer) ? signer.unwrap() : signer.signer);
 
 const signRawMessage = (signer: MultisigSigner, message: SignableMessage): Promise<Hex> =>
-  isWrapped(signer) ? signer.signMessageRaw({ message }) : signer.signer.signMessage({ message });
+  innerSignerOf(signer).signMessage({ message });
 
 const signRawTypedData = (signer: MultisigSigner, parameters: TypedDataDefinition): Promise<Hex> =>
-  isWrapped(signer) ? signer.signTypedDataRaw(parameters) : signer.signer.signTypedData(parameters);
+  innerSignerOf(signer).signTypedData(parameters);
+
+const withSignerContext = <T>(i: number, promise: Promise<T>): Promise<T> =>
+  promise.catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`multisig signer[${i}] failed: ${message}`);
+  });
 
 /**
  * Wraps a set of inner signers into a single signer whose output matches the encoding
@@ -31,6 +46,11 @@ const signRawTypedData = (signer: MultisigSigner, parameters: TypedDataDefinitio
  *
  * Sorts the (signer, signature) pairs by `keccak256(signerBytes)` so the on-chain
  * validator's lookups remain efficient (per `ERC7579Multisig._validateSignatures` note).
+ *
+ * NOTE: a single-signer multisig (`signers.length === 1`) is legal on-chain but usually
+ * indicates that the caller should have used the underlying `Signer` directly. The
+ * wrapper does not reject it — the extra ABI encoding still produces a valid envelope,
+ * it just isn't buying anything.
  */
 const toMultisigner = (signers: MultisigSigner[]): Signer => {
   if (signers.length === 0) {
@@ -50,9 +70,10 @@ const toMultisigner = (signers: MultisigSigner[]): Signer => {
   };
 
   return {
-    signMessage: async ({ message }) => Promise.all(signers.map(signer => signRawMessage(signer, message))).then(pack),
+    signMessage: async ({ message }) =>
+      Promise.all(signers.map((signer, i) => withSignerContext(i, signRawMessage(signer, message)))).then(pack),
     signTypedData: async parameters =>
-      Promise.all(signers.map(signer => signRawTypedData(signer, parameters))).then(pack),
+      Promise.all(signers.map((signer, i) => withSignerContext(i, signRawTypedData(signer, parameters)))).then(pack),
   };
 };
 

@@ -83,15 +83,22 @@ const signer = toERC7913Signer(toSigner(passkey), {
 
 See the [Signer Types table](/docs/contracts/erc7913#signer-types) for the `verifier || key` layout of each key type.
 
-### Raw inner signatures
+### Reaching the pre-wrap signer
 
-`toERC7913Signer` also exposes `signMessageRaw` / `signTypedDataRaw`, which return the inner signature without the ERC-7913 envelope. These are consumed by `toMultisigner` when composing wrapped signers into a multisig, avoiding a double-wrap.
+`toERC7913Signer` also exposes `unwrap()`, which returns the original inner `Signer` passed at construction. Use it when a downstream consumer needs the pre-ERC-7913 signature bytes — most notably `toMultisigner`, which packs raw signatures alongside each signer's ERC-7913 `signerBytes`.
 
 ```typescript
 const wrapped = toERC7913Signer(toSigner(eoa), { address: eoa.address });
-const envelope = await wrapped.signMessage({ message: 'hi' });     // abi.encode(signer, rawSig)
-const raw      = await wrapped.signMessageRaw({ message: 'hi' });  // just the ECDSA rawSig
+const envelope = await wrapped.signMessage({ message: 'hi' });               // abi.encode(signer, rawSig)
+const raw      = await wrapped.unwrap().signMessage({ message: 'hi' });      // just the ECDSA rawSig
 ```
+
+<Callout type="info">
+  `unwrap()` returns the exact signer instance you passed in — no reconstruction, no defensive copy. It only strips
+  the immediate ERC-7913 layer, so `toERC7913Signer(toCrossChainSigner(...)).unwrap()` returns the cross-chain
+  wrapper, not the raw EOA. Compose flatly (raw signer → ERC-7913 → multisig) unless you know the on-chain verifier
+  can decode whatever layered envelope you're producing.
+</Callout>
 
 ## toCrossChainSigner
 
@@ -179,6 +186,12 @@ toCrossChainSigner(inner, { currentChainIndex: 1, ...rest });
 toCrossChainSigner(inner, { chainId: 42161n, ...rest });
 ```
 
+<Callout type="info">
+  The recursive `chainId` scan returns the **first match** in DFS insertion order — if an application struct embeds
+  more than one field named `chainId` for its own reasons, the outermost one wins. Fall back to an explicit
+  `currentChainIndex` if you need to disambiguate.
+</Callout>
+
 <Callout type="warning">
   `signTypedData(parameters)` asserts that the incoming payload's `hashStruct` matches the resolved operation.
   This catches the common foot-gun where the caller's `operations` array drifts from the per-chain typed data the
@@ -234,7 +247,9 @@ The ERC-5267 `fields` byte is derived automatically from the domain shape:
 | `{ name, version }`                          | `0x03` (name + version) |
 | `{ name, version, verifyingContract }`       | `0x0b` (name + version + verifyingContract) |
 
-Callers can still pass an explicit `fields` byte for other ERC-5267 bits (e.g. salt). The wrapper throws at construction time if an explicit `fields` disagrees with `domain.verifyingContract` — a mismatch would silently reconstruct a different domain separator on-chain and every signature would fail.
+Callers can pass an explicit `fields` byte, but only bits inside `0x0b` (name / version / verifyingContract) are accepted — the SDK's outer typed data doesn't emit `chainId` (`0x04`, forbidden by ERC-7964) or `salt` (`0x10`), so setting either would make the on-chain domain separator diverge from the SDK's signed digest.
+
+If bit `0x08` is set in the explicit `fields` but `domain.verifyingContract` is omitted, it defaults to `application`. The wrapper still throws when an explicit `fields` disagrees with an explicit `domain.verifyingContract` (bit set vs value missing, or bit unset vs value present).
 
 <Callout type="info">
   `signMessage` is intentionally unsupported on a cross-chain signer — ERC-7964 is EIP-712-only by spec. Calling it
@@ -258,7 +273,7 @@ Two input shapes are accepted and can be mixed freely in the same call:
 | Shape | When to use |
 |---|---|
 | `{ signer: Signer, signerBytes: Hex }` | Explicit pair. Use when you're wiring an unwrapped inner signer with an externally-known ERC-7913 identity. |
-| `ERC7913Signer` (returned by `toERC7913Signer`) | Already-wrapped signer. `toMultisigner` uses its raw sign methods so the multisig envelope contains raw inner signatures, not double-wrapped ones. |
+| `ERC7913Signer` (returned by `toERC7913Signer`) | Already-wrapped signer. `toMultisigner` calls `.unwrap()` to reach the pre-ERC-7913 signer and pairs its raw signature with the wrapper's `signerBytes`, so the multisig envelope carries raw inner signatures rather than nested envelopes. |
 
 ```typescript
 const multisig = toMultisigner([
@@ -331,6 +346,15 @@ const account = await toOpenAccount({
 ```
 
 The `getStubSignature` must have the byte layout of the real envelope the validator expects — the outer multisig wrapper for multisig validators, an ERC-7913 envelope for `ERC7579Signature`, and so on.
+
+<Callout type="warning">
+  `toCrossChainSigner` is **not** a valid top-level signer for `toOpenAccount` / `toERC7579Account`. It produces
+  application-level cross-chain envelopes bound to a fixed set of `operations`, not per-UserOp signatures. If you
+  hand a `CrossChainSigner` to `toOpenAccount`, every `signUserOperation` and `signMessage` call throws — the
+  wrapper asserts the incoming payload against `operations[currentChainIndex]`, and a `PackedUserOperation` never
+  matches. The correct composition is `toERC7913Signer(toCrossChainSigner(...), ...)` handed to your application's
+  own verification path (e.g. `app.setValue(sig)`), not to the smart account.
+</Callout>
 
 ## Security Considerations
 

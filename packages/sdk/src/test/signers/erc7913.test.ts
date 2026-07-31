@@ -56,11 +56,14 @@ test('signTypedData emits abi.encode(signer, rawSig)', async t => {
   t.is(recovered.toLowerCase(), eoa.address.toLowerCase());
 });
 
-test('signMessageRaw / signTypedDataRaw produce the raw inner signature only', async t => {
+test('unwrap() returns the original inner signer so callers can access the pre-wrap signatures', async t => {
   const eoa = privateKeyToAccount(generatePrivateKey());
-  const signer = toERC7913Signer(toSigner(eoa), { address: eoa.address });
+  const inner = toSigner(eoa);
+  const wrapped = toERC7913Signer(inner, { address: eoa.address });
 
-  const raw = await signer.signMessageRaw({ message: 'no envelope' });
+  t.is(wrapped.unwrap(), inner, 'unwrap returns the same instance');
+
+  const raw = await wrapped.unwrap().signMessage({ message: 'no envelope' });
   // raw sig length is 65 bytes for ECDSA = 0x + 130 hex chars
   t.is(raw.length, 132);
   const recovered = await recoverAddress({ hash: hashMessage('no envelope'), signature: raw });

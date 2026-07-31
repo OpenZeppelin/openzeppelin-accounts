@@ -23,16 +23,22 @@ type ERC7913SignerConfig = OneOf<
 >;
 
 /**
- * Signer returned by {@link toERC7913Signer}. Exposes the raw inner sign methods alongside
- * the wrapped ones so composing wrappers (notably {@link toMultisigner}) can pair the
- * wrapper's `signerBytes` with the raw inner signature without double-wrapping.
+ * Signer returned by {@link toERC7913Signer}. Exposes the pre-wrap `signerBytes` and an
+ * `unwrap()` accessor that returns the original inner signer at construction time —
+ * consumers that need the raw (unwrapped) signature bytes for another wire format (e.g.
+ * {@link toMultisigner}) should call `.unwrap()` and drive the inner signer directly.
+ *
+ * This is a deliberate design choice: exposing `signMessageRaw`/`signTypedDataRaw` on the
+ * wrapper would have meant "one layer down", not "raw ECDSA/WebAuthn". Composing
+ * `toERC7913Signer(toCrossChainSigner(inner, ...), ...)` and then feeding a `Raw` method
+ * into a multisig would silently produce an invalid envelope. `.unwrap()` returns the
+ * signer passed to the wrapper at construction, so the caller knows exactly what shape
+ * they're getting and can wrap or unwrap further as needed.
  */
 type ERC7913Signer = Signer & {
   signerBytes: Hex;
-  /** Inner signature for a `message`, without the ERC-7913 envelope. */
-  signMessageRaw: Signer['signMessage'];
-  /** Inner signature for a typed-data payload, without the ERC-7913 envelope. */
-  signTypedDataRaw: Signer['signTypedData'];
+  /** Returns the inner {@link Signer} that was wrapped. */
+  unwrap: () => Signer;
 };
 
 /**
@@ -45,7 +51,7 @@ type ERC7913Signer = Signer & {
  * signers (`{ verifier, key }`), `signerBytes` is `verifier(20) || key(rest)` and the
  * verifier contract decides how to validate the inner signature against the `key`.
  */
-const toERC7913Signer = (signer: Signer, config: ERC7913SignerConfig): ERC7913Signer => {
+const toERC7913Signer = (innerSigner: Signer, config: ERC7913SignerConfig): ERC7913Signer => {
   const signerBytes: Hex =
     config.verifier !== undefined
       ? encodePacked(['address', 'bytes'], [config.verifier, config.key])
@@ -54,12 +60,11 @@ const toERC7913Signer = (signer: Signer, config: ERC7913SignerConfig): ERC7913Si
   const wrap = (rawSig: Hex): Hex => encodeAbiParameters([{ type: 'bytes' }, { type: 'bytes' }], [signerBytes, rawSig]);
 
   return {
-    ...signer,
+    ...innerSigner,
     signerBytes,
-    signMessageRaw: signer.signMessage,
-    signTypedDataRaw: signer.signTypedData,
-    signMessage: async parameters => signer.signMessage(parameters).then(wrap),
-    signTypedData: async parameters => signer.signTypedData(parameters).then(wrap),
+    unwrap: () => innerSigner,
+    signMessage: async parameters => innerSigner.signMessage(parameters).then(wrap),
+    signTypedData: async parameters => innerSigner.signTypedData(parameters).then(wrap),
   };
 };
 
