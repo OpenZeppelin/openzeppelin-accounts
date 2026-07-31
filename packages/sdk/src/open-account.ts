@@ -87,7 +87,7 @@ type OpenAccountParameters<
  * See {@link OpenAccountFactoryParameters} for creating new accounts or {@link OpenAccountExistingParameters} for using existing accounts.
  *
  * @property {Client} client The viem client to use for blockchain interactions
- * @property {ToERC7579AccountSigner} signer The signer to use for signing messages and operations. Accepts the SDK's `Signer` interface (from `toERC7913Signer`, `toCrossChainSigner`, `toMultisigner`, ...) or a viem `LocalAccount` / `WebAuthnAccount`.
+ * @property {ERC7579AccountSigner} signer The signer to use for signing messages and operations. Accepts the SDK's `Signer` interface (from `toERC7913Signer`, `toCrossChainSigner`, `toMultisigner`, ...) or a viem `LocalAccount` / `WebAuthnAccount`.
  * @property {function(UserOperationRequest?): Promise<Hex>} getStubSignature Function that returns a stub signature for gas estimation
  */
 type ToOpenAccountParameters<
