@@ -1,3 +1,13 @@
+## 31-07-2026
+
+- Add `packages/sdk/src/signers/`: composable signer abstraction that produces the on-chain envelopes the accounts library already knows how to verify.
+  - `toSigner(LocalAccount | WebAuthnAccount) → Signer` — normalizes viem's account shapes, unwrapping `WebAuthnAccount`'s discriminated return object so downstream code only sees `Hex`.
+  - `toERC7913Signer(inner, { verifier, key } | { address }) → ERC7913Signer` — wraps the inner signer's output as `abi.encode(bytes signer, bytes rawSig)` per ERC-7913. Returns a signer that exposes `signerBytes` and `unwrap()` (which returns the inner signer for further composition).
+  - `toCrossChainSigner(inner, config) → CrossChainSigner` — wraps the inner signer's output as an ERC-7964 cross-chain envelope. Selects the current chain via `currentChainIndex` or `chainId` (first-match DFS lookup for a canonical `chainId` field per the ERC-7964 §Message Array Encoding amendment). Supports optional `domain.verifyingContract` and auto-computes the ERC-5267 `fields` byte. Config is snapshotted at construction, so post-construction mutations of `operations` / `domain` / `message` are ignored. The returned signer also exposes `signCrossChainEnvelopes()` for the "one inner signature, N envelopes" dispatch pattern. `signMessage` throws (spec is EIP-712-only).
+  - `signCrossChainEnvelopes(inner, config)` — standalone helper equivalent to the method on `CrossChainSigner`.
+  - `toMultisigner([{ signer, signerBytes } | ERC7913Signer, ...]) → Signer` — packs `abi.encode(bytes[] signers, bytes[] signatures)` for `Multisig.tryDecodeMultisignatureCalldata` and the ERC-7579 multisig validators. Sorts pairs by `keccak256(signerBytes)` to match `SignatureChecker.areValidSignaturesNow`'s efficient-dedup path. ERC-7913-wrapped inputs are unwrapped via `.unwrap()` so the multisig envelope carries raw inner signatures rather than nested envelopes.
+- Widen the `signer` parameter of `toERC7579Account` and `toOpenAccount` to accept the SDK's `Signer` alongside viem's `LocalAccount | WebAuthnAccount`. Existing call sites keep working — `Signer` is a structural subset of `LocalAccount`.
+
 ## 27-02-2026
 
 - `toOpenAccount` now requires a `validator: Address` parameter identifying the ERC-7579 validator module that authorises the signer. This parameter drives two automatic behaviors:

@@ -6,7 +6,6 @@ import {
   ToSmartAccountParameters,
   SmartAccount,
   UserOperationRequest,
-  WebAuthnSignReturnType,
   SmartAccountImplementation,
   getUserOperationTypedData,
   WebAuthnAccount,
@@ -24,12 +23,24 @@ import {
   OneOf,
 } from 'viem';
 import { encodeCalls, decodeCalls } from './erc7579.utils.js';
+import { toSigner, type Signer } from './signers/index.js';
+
+/**
+ * Signer accepted by {@link toERC7579Account} and downstream factories.
+ *
+ * Either the SDK's narrow {@link Signer} interface (returned by wrappers like
+ * `toERC7913Signer`, `toCrossChainSigner`, `toMultisigner`) or a viem
+ * `LocalAccount` / `WebAuthnAccount`, which is normalized via {@link toSigner}.
+ */
+type ERC7579AccountSigner =
+  | Signer
+  | OneOf<Omit<LocalAccount, 'address' | 'signTransaction' | 'source'> | WebAuthnAccount>;
 
 /**
  * Parameters required to create an ERC-7579 account.
  *
  * @property {Client} client The viem client to use for blockchain interactions
- * @property {OneOf<Omit<LocalAccount, 'address' | 'signTransaction' | 'source'> | WebAuthnAccount>} signer The account signer to use for signing messages and operations. Can be either a partial LocalAccount (without address, signTransaction, and source properties) or a WebAuthnAccount for passkey-based authentication
+ * @property {ERC7579AccountSigner} signer The signer to use for signing messages and operations. Accepts the SDK's {@link Signer} interface (from `toERC7913Signer`, `toCrossChainSigner`, ...) or a viem `LocalAccount` / `WebAuthnAccount`.
  * @property {function(): Promise<Address>} getAddress Function that resolves to the account's address
  * @property {function(): Promise<{factory?: Address, factoryData?: Hex}>} getFactoryArgs Function that returns the factory address and data for account deployment
  * @property {function(UserOperationRequest?): Promise<Hex>} getStubSignature Function that returns a stub signature for gas estimation
@@ -41,7 +52,7 @@ type ToERC7579AccountParameters<
   rpcSchema extends RpcSchema | undefined = undefined,
 > = {
   client: Client<transport, chain, account, rpcSchema>;
-  signer: OneOf<Omit<LocalAccount, 'address' | 'signTransaction' | 'source'> | WebAuthnAccount>;
+  signer: ERC7579AccountSigner;
   getAddress: () => Promise<Address>;
   getFactoryArgs: () => Promise<{
     factory?: Address | undefined;
@@ -56,11 +67,17 @@ const entryPointV09 = {
   version: '0.9' as EntryPointVersion,
 } as const;
 
+const isSigner = (candidate: ERC7579AccountSigner): candidate is Signer =>
+  'signMessage' in candidate && 'signTypedData' in candidate && !('source' in candidate) && !('type' in candidate);
+
 /**
  * Creates a smart account client for an ERC-7579 account.
  */
 const toERC7579Account = async (parameters: ToERC7579AccountParameters): Promise<SmartAccount> => {
-  const { client, signer, getAddress, getFactoryArgs, ...override } = parameters;
+  const { client, signer: signerInput, getAddress, getFactoryArgs, ...override } = parameters;
+  const signer: Signer = isSigner(signerInput)
+    ? signerInput
+    : toSigner(signerInput as OneOf<LocalAccount | WebAuthnAccount>);
 
   return toSmartAccount({
     client,
@@ -70,29 +87,24 @@ const toERC7579Account = async (parameters: ToERC7579AccountParameters): Promise
     getAddress,
     getFactoryArgs,
     async signMessage({ message }: { message: SignableMessage }) {
-      return signer.signMessage({ message }).then(sig => (typeof sig === 'object' ? sig.signature : sig));
+      return signer.signMessage({ message });
     },
     async signTypedData(parameters) {
-      return (signer as LocalAccount)
-        .signTypedData(parameters)
-        .then(sig => (typeof sig === 'object' ? (sig as WebAuthnSignReturnType).signature : sig));
+      return signer.signTypedData(parameters as Parameters<Signer['signTypedData']>[0]);
     },
     async signUserOperation(userOperation: Parameters<SmartAccountImplementation['signUserOperation']>[0]) {
-      return (signer as LocalAccount)
-        .signTypedData(
-          getUserOperationTypedData({
-            entryPointAddress: entryPointV09.address,
-            userOperation: {
-              ...userOperation,
-              sender: userOperation.sender ?? (await getAddress()),
-            },
-            chainId: client.chain?.id ?? 1,
-          }),
-        )
-        .then(sig => (typeof sig === 'object' ? (sig as WebAuthnSignReturnType).signature : sig));
+      const typedData = getUserOperationTypedData({
+        entryPointAddress: entryPointV09.address,
+        userOperation: {
+          ...userOperation,
+          sender: userOperation.sender ?? (await getAddress()),
+        },
+        chainId: client.chain?.id ?? 1,
+      });
+      return signer.signTypedData(typedData);
     },
     ...override,
   });
 };
 
-export { ToERC7579AccountParameters, toERC7579Account };
+export { ToERC7579AccountParameters, ERC7579AccountSigner, toERC7579Account };

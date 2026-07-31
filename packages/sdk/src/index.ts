@@ -4,3 +4,4 @@ export * from './erc7579.abi.js';
 export * from './erc7579.actions.js';
 export * from './erc7579.utils.js';
 export * from './open-account.js';
+export * from './signers/index.js';

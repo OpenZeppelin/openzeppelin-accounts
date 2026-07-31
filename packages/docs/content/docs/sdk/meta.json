@@ -5,6 +5,7 @@
   "pages": [
     "index",
     "actions",
+    "signers",
     "---Clients---",
     "open-account"
   ]
