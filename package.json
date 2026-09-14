@@ -7,7 +7,9 @@
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --max-warnings 0 --fix",
     "format:write": "prettier --write '**/*.{js,ts,sol}'",
-    "format:check": "prettier --check '**/*.{js,ts,sol}'"
+    "format:check": "prettier --check '**/*.{js,ts,sol}'",
+    "sync-artifact": "node scripts/sync-artifact.mjs",
+    "postinstall": "node scripts/sync-artifact.mjs"
   },
   "keywords": [
     "solidity",

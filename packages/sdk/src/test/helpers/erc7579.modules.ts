@@ -11,8 +11,8 @@ import {
   RpcSchema,
   Address,
 } from 'viem';
-import ECDSAValidatorArtifact from '@openzeppelin-accounts/contracts/out/ERC7579ECDSAValidator.sol/ERC7579ECDSAValidator.json' with { type: 'json' };
-import WebAuthnValidatorArtifact from '@openzeppelin-accounts/contracts/out/ERC7579WebAuthnValidator.sol/ERC7579WebAuthnValidator.json' with { type: 'json' };
+import { ECDSAValidatorArtifact } from '../../artifacts/ERC7579ECDSAValidator.js';
+import { WebAuthnValidatorArtifact } from '../../artifacts/ERC7579WebAuthnValidator.js';
 
 const deployECDSAValidator = async (
   deployer: Client<Transport, Chain, Account, RpcSchema, PublicActions & WalletActions<Chain, Account>>,

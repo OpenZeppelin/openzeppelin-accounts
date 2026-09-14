@@ -22,7 +22,7 @@ import {
 } from 'viem';
 import { toERC7579Account, ToERC7579AccountParameters } from './erc7579-account.js';
 import { ToSmartAccountParameters, SmartAccount, SmartAccountImplementation } from 'viem/account-abstraction';
-import OpenAccountFactoryArtifact from '@openzeppelin-accounts/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' with { type: 'json' };
+import { OpenAccountFactoryArtifact } from './artifacts/OpenAccountFactory.js';
 import { encodeMode, EncodeMode, ModuleType, parseModuleTypeId } from './erc7579.utils.js';
 import { erc1967ProxyCode } from './erc1967.utils.js';
 import { IERC7579AccountConfigABI } from './erc7579.abi.js';
