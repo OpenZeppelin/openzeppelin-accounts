@@ -33,7 +33,7 @@ import { foundry } from 'viem/chains';
 import { ModuleTypes } from '../../erc7579.utils.js';
 import { toOpenAccount } from '../../open-account.js';
 import type { Context } from './setup.js';
-import OpenAccountFactoryArtifact from '@openzeppelin-accounts/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' with { type: 'json' };
+import { OpenAccountFactoryArtifact } from '../../artifacts/OpenAccountFactory.js';
 
 interface OpenAccountContext extends Context {
   factory: GetContractReturnType<typeof OpenAccountFactoryArtifact.abi, Client>;

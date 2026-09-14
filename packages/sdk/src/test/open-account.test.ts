@@ -18,8 +18,8 @@ import {
 } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { BundlerClient, createBundlerClient, SmartAccount } from 'viem/account-abstraction';
-import ECDSAValidatorArtifact from '@openzeppelin-accounts/contracts/out/ERC7579ECDSAValidator.sol/ERC7579ECDSAValidator.json' with { type: 'json' };
-import IERC1271Artifact from '@openzeppelin-accounts/contracts/out/IERC1271.sol/IERC1271.json' with { type: 'json' };
+import { ECDSAValidatorArtifact } from '../artifacts/ERC7579ECDSAValidator.js';
+import { IERC1271Artifact } from '../artifacts/IERC1271.js';
 import { deployECDSAValidator, deployWebAuthnValidator } from './helpers/erc7579.modules.js';
 import { setup, cleanup } from './helpers/setup.js';
 import { erc7579Actions, ERC7579Actions } from '../erc7579.actions.js';

@@ -22,9 +22,9 @@ import {
 } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { BundlerClient, createBundlerClient, SmartAccount } from 'viem/account-abstraction';
-import ERC7579MultisigValidatorArtifact from '@openzeppelin-accounts/contracts/out/ERC7579MultisigValidator.sol/ERC7579MultisigValidator.json' with { type: 'json' };
-import IERC1271Artifact from '@openzeppelin-accounts/contracts/out/IERC1271.sol/IERC1271.json' with { type: 'json' };
-import OpenAccountFactoryArtifact from '@openzeppelin-accounts/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' with { type: 'json' };
+import { ERC7579MultisigValidatorArtifact } from '../../artifacts/ERC7579MultisigValidator.js';
+import { IERC1271Artifact } from '../../artifacts/IERC1271.js';
+import { OpenAccountFactoryArtifact } from '../../artifacts/OpenAccountFactory.js';
 import { setup, cleanup } from '../helpers/setup.js';
 import { OpenAccountContext, createAndFundEOA, estimateGasOverride } from '../helpers/accounts.js';
 import { erc7579Actions, ERC7579Actions } from '../../erc7579.actions.js';

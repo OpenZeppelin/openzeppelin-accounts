@@ -61,3 +61,18 @@ jobs:
       - name: Run docs tests
         run: pnpm run links:check
         working-directory: packages/docs
+
+  artifact-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - name: Set up environment
+        uses: ./.github/actions/setup
+      - name: Build contracts
+        run: forge build
+      - name: Sync artifacts
+        run: pnpm run sync-artifact
+      - name: Fail if the checked-in TS artifacts drifted from the contracts
+        run: git diff --exit-code -- packages/sdk/src/artifacts

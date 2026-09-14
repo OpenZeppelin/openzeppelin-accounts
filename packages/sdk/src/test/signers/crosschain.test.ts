@@ -16,7 +16,7 @@ import {
   type Hex,
 } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import CrossChainAppMockArtifact from '@openzeppelin-accounts/contracts/out/CrossChainAppMock.sol/CrossChainAppMock.json' with { type: 'json' };
+import { CrossChainAppMockArtifact } from '../../artifacts/CrossChainAppMock.js';
 import { setup, cleanup, type Context } from '../helpers/setup.js';
 import { createAndFundEOA } from '../helpers/accounts.js';
 import { ERC7964_MAGIC, signCrossChainEnvelopes, toCrossChainSigner } from '../../signers/crosschain.js';
