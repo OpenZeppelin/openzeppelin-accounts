@@ -53,7 +53,8 @@ const CONTRACTS = [
   },
 ];
 
-const HEADER = source => `// AUTO-GENERATED — do not edit. Rewritten from the Foundry artifact by scripts/sync-artifact.mjs
+const HEADER =
+  source => `// AUTO-GENERATED — do not edit. Rewritten from the Foundry artifact by scripts/sync-artifact.mjs
 // on every install (postinstall) and by CI. Commit changes to this file when the underlying
 // contract changes; CI fails the build if the committed copy drifts from the artifact.
 // Source: ${source}
@@ -108,7 +109,9 @@ const results = await Promise.all(CONTRACTS.map(entry => emitOne(entry, format))
 const emitted = results.filter(r => !r.skipped).length;
 const skipped = results.length - emitted;
 if (emitted > 0 && skipped > 0) {
-  console.error(`sync-artifact: partial update — ${emitted} emitted, ${skipped} skipped. Rebuild all contracts and re-run.`);
+  console.error(
+    `sync-artifact: partial update — ${emitted} emitted, ${skipped} skipped. Rebuild all contracts and re-run.`,
+  );
   process.exit(1);
 }
 

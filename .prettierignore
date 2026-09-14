@@ -8,3 +8,4 @@ eslint.config.mjs
 lib
 contracts-exposed
 **/.source
+packages/docs/next-env.d.ts
