@@ -170,9 +170,15 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
      * the `multisignature` must contain valid guardian signatures over the {CANCEL_RECOVER_TYPEHASH}
      * typed data hash using the account's domain separator.
      *
+     * Uninstalling the module resets the threshold to zero while scheduled operations are retained
+     * (see {ERC7579DelayedExecutor-onUninstall}). Guardian-authorized cancellation is therefore only
+     * available while a guardian configuration is active. The account keeps its own cancellation path
+     * in either case.
+     *
      * Requirements:
      *
      * * The caller must be the account or a valid `multisignature` must be provided.
+     * * A `multisignature` only authorizes the cancellation while the {threshold} is nonzero.
      * * See {ERC7579DelayedExecutor-_cancel} for cancellation requirements.
      * * The `account` must implement {IERC5267}.
      */
@@ -188,7 +194,10 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
             (bool success, bytes[] calldata signers, bytes[] calldata signatures) = Multisig
                 .tryDecodeMultisignatureCalldata(multisignature);
             bytes32 cancelTypedHash = _getTypedHash(CANCEL_RECOVER_TYPEHASH, account, salt, mode, recoveryData);
-            valid = success && _validateMultisig(account, cancelTypedHash, signers, signatures);
+            valid =
+                success &&
+                threshold(account) > 0 &&
+                _validateMultisig(account, cancelTypedHash, signers, signatures);
         }
         require(valid, ERC7579SocialRecoveryExecutorInvalidCancel());
         _cancel(account, salt, mode, recoveryData);
