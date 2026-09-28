@@ -138,8 +138,9 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
     }
 
     /**
-     * @dev Minimum delay after which {setDelay} takes effect.
-     * Set as default delay if not provided during {onInstall}.
+     * @dev Maximum transition period applied when {setDelay} increases the delay, which takes effect
+     * after `min(newDelay, delayChangeWindow())`. Delay decreases are unaffected and take effect after
+     * `currentDelay - newDelay`. Also used as the default delay if not provided during {onInstall}.
      */
     function delayChangeWindow() public view virtual returns (uint32) {
         return 5 days; // Up to ~136 years
