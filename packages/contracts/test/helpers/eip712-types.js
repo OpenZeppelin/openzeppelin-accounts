@@ -5,11 +5,13 @@ const formatType = schema => Object.entries(schema).map(([name, type]) => ({ nam
 module.exports = mapValues(
   {
     ScheduleRecover: {
+      executor: 'address',
       salt: 'bytes32',
       mode: 'bytes32',
       recoveryCalldata: 'bytes',
     },
     CancelRecover: {
+      executor: 'address',
       salt: 'bytes32',
       mode: 'bytes32',
       recoveryCalldata: 'bytes',

@@ -32,9 +32,9 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
     using MessageHashUtils for *;
 
     bytes32 public constant SCHEDULE_RECOVER_TYPEHASH =
-        keccak256("ScheduleRecover(bytes32 salt,bytes32 mode,bytes recoveryCalldata)");
+        keccak256("ScheduleRecover(address executor,bytes32 salt,bytes32 mode,bytes recoveryCalldata)");
     bytes32 public constant CANCEL_RECOVER_TYPEHASH =
-        keccak256("CancelRecover(bytes32 salt,bytes32 mode,bytes recoveryCalldata)");
+        keccak256("CancelRecover(address executor,bytes32 salt,bytes32 mode,bytes recoveryCalldata)");
 
     /// @dev The multisignature validation failed.
     error ERC7579SocialRecoveryExecutorInvalidSchedule();
@@ -205,6 +205,7 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
      *
      * The typed data structure includes:
      *
+     * * `executor`: This module's address, so the authorization is only valid for this deployment
      * * `salt`: Unique salt for this operation
      * * `mode`: Execution mode as defined in ERC-7579
      * * `recoveryCalldata`: The exact calldata to be executed during recovery
@@ -229,7 +230,7 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
         (fields, name, version, chainId, verifyingContract, domainSalt, ) = IERC5267(account).eip712Domain();
         return
             fields.toDomainSeparator(name, version, chainId, verifyingContract, domainSalt).toTypedDataHash(
-                keccak256(abi.encode(typehash, salt, mode, keccak256(recoveryCalldata)))
+                keccak256(abi.encode(typehash, address(this), salt, mode, keccak256(recoveryCalldata)))
             );
     }
 }

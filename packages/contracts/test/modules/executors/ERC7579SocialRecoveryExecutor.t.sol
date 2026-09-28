@@ -24,13 +24,14 @@ contract ERC7579SocialRecoveryExecutorTest is Test {
 
     CallReceiverMock private _target;
     ERC7579SocialRecoveryExecutor private _executor;
+    ERC7579SocialRecoveryExecutor private _otherExecutor;
     OpenAccount private _account;
     OpenAccountFactory private _factory;
 
     bytes32 private constant SCHEDULE_RECOVER_TYPEHASH =
-        keccak256("ScheduleRecover(bytes32 salt,bytes32 mode,bytes recoveryCalldata)");
+        keccak256("ScheduleRecover(address executor,bytes32 salt,bytes32 mode,bytes recoveryCalldata)");
     bytes32 private constant CANCEL_RECOVER_TYPEHASH =
-        keccak256("CancelRecover(bytes32 salt,bytes32 mode,bytes recoveryCalldata)");
+        keccak256("CancelRecover(address executor,bytes32 salt,bytes32 mode,bytes recoveryCalldata)");
 
     function setUp() public {
         _target = new CallReceiverMock();
@@ -343,6 +344,64 @@ contract ERC7579SocialRecoveryExecutorTest is Test {
         vm.deleteStateSnapshot(snapshot);
     }
 
+    function testScheduleMultisignatureDoesNotReplayAcrossExecutors() public {
+        (uint256[] memory keys, bytes[] memory guardians, uint64[] memory weights) = _buildGuardians(3);
+        _installSecondExecutor(guardians, weights);
+        (bytes memory calldata_, bytes32 mode) = _prepareDataAndMode(1, 2);
+
+        bytes memory multisignature = _sign(
+            _recoveryDigest(address(_executor), SCHEDULE_RECOVER_TYPEHASH, bytes32(0), mode, calldata_),
+            guardians,
+            keys
+        );
+
+        // Valid on the executor it was signed for.
+        _executor.startRecovery(address(_account), bytes32(0), mode, calldata_, multisignature);
+
+        // Rejected by the other deployment, which is not the `executor` bound into the digest.
+        vm.expectRevert(ERC7579SocialRecoveryExecutor.ERC7579SocialRecoveryExecutorInvalidSchedule.selector);
+        _otherExecutor.startRecovery(address(_account), bytes32(0), mode, calldata_, multisignature);
+    }
+
+    function testCancelMultisignatureDoesNotReplayAcrossExecutors() public {
+        (uint256[] memory keys, bytes[] memory guardians, uint64[] memory weights) = _buildGuardians(3);
+        _installSecondExecutor(guardians, weights);
+        (bytes memory calldata_, bytes32 mode) = _prepareDataAndMode(1, 2);
+
+        _otherExecutor.startRecovery(
+            address(_account),
+            bytes32(0),
+            mode,
+            calldata_,
+            _sign(
+                _recoveryDigest(address(_otherExecutor), SCHEDULE_RECOVER_TYPEHASH, bytes32(0), mode, calldata_),
+                guardians,
+                keys
+            )
+        );
+
+        // Built before `expectRevert` so the `eip712Domain` call it makes is not the expected revert.
+        bytes memory cancelMultisignature = _sign(
+            _recoveryDigest(address(_executor), CANCEL_RECOVER_TYPEHASH, bytes32(0), mode, calldata_),
+            guardians,
+            keys
+        );
+
+        // A cancellation signed for `_executor` does not authorize a cancellation on `_otherExecutor`.
+        vm.expectRevert(ERC7579SocialRecoveryExecutor.ERC7579SocialRecoveryExecutorInvalidCancel.selector);
+        _otherExecutor.cancelRecovery(address(_account), bytes32(0), mode, calldata_, cancelMultisignature);
+    }
+
+    /// @dev Installs `_executor` and a second deployment of the same module on a fresh account.
+    function _installSecondExecutor(bytes[] memory guardians, uint64[] memory weights) private {
+        uint64 threshold = _calculateTotalWeight(weights);
+        _account = _createAndInstall(1 days, 30 days, threshold, guardians, weights);
+        _otherExecutor = new ERC7579SocialRecoveryExecutor();
+        (, , bytes[] memory initDatas) = _buildInstallationModules(guardians, threshold, weights, 1 days, 30 days);
+        vm.prank(address(_account));
+        _account.installModule(MODULE_TYPE_EXECUTOR, address(_otherExecutor), initDatas[0]);
+    }
+
     // Helper functions
 
     function _createAndInstall(
@@ -439,6 +498,32 @@ contract ERC7579SocialRecoveryExecutorTest is Test {
         bytes[] memory guardians,
         uint256[] memory guardianKeys
     ) private view returns (bytes memory) {
+        return
+            _sign(_recoveryDigest(address(_executor), typehash, salt, mode, recoveryCalldata), guardians, guardianKeys);
+    }
+
+    /// @dev Signs `hash` with each of `guardianKeys` and encodes the result as a multisignature.
+    function _sign(
+        bytes32 hash,
+        bytes[] memory guardians,
+        uint256[] memory guardianKeys
+    ) private pure returns (bytes memory) {
+        bytes[] memory signatures = new bytes[](guardianKeys.length);
+        for (uint256 i = 0; i < guardianKeys.length; i++) {
+            (uint8 v, bytes32 r, bytes32 s) = vm.sign(guardianKeys[i], hash);
+            signatures[i] = abi.encodePacked(r, s, v);
+        }
+        return abi.encode(guardians, signatures);
+    }
+
+    /// @dev EIP-712 digest over the account's domain, with `executor` bound into the struct.
+    function _recoveryDigest(
+        address executor,
+        bytes32 typehash,
+        bytes32 salt,
+        bytes32 mode,
+        bytes memory recoveryCalldata
+    ) private view returns (bytes32) {
         bytes1 fields;
         string memory name;
         string memory version;
@@ -446,16 +531,9 @@ contract ERC7579SocialRecoveryExecutorTest is Test {
         address verifyingContract;
         bytes32 domainSalt;
         (fields, name, version, chainId, verifyingContract, domainSalt, ) = IERC5267(_account).eip712Domain();
-        bytes32 hash = fields.toDomainSeparator(name, version, chainId, verifyingContract, domainSalt).toTypedDataHash(
-            keccak256(abi.encode(typehash, salt, mode, keccak256(recoveryCalldata)))
-        );
-
-        bytes[] memory signatures = new bytes[](guardianKeys.length);
-        for (uint256 i = 0; i < guardianKeys.length; i++) {
-            (uint8 v, bytes32 r, bytes32 s) = vm.sign(guardianKeys[i], hash);
-            signatures[i] = abi.encodePacked(r, s, v);
-        }
-
-        return abi.encode(guardians, signatures);
+        return
+            fields.toDomainSeparator(name, version, chainId, verifyingContract, domainSalt).toTypedDataHash(
+                keccak256(abi.encode(typehash, executor, salt, mode, keccak256(recoveryCalldata)))
+            );
     }
 }
