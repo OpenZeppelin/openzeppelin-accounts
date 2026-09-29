@@ -392,6 +392,59 @@ contract ERC7579SocialRecoveryExecutorTest is Test {
         _otherExecutor.cancelRecovery(address(_account), bytes32(0), mode, calldata_, cancelMultisignature);
     }
 
+    function testUninstalledModuleRejectsGuardianCancel() public {
+        (uint256[] memory keys, bytes[] memory guardians, uint64[] memory weights) = _buildGuardians(3);
+        _account = _createAndInstall(1 days, 30 days, _calculateTotalWeight(weights), guardians, weights);
+        (bytes memory calldata_, bytes32 mode) = _prepareDataAndMode(1, 2);
+
+        bytes memory multisignature = _createMultisignature(
+            SCHEDULE_RECOVER_TYPEHASH,
+            bytes32(0),
+            mode,
+            calldata_,
+            guardians,
+            keys
+        );
+        _executor.startRecovery(address(_account), bytes32(0), mode, calldata_, multisignature);
+
+        // Uninstalling clears the guardians and resets the threshold, but retains the operation.
+        vm.prank(address(_account));
+        _executor.onUninstall("");
+        assertEq(_executor.threshold(address(_account)), 0);
+        assertEq(
+            uint8(_executor.state(address(_account), bytes32(0), mode, calldata_)),
+            uint8(ERC7579DelayedExecutor.OperationState.Scheduled)
+        );
+
+        // Two empty arrays would otherwise clear a threshold of zero. Both encodings are rejected.
+        vm.expectRevert(ERC7579SocialRecoveryExecutor.ERC7579SocialRecoveryExecutorInvalidCancel.selector);
+        vm.prank(address(0xBAD));
+        _executor.cancelRecovery(address(_account), bytes32(0), mode, calldata_, new bytes(0x40));
+
+        vm.expectRevert(ERC7579SocialRecoveryExecutor.ERC7579SocialRecoveryExecutorInvalidCancel.selector);
+        vm.prank(address(0xBAD));
+        _executor.cancelRecovery(
+            address(_account),
+            bytes32(0),
+            mode,
+            calldata_,
+            abi.encode(new bytes[](0), new bytes[](0))
+        );
+
+        assertEq(
+            uint8(_executor.state(address(_account), bytes32(0), mode, calldata_)),
+            uint8(ERC7579DelayedExecutor.OperationState.Scheduled)
+        );
+
+        // The account keeps its own cancellation path while uninstalled.
+        vm.prank(address(_account));
+        _executor.cancelRecovery(address(_account), bytes32(0), mode, calldata_);
+        assertEq(
+            uint8(_executor.state(address(_account), bytes32(0), mode, calldata_)),
+            uint8(ERC7579DelayedExecutor.OperationState.Canceled)
+        );
+    }
+
     /// @dev Installs `_executor` and a second deployment of the same module on a fresh account.
     function _installSecondExecutor(bytes[] memory guardians, uint64[] memory weights) private {
         uint64 threshold = _calculateTotalWeight(weights);
