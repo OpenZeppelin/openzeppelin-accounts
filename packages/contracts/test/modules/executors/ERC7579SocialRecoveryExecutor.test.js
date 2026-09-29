@@ -292,6 +292,7 @@ describe('ERC7579SocialRecoveryExecutor', function () {
           domain,
           { ScheduleRecover },
           {
+            executor: this.mock.target,
             salt: salt,
             mode: this.mode,
             recoveryCalldata: this.calldata,
@@ -330,6 +331,7 @@ describe('ERC7579SocialRecoveryExecutor', function () {
           domain,
           { ScheduleRecover },
           {
+            executor: this.mock.target,
             salt: salt,
             mode: this.mode,
             recoveryCalldata: this.calldata,
@@ -348,6 +350,7 @@ describe('ERC7579SocialRecoveryExecutor', function () {
           domain,
           { ScheduleRecover },
           {
+            executor: this.mock.target,
             salt: salt,
             mode: this.mode,
             recoveryCalldata: this.calldata,
@@ -366,6 +369,7 @@ describe('ERC7579SocialRecoveryExecutor', function () {
           domain,
           { ScheduleRecover },
           {
+            executor: this.mock.target,
             salt: salt,
             mode: this.mode,
             recoveryCalldata: this.calldata,
@@ -388,6 +392,7 @@ describe('ERC7579SocialRecoveryExecutor', function () {
           domain,
           { ScheduleRecover },
           {
+            executor: this.mock.target,
             salt: salt,
             mode: this.mode,
             recoveryCalldata: this.calldata,
@@ -451,6 +456,7 @@ describe('ERC7579SocialRecoveryExecutor', function () {
           domain,
           { ScheduleRecover },
           {
+            executor: this.mock.target,
             salt: salt,
             mode: this.mode,
             recoveryCalldata: this.calldata,
@@ -483,6 +489,7 @@ describe('ERC7579SocialRecoveryExecutor', function () {
             CancelRecover,
           },
           {
+            executor: this.mock.target,
             salt: salt,
             mode: this.mode,
             recoveryCalldata: this.calldata,
@@ -518,6 +525,7 @@ describe('ERC7579SocialRecoveryExecutor', function () {
             CancelRecover,
           },
           {
+            executor: this.mock.target,
             salt: salt,
             mode: this.mode,
             recoveryCalldata: this.calldata,
@@ -544,6 +552,7 @@ describe('ERC7579SocialRecoveryExecutor', function () {
             CancelRecover,
           },
           {
+            executor: this.mock.target,
             salt: salt,
             mode: this.mode,
             recoveryCalldata: this.calldata,
@@ -598,6 +607,7 @@ describe('ERC7579SocialRecoveryExecutor', function () {
           domain,
           { ScheduleRecover },
           {
+            executor: this.mock.target,
             salt: salt1,
             mode: this.mode,
             recoveryCalldata: this.calldata,
@@ -610,6 +620,7 @@ describe('ERC7579SocialRecoveryExecutor', function () {
           domain,
           { ScheduleRecover },
           {
+            executor: this.mock.target,
             salt: salt2,
             mode: this.mode,
             recoveryCalldata: this.calldata,
