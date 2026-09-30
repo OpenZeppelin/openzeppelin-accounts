@@ -4,12 +4,9 @@
   "description": "Standardized modular tooling and SDK for EVM smart accounts",
   "author": "OpenZeppelin Accounts Contributors",
   "license": "MIT",
-  "files": [
-    "/src/**/*.sol",
-    "!/src/mocks/**/*",
-    "/build/contracts/*.json",
-    "README.md"
-  ],
+  "publishConfig": {
+    "directory": "src"
+  },
   "scripts": {
     "compile": "hardhat compile",
     "clean": "hardhat clean && rimraf build contracts/build",
