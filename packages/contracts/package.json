@@ -5,12 +5,15 @@
   "author": "OpenZeppelin Accounts Contributors",
   "license": "MIT",
   "files": [
-    "/contracts/**/*.sol",
-    "!/contracts/mocks/**/*"
+    "/src/**/*.sol",
+    "!/src/mocks/**/*",
+    "/build/contracts/*.json",
+    "README.md"
   ],
   "scripts": {
     "compile": "hardhat compile",
     "clean": "hardhat clean && rimraf build contracts/build",
+    "prepack": "bash scripts/prepack.sh",
     "coverage": "scripts/checks/coverage.sh",
     "test": "pnpm run test:regular && pnpm run test:fhe",
     "test:regular": "hardhat test",
@@ -40,6 +43,7 @@
     "hardhat": "^2.28.0",
     "hardhat-exposed": "^0.3.19",
     "hardhat-predeploy": "^0.4.1",
+    "micromatch": "^4.0.8",
     "rimraf": "^6.0.1",
     "solidity-coverage": "^0.8.16"
   }
