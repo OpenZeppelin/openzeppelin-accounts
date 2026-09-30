@@ -17,9 +17,7 @@ const pkgFiles = readJSON('package.json').files;
 // `files` uses `!/…` for negations. Drop the `!` (micromatch takes plain
 // patterns) and the leading `/` (npm anchors to package root; micromatch
 // matches relative paths).
-const ignorePatterns = pkgFiles
-  .filter(pat => pat.startsWith('!'))
-  .map(pat => pat.slice(1).replace(/^\//, ''));
+const ignorePatterns = pkgFiles.filter(pat => pat.startsWith('!')).map(pat => pat.slice(1).replace(/^\//, ''));
 
 // A directory pattern like `src/mocks/**/*` matches the directory's children
 // but not the directory itself. Add both so we catch either shape.

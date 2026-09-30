@@ -124,8 +124,14 @@ describe('Multisig', function () {
         encode(0x40, 0x60, 1), // length = 1 but missing element offset word
       ],
       // Attacker-crafted values that must not overflow checked arithmetic.
-      ['offset near type(uint256).max (would overflow signersOffset + 0x20)', encode(ethers.MaxUint256, ethers.MaxUint256, 0, 0)],
-      ['array length above type(uint64).max (would overflow length * 0x20)', encode(0x40, 0x60, MAX_UINT64 + 1n, MAX_UINT64 + 1n)],
+      [
+        'offset near type(uint256).max (would overflow signersOffset + 0x20)',
+        encode(ethers.MaxUint256, ethers.MaxUint256, 0, 0),
+      ],
+      [
+        'array length above type(uint64).max (would overflow length * 0x20)',
+        encode(0x40, 0x60, MAX_UINT64 + 1n, MAX_UINT64 + 1n),
+      ],
       ['array length exceeds remaining buffer (correct head bound uses signersDataOffset)', encode(0x40, 0x60, 10, 0)],
     ]) {
       it(`returns false for invalid data (${description})`, async function () {
