@@ -107,6 +107,7 @@ importers:
       solidity-coverage:
         specifier: ^0.8.16
         version: 0.8.16(hardhat@2.28.6(ts-node@10.9.2(@types/node@25.0.10)(typescript@5.9.3))(typescript@5.9.3))
+    publishDirectory: src
 
   packages/docs:
     dependencies:
