@@ -2,9 +2,24 @@
   "name": "@openzeppelin-accounts/sdk",
   "version": "0.0.1",
   "description": "SDK for OpenZeppelin Accounts",
-  "main": "dist/index.js",
   "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "scripts": {
+    "build": "node ../../scripts/sync-artifact.mjs && tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
     "compile": "tsc",
     "compile:watch": "tsc -w",
     "test": "ava",
