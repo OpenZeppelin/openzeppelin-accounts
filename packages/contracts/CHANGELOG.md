@@ -1,3 +1,7 @@
+## 05-10-2026
+
+- `CrossChainSignatureChecker`: `isValidCrossChainSignatureNow` and `isValidCrossChainSignatureNowCalldata` return false instead of reverting when `structIndex` is out of bounds or when `fields` sets bits beyond the ones defined in ERC-5267. `tryParseCrossChainSignature` and `tryParseCrossChainSignatureCalldata` return empty values instead of reverting when an encoded offset or length overflows.
+
 ## 22-07-2026
 
 - Renamed `OpenAccountERC8043` to `AccountERC8043Upgradeable` and retargeted it to extend `AccountERC7579Upgradeable` directly, so the ERC-8043 init mode extension can be composed with any ERC-7579-based account instead of only `OpenAccount`.
