@@ -69,9 +69,8 @@ library CrossChainSignatureChecker {
             bytes memory crossChainSignature,
             bytes32 structHash_
         ) = _tryParseCrosschainSignatureForValidation(hash, erc7964Signature, structHash);
-        if (structHash_ == bytes32(0)) return false;
-
         return
+            structHash_ != bytes32(0) &&
             signer.isValidSignatureNow(
                 _fetchDomainSeparator(application, fields).toTypedDataHash(structHash_),
                 crossChainSignature
@@ -91,9 +90,8 @@ library CrossChainSignatureChecker {
             bytes calldata crossChainSignature,
             bytes32 structHash_
         ) = _tryParseCrosschainSignatureForValidationCalldata(hash, erc7964Signature, structHash);
-        if (structHash_ == bytes32(0)) return false;
-
         return
+            structHash_ != bytes32(0) &&
             signer.isValidSignatureNowCalldata(
                 _fetchDomainSeparator(application, fields).toTypedDataHash(structHash_),
                 crossChainSignature
