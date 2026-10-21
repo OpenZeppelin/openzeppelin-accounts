@@ -25,6 +25,7 @@ require('@nomicfoundation/hardhat-ethers');
 require('hardhat-exposed');
 require('hardhat-predeploy');
 require('solidity-coverage');
+require('solidity-docgen');
 require('./hardhat/remappings');
 
 module.exports = {
@@ -50,4 +51,5 @@ module.exports = {
     sources: 'src',
     tests: argv.fhe ? 'test-fhe' : 'test',
   },
+  docgen: require('./docs/config'),
 };

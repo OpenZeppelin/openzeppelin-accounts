@@ -65,7 +65,7 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * repurposed to authorize arbitrary off-chain messages on behalf of the account.
  *
  * TIP: Set {start} to a future timepoint to schedule a spending limit that activates later.
- * TIP: Set {renewPeriod} to {type(uint48).max} to disable the renewal period.
+ * TIP: Set {renewPeriod} to `type(uint48).max` to disable the renewal period.
  */
 contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
     /// @dev The account already has spenders installed.

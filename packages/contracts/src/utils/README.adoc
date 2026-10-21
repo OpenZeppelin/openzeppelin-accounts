@@ -1,0 +1,22 @@
+= Utilities
+[.readme-notice]
+NOTE: This document is better viewed at https://docs.openzeppelin.com/accounts/api/utils
+
+Libraries and helpers used by the account and its modules.
+
+ * {Multisig}: Encoding and decoding of multisignatures and their signer sets.
+ * {CrossChainSignatureChecker}: Verification of ERC-7964 crosschain signatures.
+ * {ERC8043Utils}: Encoding helpers for the ERC-8043 init mode.
+ * {MultisigCoordinator}: Coordinates FHE inputs and decryption rights between the signers of a multisig account.
+
+== Libraries
+
+{{Multisig}}
+
+{{CrossChainSignatureChecker}}
+
+{{ERC8043Utils}}
+
+== Coordination
+
+{{MultisigCoordinator}}

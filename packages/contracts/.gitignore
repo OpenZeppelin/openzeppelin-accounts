@@ -76,3 +76,6 @@ certora_*
 
 # Zama
 fhevmTemp
+
+# docs templates injected by OpenZeppelin/docs
+docs/templates-md

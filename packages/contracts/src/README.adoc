@@ -1,0 +1,25 @@
+= Accounts
+[.readme-notice]
+NOTE: This document is better viewed at https://docs.openzeppelin.com/accounts/api
+
+This package provides a production-ready ERC-4337 and ERC-7579 smart account and a set of ERC-7579 modules that can be installed on any ERC-7579 compliant account.
+
+ * {OpenAccount}: A modular smart account with ERC-7579 module support, ERC-1271 signature validation and ERC-721/ERC-1155 holder capabilities.
+ * {OpenAccountImplementation}: Upgradeable implementation of {OpenAccount} with ERC-8043 init mode, used by {OpenAccountFactory}.
+ * {OpenAccountFactory}: A factory that deploys {OpenAccountImplementation} instances as ERC-1967 proxy clones at deterministic addresses.
+
+Modules, extensions and utilities are documented in their own pages:
+
+ * xref:api:modules.adoc[Modules]: Validators, executors and the signer, multisig and session key primitives they are built from.
+ * xref:api:extensions.adoc[Extensions]: Account extensions such as ERC-8043 init mode.
+ * xref:api:utils.adoc[Utilities]: Libraries and helpers for multisignatures, crosschain signatures and FHE coordination.
+
+== Account
+
+{{OpenAccount}}
+
+{{OpenAccountImplementation}}
+
+== Factory
+
+{{OpenAccountFactory}}

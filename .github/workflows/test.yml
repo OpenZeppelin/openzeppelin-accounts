@@ -52,16 +52,6 @@ jobs:
         run: pnpm run test
         working-directory: packages/sdk
 
-  docs:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Set up environment
-        uses: ./.github/actions/setup
-      - name: Run docs tests
-        run: pnpm run links:check
-        working-directory: packages/docs
-
   artifact-sync:
     runs-on: ubuntu-latest
     steps:
