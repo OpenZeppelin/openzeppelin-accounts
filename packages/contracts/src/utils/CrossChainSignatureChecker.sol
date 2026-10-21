@@ -11,7 +11,7 @@ import {Memory} from "@openzeppelin/contracts/utils/Memory.sol";
 /**
  * @dev Crosschain signature verification helper for ERC-7964 compliant signatures.
  *
- * https://eips.ethereum.org/EIPS/eip-7964[ERC-7964] enables a single signature to
+ * [ERC-7964](https://eips.ethereum.org/EIPS/eip-7964) enables a single signature to
  * be valid across multiple chains by omitting the `chainId` from the EIP-712 domain
  * and encoding chain-specific operations as an array of struct hashes. This helper
  * provides functions to parse and verify such crosschain signatures.
@@ -42,11 +42,13 @@ library CrossChainSignatureChecker {
      * 4. Reconstructs the full typed hash using the domain and array of struct hashes
      * 5. Validates the signature against the reconstructed hash
      *
-     * NOTE: Unlike ECDSA signatures, contract signatures are revocable, and the outcome of this function can thus
-     * change through time. It could return true at block N and false at block N+1 (or the opposite).
+     * > [!NOTE]
+     * > Unlike ECDSA signatures, contract signatures are revocable, and the outcome of this function can thus
+     * > change through time. It could return true at block N and false at block N+1 (or the opposite).
      *
-     * IMPORTANT: Make sure the `structHash` function pointer manages memory correctly. Otherwise,
-     * this function may behave unexpectedly.
+     * > [!IMPORTANT]
+     * > Make sure the `structHash` function pointer manages memory correctly. Otherwise,
+     * > this function may behave unexpectedly.
      */
     function isValidCrossChainSignatureNow(
         address signer,

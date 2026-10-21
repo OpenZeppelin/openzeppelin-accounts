@@ -25,8 +25,9 @@ import {ERC7579MultisigWeighted} from "../ERC7579MultisigWeighted.sol";
  *
  * See {ERC7579DelayedExecutor} and {ERC7579MultisigWeighted} for more details.
  *
- * NOTE: This module does not restrict execution by default once the social recovery operation
- * is ready. Anyone can call {executeRecovery} once the delay period has elapsed.
+ * > [!NOTE]
+ * > This module does not restrict execution by default once the social recovery operation
+ * > is ready. Anyone can call {executeRecovery} once the delay period has elapsed.
  */
 contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579MultisigWeighted {
     using MessageHashUtils for *;
@@ -72,9 +73,10 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
      * This cleans up both the delayed executor configuration and all guardian-related state.
      * After uninstallation, all social recovery capabilities are removed.
      *
-     * IMPORTANT: Ensure alternative recovery mechanisms or access methods are in place
-     * before uninstalling this module. Uninstalling social recovery without a backup
-     * access method could result in account lockout if primary credentials are lost.
+     * > [!IMPORTANT]
+     * > Ensure alternative recovery mechanisms or access methods are in place
+     * > before uninstalling this module. Uninstalling social recovery without a backup
+     * > access method could result in account lockout if primary credentials are lost.
      *
      * See {ERC7579DelayedExecutor-onUninstall} and {ERC7579MultisigWeighted-onUninstall}.
      */

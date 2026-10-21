@@ -106,10 +106,11 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      *
      * Using `startIdx = 0` and `endIdx = type(uint256).max` will return all keys.
      *
-     * WARNING: Depending on the `startIdx` and `endIdx`, this operation can copy a large amount
-     * of data to memory, which can be expensive. This is designed for view accessors queried
-     * without gas fees. Using it in state-changing functions may become uncallable if the set
-     * grows too large.
+     * > [!WARNING]
+     * > Depending on the `startIdx` and `endIdx`, this operation can copy a large amount
+     * > of data to memory, which can be expensive. This is designed for view accessors queried
+     * > without gas fees. Using it in state-changing functions may become uncallable if the set
+     * > grows too large.
      */
     function keys(address account, uint256 startIdx, uint256 endIdx) public view virtual returns (bytes[] memory) {
         return _keys(account, installation(account), startIdx, endIdx);
@@ -132,8 +133,11 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      * * Those from {_decodeKeysInitData} for the decoding requirements.
      * * Those from {_addKeys} for the key configuration requirements.
      *
-     * TIP: Set `starts[i]` to `0` to activate the key immediately at the current timepoint.
-     * TIP: Set `ends[i]` to `0` to register a key with no expiry.
+     * > [!TIP]
+     * > Set `starts[i]` to `0` to activate the key immediately at the current timepoint.
+     *
+     * > [!TIP]
+     * > Set `ends[i]` to `0` to register a key with no expiry.
      */
     function onInstall(bytes calldata initData) public virtual {
         (bytes[] calldata keys_, uint48[] calldata starts, uint48[] calldata ends) = _decodeKeysInitData(initData);
@@ -146,9 +150,10 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      *
      * See {IERC7579Module-onUninstall}.
      *
-     * NOTE: This approach avoids unbounded gas costs by not iterating over keys.
-     * Previous key data remains in storage but becomes inaccessible due to the nonce increment.
-     * Upon reinstallation, the module will use a new nonce and ignore old keys.
+     * > [!NOTE]
+     * > This approach avoids unbounded gas costs by not iterating over keys.
+     * > Previous key data remains in storage but becomes inaccessible due to the nonce increment.
+     * > Upon reinstallation, the module will use a new nonce and ignore old keys.
      */
     function onUninstall(bytes calldata) public virtual {
         _useNonce(msg.sender);
@@ -226,8 +231,11 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      * * All arrays must have equal length. Reverts with {ERC7579SessionKeysMismatchedInitDataLengths} if not.
      * * Each of `keys_` must not be registered. Reverts with {ERC7579SessionKeysAlreadyRegisteredKey} if it is.
      *
-     * TIP: Setting `starts[i]` to `0` resolves to the current timepoint.
-     * TIP: Setting `ends[i]` to `0` stores `type(uint48).max`, meaning no expiry.
+     * > [!TIP]
+     * > Setting `starts[i]` to `0` resolves to the current timepoint.
+     *
+     * > [!TIP]
+     * > Setting `ends[i]` to `0` stores `type(uint48).max`, meaning no expiry.
      *
      * Emits an {ERC7579SessionKeysERC7913KeySet} event for each key.
      */
@@ -287,7 +295,8 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      *
      * See {_tryDecodeSignature} for the encoding details.
      *
-     * NOTE: Does not validate the {validity} range.
+     * > [!NOTE]
+     * > Does not validate the {validity} range.
      */
     function _validateSessionKey(
         address account,

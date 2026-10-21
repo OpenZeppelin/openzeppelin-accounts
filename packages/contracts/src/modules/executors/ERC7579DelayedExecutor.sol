@@ -14,7 +14,7 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * `schedule`, `cancel`, and `execute` functions in derived contracts to define the
  * specific validation and access control logic for each operation.
  *
- * ==== Operation Lifecycle
+ * #### Operation Lifecycle
  *
  * 1. Scheduling: Operations are scheduled via {_schedule} with a specified delay period.
  * The delay period is set during {onInstall} and can be customized via {setDelay}. Each
@@ -29,7 +29,7 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * executable. If an operation is not executed within the expiration period, it becomes `Expired`
  * and can't be executed. Expired operations must be rescheduled with a different salt.
  *
- * ==== Delay Management
+ * #### Delay Management
  *
  * Accounts can set their own delay periods during installation or via {setDelay}.
  * The delay period is enforced even between installs and uninstalls to prevent
@@ -39,16 +39,19 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * * When _increasing_ the delay, the new value takes effect after `min(newDelay, delayChangeWindow())`.
  * * When _decreasing_ the delay, the new value takes effect after `currentDelay - newDelay`.
  *
- * TIP: Use {_scheduleAt} to schedule operations at specific points in time. This is
- * useful to pre-schedule operations for non-deployed accounts (e.g. subscriptions).
+ * > [!TIP]
+ * > Use {_scheduleAt} to schedule operations at specific points in time. This is
+ * > useful to pre-schedule operations for non-deployed accounts (e.g. subscriptions).
  *
- * NOTE: Scheduling, executing and cancelling doesn't have any access control by default
- * and should be validated accordingly while extending this contract.
+ * > [!NOTE]
+ * > Scheduling, executing and cancelling doesn't have any access control by default
+ * > and should be validated accordingly while extending this contract.
  *
- * NOTE: Target addresses of an operation may return an arbitrary large amount of data, which
- * may cause the operation to fail due to insufficient gas. Consider that a target could return
- * more data than initially expected (e.g. after being upgraded, or when their return data
- * depends on state), potentially blocking the operation's execution until they expire.
+ * > [!NOTE]
+ * > Target addresses of an operation may return an arbitrary large amount of data, which
+ * > may cause the operation to fail due to insufficient gas. Consider that a target could return
+ * > more data than initially expected (e.g. after being upgraded, or when their return data
+ * > depends on state), potentially blocking the operation's execution until they expire.
  */
 abstract contract ERC7579DelayedExecutor is ERC7579Executor {
     using Time for *;
@@ -248,15 +251,17 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      * @dev Cleans up the {getDelay} and {getExpiration} values by scheduling them to `0`
      * and respecting the previous delay and expiration values.
      *
-     * IMPORTANT: This function does not clean up scheduled operations. This means operations
-     * could potentially be re-executed if the module is reinstalled later. This is a deliberate
-     * design choice for efficiency, but module implementations may want to override this behavior
-     * to clear scheduled operations during uninstallation for their specific use cases.
+     * > [!IMPORTANT]
+     * > This function does not clean up scheduled operations. This means operations
+     * > could potentially be re-executed if the module is reinstalled later. This is a deliberate
+     * > design choice for efficiency, but module implementations may want to override this behavior
+     * > to clear scheduled operations during uninstallation for their specific use cases.
      *
-     * NOTE: Uninstalling the module schedules the delay to reset to `0` after the current delay
-     * (equivalent to calling `setDelay(0)`), and immediately removes the expiration. If the module
-     * is reinstalled before the delay reset completes, the same asymmetric transition rules as
-     * {setDelay} apply to prevent bypassing the security window through an uninstall/reinstall cycle.
+     * > [!NOTE]
+     * > Uninstalling the module schedules the delay to reset to `0` after the current delay
+     * > (equivalent to calling `setDelay(0)`), and immediately removes the expiration. If the module
+     * > is reinstalled before the delay reset completes, the same asymmetric transition rules as
+     * > {setDelay} apply to prevent bypassing the security window through an uninstall/reinstall cycle.
      */
     function onUninstall(bytes calldata) public virtual {
         _configs[msg.sender].installed = false;
@@ -295,7 +300,8 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      *
      * * The module must be installed on the account. Reverts with {ERC7579ExecutorModuleNotInstalled} if not.
      *
-     * NOTE: This function does not have any access control validation.
+     * > [!NOTE]
+     * > This function does not have any access control validation.
      */
     function _schedule(address account, bytes32 salt, bytes32 mode, bytes calldata data) internal virtual {
         require(_configs[account].installed, ERC7579ExecutorModuleNotInstalled());
@@ -313,7 +319,8 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      *
      * Emits an {ERC7579ExecutorOperationScheduled} event.
      *
-     * NOTE: This function does not have any access control validation.
+     * > [!NOTE]
+     * > This function does not have any access control validation.
      */
     function _scheduleAt(
         address account,
@@ -341,7 +348,8 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      *
      * * The operation must be `Ready`.
      *
-     * NOTE: This function does not have any access control validation.
+     * > [!NOTE]
+     * > This function does not have any access control validation.
      */
     function _execute(
         address account,
@@ -367,7 +375,8 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      *
      * Canceled operations can't be rescheduled. Emits an {ERC7579ExecutorOperationCanceled} event.
      *
-     * NOTE: This function does not have any access control validation.
+     * > [!NOTE]
+     * > This function does not have any access control validation.
      */
     function _cancel(address account, bytes32 salt, bytes32 mode, bytes calldata executionCalldata) internal virtual {
         bytes32 id = hashOperation(account, salt, mode, executionCalldata);
@@ -395,7 +404,8 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      *
      * If requirements are not met, reverts with a {ERC7579ExecutorUnexpectedOperationState} error.
      *
-     * NOTE: Passing a `bytes32(0)` for `allowedStates` will always revert.
+     * > [!NOTE]
+     * > Passing a `bytes32(0)` for `allowedStates` will always revert.
      */
     function _validateStateBitmap(bytes32 operationId, bytes32 allowedStates) internal view returns (OperationState) {
         OperationState currentState = state(operationId);

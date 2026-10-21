@@ -42,35 +42,38 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * policy. A single key can have policies for multiple tokens by listing it multiple times
  * (with different tokens) in the executor install initData.
  *
- * [NOTE]
- * ====
- * The module should be installed under both module types, in this order:
+ * > [!NOTE]
+ * > The module should be installed under both module types, in this order:
+ * >
+ * > 1. **Validator install (first)**: `initData` is `abi.encode(bytes[] keys, uint48[] starts, uint48[] ends)`.
+ * >    Registers session keys with their validity ranges through {ERC7579SessionKeys-_addKeys}.
+ * >    At least one key must be registered, otherwise the install reverts.
+ * > 2. **Executor install (second)**: `initData` is
+ * >    `abi.encode(bytes[] keys, address[] tokens, uint160[] limits, uint48[] renewPeriods)`.
+ * >    Writes a spending policy for each `(keys[i], tokens[i])` row. Each row's `keys[i]` MUST
+ * >    already be registered. Keys MAY repeat across rows to configure multiple tokens for the
+ * >    same key. The `keys` array MUST be non-empty.
+ * >
+ * > Once any `(key, token)` config is written, the module is "installed" and further `onInstall`
+ * > calls revert with {ERC7579ERC20SpenderAlreadyInstalled}. To change the spending policy, the
+ * > account must uninstall and reinstall (which bumps the installation nonce and resets state).
  *
- * 1. **Validator install (first)**: `initData` is `abi.encode(bytes[] keys, uint48[] starts, uint48[] ends)`.
- *    Registers session keys with their validity ranges through {ERC7579SessionKeys-_addKeys}.
- *    At least one key must be registered, otherwise the install reverts.
- * 2. **Executor install (second)**: `initData` is
- *    `abi.encode(bytes[] keys, address[] tokens, uint160[] limits, uint48[] renewPeriods)`.
- *    Writes a spending policy for each `(keys[i], tokens[i])` row. Each row's `keys[i]` MUST
- *    already be registered. Keys MAY repeat across rows to configure multiple tokens for the
- *    same key. The `keys` array MUST be non-empty.
+ * > [!IMPORTANT]
+ * > This module deliberately disables ERC-1271 signing
+ * > ({isValidSignatureWithSender} always returns `0xffffffff`) so a spending session key cannot be
+ * > repurposed to authorize arbitrary off-chain messages on behalf of the account.
  *
- * Once any `(key, token)` config is written, the module is "installed" and further `onInstall`
- * calls revert with {ERC7579ERC20SpenderAlreadyInstalled}. To change the spending policy, the
- * account must uninstall and reinstall (which bumps the installation nonce and resets state).
- * ====
+ * > [!NOTE]
+ * > Removing a session key via {ERC7579SessionKeys-removeKeys} clears its validity range but
+ * > does NOT clear the `(key, token)` spending configs. If the same key bytes are re-registered via
+ * > {ERC7579SessionKeys-addKeys} (without `addKeysWithConfig`), the previously-stored configs become
+ * > active again. To re-register a key with a fresh policy, call {addKeysWithConfig} instead.
  *
- * IMPORTANT: This module deliberately disables ERC-1271 signing
- * ({isValidSignatureWithSender} always returns `0xffffffff`) so a spending session key cannot be
- * repurposed to authorize arbitrary off-chain messages on behalf of the account.
+ * > [!TIP]
+ * > Set `starts[i] == 0` to schedule a key from the current timepoint.
  *
- * NOTE: Removing a session key via {ERC7579SessionKeys-removeKeys} clears its validity range but
- * does NOT clear the `(key, token)` spending configs. If the same key bytes are re-registered via
- * {ERC7579SessionKeys-addKeys} (without `addKeysWithConfig`), the previously-stored configs become
- * active again. To re-register a key with a fresh policy, call {addKeysWithConfig} instead.
- *
- * TIP: Set `starts[i] == 0` to schedule a key from the current timepoint.
- * TIP: Set `renewPeriod == type(uint48).max` to effectively disable the renewal period.
+ * > [!TIP]
+ * > Set `renewPeriod == type(uint48).max` to effectively disable the renewal period.
  */
 contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -174,8 +177,9 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
     /**
      * @dev Returns a paginated slice of tokens with at least one spending config for `account`.
      *
-     * WARNING: Depending on `startIdx` and `endIdx`, this operation can copy a large amount of
-     * data to memory. Designed for view accessors queried without gas fees.
+     * > [!WARNING]
+     * > Depending on `startIdx` and `endIdx`, this operation can copy a large amount of
+     * > data to memory. Designed for view accessors queried without gas fees.
      */
     function tokens(address account, uint256 startIdx, uint256 endIdx) public view virtual returns (address[] memory) {
         return _tokens[account][installation(account)].values(startIdx, endIdx);
@@ -275,7 +279,8 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
      * Emits {ERC7579SessionKeysERC7913KeySet} on the first call and {ERC7579ERC20SpendingConfigSet}
      * for each row on the second call.
      *
-     * TIP: Each start will be set to the current timepoint if it's 0.
+     * > [!TIP]
+     * > Each start will be set to the current timepoint if it's 0.
      */
     function onInstall(bytes calldata initData) public virtual override(ERC7579SessionKeys, IERC7579Module) {
         if (!installed(msg.sender)) {
@@ -318,8 +323,9 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
      * * Those from {ERC7579SessionKeys-_addKeys} (and the {_addKeys} override's past-start ban).
      * * Those from {_setConfig} for each row.
      *
-     * NOTE: This helper only supports one `(token, limit, renewPeriod)` per new key. To configure
-     * multiple tokens for a single key, list it multiple times in the executor install initData.
+     * > [!NOTE]
+     * > This helper only supports one `(token, limit, renewPeriod)` per new key. To configure
+     * > multiple tokens for a single key, list it multiple times in the executor install initData.
      */
     function addKeysWithConfig(
         bytes[] calldata newKeys,
@@ -454,7 +460,8 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
      *   {ERC7579ERC20SpenderInvalidStart} otherwise.
      * * Those from {ERC7579SessionKeys-_addKeys}.
      *
-     * TIP: Pass `starts[i] == 0` to resolve the start to the current timepoint.
+     * > [!TIP]
+     * > Pass `starts[i] == 0` to resolve the start to the current timepoint.
      */
     function _addKeys(
         address account,

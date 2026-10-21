@@ -99,8 +99,9 @@ abstract contract ERC7579Validator is IERC7579Module, IERC7579Validator {
     /**
      * @dev Validation algorithm.
      *
-     * WARNING: Validation is a critical security function. Implementations must carefully
-     * handle cryptographic verification to prevent unauthorized access.
+     * > [!WARNING]
+     * > Validation is a critical security function. Implementations must carefully
+     * > handle cryptographic verification to prevent unauthorized access.
      */
     function _rawERC7579Validation(
         address account,

@@ -34,8 +34,9 @@ import {
  * }
  * ```
  *
- * TIP: For a more advanced implementation with time-delayed execution patterns and
- * security features, see {ERC7579DelayedExecutor}.
+ * > [!TIP]
+ * > For a more advanced implementation with time-delayed execution patterns and
+ * > security features, see {ERC7579DelayedExecutor}.
  */
 abstract contract ERC7579Executor is IERC7579Module {
     /// @dev Emitted when an operation is executed.
@@ -56,15 +57,17 @@ abstract contract ERC7579Executor is IERC7579Module {
      *
      * Emits {ERC7579ExecutorOperationExecuted} event.
      *
-     * NOTE: Target addresses included in the `executionCalldata` may return a large amount of data,
-     * which may cause the operation to fail due to insufficient gas given `executeFromExecutor` copies
-     * all return datas to memory.
+     * > [!NOTE]
+     * > Target addresses included in the `executionCalldata` may return a large amount of data,
+     * > which may cause the operation to fail due to insufficient gas given `executeFromExecutor` copies
+     * > all return datas to memory.
      *
      * Requirements:
      *
      * * The `account` must implement the {IERC7579Execution-executeFromExecutor} function.
      *
-     * NOTE: This function does not have any access control validation.
+     * > [!NOTE]
+     * > This function does not have any access control validation.
      */
     function _execute(
         address account,

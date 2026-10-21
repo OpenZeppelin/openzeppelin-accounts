@@ -5,7 +5,7 @@ pragma solidity ^0.8.27;
 import {Calldata} from "@openzeppelin/contracts/utils/Calldata.sol";
 
 /**
- * @dev Utility functions for the https://eip.tools/eip/8043[ERC-8043] init mode.
+ * @dev Utility functions for the [ERC-8043](https://eip.tools/eip/8043) init mode.
  *
  * Init mode allows an ERC-4337 user operation to install one or more ERC-7579 modules
  * atomically alongside its regular execution. It is triggered by prefixing the user
