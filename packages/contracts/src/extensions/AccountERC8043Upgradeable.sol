@@ -12,7 +12,7 @@ import {ERC8043Utils} from "../utils/ERC8043Utils.sol";
 
 /**
  * @dev Extension of {AccountERC7579Upgradeable} that implements atomic module installation and usage
- * through _init mode_ following https://eip.tools/eip/8043[ERC-8043].
+ * through _init mode_ following [ERC-8043](https://eip.tools/eip/8043).
  *
  * This extension allows installing and using one or more modules within the same user operation.
  * Init mode is triggered when `userOp.initCode` starts with the 4-byte magic value `0x80438043`.
@@ -26,7 +26,8 @@ import {ERC8043Utils} from "../utils/ERC8043Utils.sol";
  * This pattern is particularly useful for session keys and other modules that need to be
  * installed and immediately used, reducing user operation count from N+1 to 1.
  *
- * NOTE: Requires EntryPoint v0.9 or later.
+ * > [!NOTE]
+ * > Requires EntryPoint v0.9 or later.
  */
 abstract contract AccountERC8043Upgradeable is Initializable, Account, EIP712, AccountERC7579Upgradeable {
     /**

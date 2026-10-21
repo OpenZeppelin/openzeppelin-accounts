@@ -16,9 +16,10 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
  * multiple registered ERC-7913 session keys, each with a configurable validity range. A
  * session key is only authorized to validate operations within its `from` to `until` timepoints.
  *
- * IMPORTANT: By default, any registered key within its validity range can validate any user
- * operation and sign any ERC-1271 message on behalf of the account. Derived contracts
- * should restrict the scope of what a session key is authorized to do.
+ * > [!IMPORTANT]
+ * > By default, any registered key within its validity range can validate any user
+ * > operation and sign any ERC-1271 message on behalf of the account. Derived contracts
+ * > should restrict the scope of what a session key is authorized to do.
  *
  * Example usage:
  *
@@ -55,9 +56,10 @@ abstract contract ERC7579SessionKeysValidator is ERC7579SessionKeys, ERC7579Vali
      * requiring an explicit timestamp check in the validator.
      * See {_tryDecodeSignature} for the signature encoding details.
      *
-     * NOTE: Returns {ERC4337Utils.SIG_VALIDATION_FAILED} immediately if {CLOCK_MODE} returns a mode
-     * other than timestamp or blocknumber from the same chain (default), as the EntryPoint does not support
-     * other validity range formats.
+     * > [!NOTE]
+     * > Returns {ERC4337Utils.SIG_VALIDATION_FAILED} immediately if {CLOCK_MODE} returns a mode
+     * > other than timestamp or blocknumber from the same chain (default), as the EntryPoint does not support
+     * > other validity range formats.
      */
     function _validateUserOp(
         PackedUserOperation calldata userOp,

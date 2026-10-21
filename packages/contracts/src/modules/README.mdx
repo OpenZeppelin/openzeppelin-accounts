@@ -1,0 +1,64 @@
+# Modules
+
+ERC-7579 modules that can be installed on any compliant account. Validators authorize user operations and ERC-1271 signatures, while executors trigger actions through the account's `executeFromExecutor` function. Both are built on top of abstract signer modules that store per-account signer configuration.
+
+- {ERC7579ECDSA}, {ERC7579P256}, {ERC7579WebAuthn}: Single-signer modules for ECDSA, P-256 and WebAuthn keys.
+- {ERC7579Multisig}, {ERC7579MultisigWeighted}: Threshold and weighted multisignature modules using ERC-7913 signers.
+- {ERC7579MultisigConfidential}, {ERC7579MultisigWeightedConfidential}: Multisignature modules that keep signers and thresholds encrypted using FHE.
+- {ERC7579SessionKeys}: Scoped, time-limited signing authority with per-session policies.
+- {ERC7579Validator}: Abstract validator module, with implementations for each signer module.
+- {ERC7579Executor}: Abstract executor module, extended by {ERC7579DelayedExecutor} for time-delayed execution.
+- {ERC7579SocialRecoveryExecutor}: Time-delayed account recovery authorized by a weighted set of guardians.
+- {ERC7579NativeSpender}, {ERC7579ERC20Spender}: Session-key-driven spending limits for native and ERC-20 tokens.
+
+## Signers
+
+{{ERC7579ECDSA}}
+
+{{ERC7579P256}}
+
+{{ERC7579WebAuthn}}
+
+{{ERC7579SessionKeys}}
+
+### Multisig
+
+{{ERC7579Multisig}}
+
+{{ERC7579MultisigWeighted}}
+
+{{ERC7579MultisigConfidential}}
+
+{{ERC7579MultisigWeightedConfidential}}
+
+## Validators
+
+{{ERC7579Validator}}
+
+{{ERC7579ECDSAValidator}}
+
+{{ERC7579P256Validator}}
+
+{{ERC7579WebAuthnValidator}}
+
+{{ERC7579MultisigValidator}}
+
+{{ERC7579MultisigWeightedValidator}}
+
+{{ERC7579MultisigConfidentialValidator}}
+
+{{ERC7579MultisigWeightedConfidentialValidator}}
+
+{{ERC7579SessionKeysValidator}}
+
+## Executors
+
+{{ERC7579Executor}}
+
+{{ERC7579DelayedExecutor}}
+
+{{ERC7579SocialRecoveryExecutor}}
+
+{{ERC7579NativeSpender}}
+
+{{ERC7579ERC20Spender}}

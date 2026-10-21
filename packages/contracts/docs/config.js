@@ -11,13 +11,13 @@ module.exports = {
   exclude: ['mocks'],
   pageExtension: '.mdx',
   pages: (_, file, config) => {
-    // For each contract file, find the closest README.adoc and return its location as the output page path.
-    // A README.adoc at the sources root documents root-level contracts on the index page.
+    // For each contract file, find the closest README.mdx (or README.adoc) and return its location as the output page path.
+    // A README at the sources root documents root-level contracts on the index page.
     const sourcesDir = path.resolve(config.root, config.sourcesDir);
     let dir = path.resolve(config.root, file.absolutePath);
     while (dir.startsWith(sourcesDir)) {
       dir = path.dirname(dir);
-      if (fs.existsSync(path.join(dir, 'README.adoc'))) {
+      if (['README.mdx', 'README.adoc'].some(readme => fs.existsSync(path.join(dir, readme)))) {
         return (path.relative(sourcesDir, dir) || 'index') + config.pageExtension;
       }
     }

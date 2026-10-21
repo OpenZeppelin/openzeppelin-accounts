@@ -64,9 +64,10 @@ abstract contract ERC7579Multisig is IERC7579Module {
      *
      * See {_decodeMultisigInitData} for the encoding details.
      *
-     * NOTE: An account can only call onInstall once. If called directly by the account,
-     * the signers will be set to the provided data. Future installations will revert with
-     * {ERC7579MultisigAlreadyInstalled}.
+     * > [!NOTE]
+     * > An account can only call onInstall once. If called directly by the account,
+     * > the signers will be set to the provided data. Future installations will revert with
+     * > {ERC7579MultisigAlreadyInstalled}.
      *
      * Requirements:
      *
@@ -89,8 +90,9 @@ abstract contract ERC7579Multisig is IERC7579Module {
      *
      * See {IERC7579Module-onUninstall}.
      *
-     * WARNING: This function has unbounded gas costs and may become uncallable if the set grows too large.
-     * See {EnumerableSet-clear}.
+     * > [!WARNING]
+     * > This function has unbounded gas costs and may become uncallable if the set grows too large.
+     * > See {EnumerableSet-clear}.
      */
     function onUninstall(bytes calldata /* data */) public virtual {
         _signersSetByAccount[msg.sender].clear();
@@ -102,9 +104,10 @@ abstract contract ERC7579Multisig is IERC7579Module {
      *
      * Using `start = 0` and `end = type(uint64).max` will return the entire set of signers.
      *
-     * WARNING: Depending on the `start` and `end`, this operation can copy a large amount of data to memory, which
-     * can be expensive. This is designed for view accessors queried without gas fees. Using it in state-changing
-     * functions may become uncallable if the slice grows too large.
+     * > [!WARNING]
+     * > Depending on the `start` and `end`, this operation can copy a large amount of data to memory, which
+     * > can be expensive. This is designed for view accessors queried without gas fees. Using it in state-changing
+     * > functions may become uncallable if the slice grows too large.
      */
     function getSigners(address account, uint64 start, uint64 end) public view virtual returns (bytes[] memory) {
         return _signersSetByAccount[account].values(start, end);
@@ -174,12 +177,13 @@ abstract contract ERC7579Multisig is IERC7579Module {
      * * Each of `newSigners` must be at least 20 bytes long. Reverts with {ERC7579MultisigInvalidSigner} if not.
      * * Each of `newSigners` must not be authorized. Reverts with {ERC7579MultisigAlreadyExists} if it already exists.
      *
-     * NOTE: This function does not validate that signers are controlled or represent appropriate entities. Integrators
-     * must ensure signers are properly validated before adding them. Problematic signers can compromise
-     * the multisig's security or functionality. Examples include uncontrolled addresses (e.g., `address(0)`),
-     * the account's own address (which may cause recursive validation loops), or contracts that may unintentionally
-     * allow arbitrary validation (e.g. using the identity precompile at `address(0x04)`, which would return the
-     * ERC-1271 magic value for any `isValidSignature` call).
+     * > [!NOTE]
+     * > This function does not validate that signers are controlled or represent appropriate entities. Integrators
+     * > must ensure signers are properly validated before adding them. Problematic signers can compromise
+     * > the multisig's security or functionality. Examples include uncontrolled addresses (e.g., `address(0)`),
+     * > the account's own address (which may cause recursive validation loops), or contracts that may unintentionally
+     * > allow arbitrary validation (e.g. using the identity precompile at `address(0x04)`, which would return the
+     * > ERC-1271 magic value for any `isValidSignature` call).
      */
     function _addSigners(address account, bytes[] calldata newSigners) internal virtual {
         for (uint256 i = 0; i < newSigners.length; ++i) {
@@ -264,8 +268,9 @@ abstract contract ERC7579Multisig is IERC7579Module {
      * Returns whether the signers are authorized, are not duplicated and the signatures
      * are valid for the given hash.
      *
-     * IMPORTANT: Sorting the signers by their `keccak256` hash will improve the gas
-     * efficiency of this function.
+     * > [!IMPORTANT]
+     * > Sorting the signers by their `keccak256` hash will improve the gas
+     * > efficiency of this function.
      */
     function _validateSignatures(
         address account,

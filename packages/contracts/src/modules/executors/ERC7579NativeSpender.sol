@@ -45,27 +45,29 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * `renewPeriod` time units, allowing the same spending capacity to be used again without
  * requiring manual intervention. It implements ERC-6372 clock functions.
  *
- * [NOTE]
- * ====
- * The module should be installed under both module types, in this order:
+ * > [!NOTE]
+ * > The module should be installed under both module types, in this order:
+ * >
+ * > 1. **Validator install (first)**: `initData` is `abi.encode(bytes[] keys, uint48[] starts, uint48[] ends)`.
+ * >    This registers session keys with their validity ranges through {ERC7579SessionKeys-_addKeys}.
+ * >    At least one key must be registered, otherwise the install reverts.
+ * > 2. **Executor install (second)**: `initData` is `abi.encode(bytes[] keys, uint160[] limits, uint48[] renewPeriods)`.
+ * >    This writes a spending policy for each already-registered key. The `keys` array MUST be
+ * >    non-empty and reconfiguration is banned: once a key has been configured, neither it nor any
+ * >    other key can be reconfigured under the current installation. To change the spending policy,
+ * >    the account must uninstall and reinstall the module (which bumps the installation nonce and
+ * >    resets state).
  *
- * 1. **Validator install (first)**: `initData` is `abi.encode(bytes[] keys, uint48[] starts, uint48[] ends)`.
- *    This registers session keys with their validity ranges through {ERC7579SessionKeys-_addKeys}.
- *    At least one key must be registered, otherwise the install reverts.
- * 2. **Executor install (second)**: `initData` is `abi.encode(bytes[] keys, uint160[] limits, uint48[] renewPeriods)`.
- *    This writes a spending policy for each already-registered key. The `keys` array MUST be
- *    non-empty and reconfiguration is banned: once a key has been configured, neither it nor any
- *    other key can be reconfigured under the current installation. To change the spending policy,
- *    the account must uninstall and reinstall the module (which bumps the installation nonce and
- *    resets state).
- * ====
+ * > [!IMPORTANT]
+ * > This module deliberately disables ERC-1271 signing
+ * > ({isValidSignatureWithSender} always returns `0xffffffff`) so a spending session key cannot be
+ * > repurposed to authorize arbitrary off-chain messages on behalf of the account.
  *
- * IMPORTANT: This module deliberately disables ERC-1271 signing
- * ({isValidSignatureWithSender} always returns `0xffffffff`) so a spending session key cannot be
- * repurposed to authorize arbitrary off-chain messages on behalf of the account.
+ * > [!TIP]
+ * > Set {start} to a future timepoint to schedule a spending limit that activates later.
  *
- * TIP: Set {start} to a future timepoint to schedule a spending limit that activates later.
- * TIP: Set {renewPeriod} to `type(uint48).max` to disable the renewal period.
+ * > [!TIP]
+ * > Set {renewPeriod} to `type(uint48).max` to disable the renewal period.
  */
 contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
     /// @dev The account already has spenders installed.
@@ -229,7 +231,8 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
      * Emits {ERC7579SessionKeysERC7913KeySet} on the first call and {ERC7579NativeSpendingConfigSet}
      * for each entry on the second call.
      *
-     * TIP: Each start will be set to the current timepoint if it's 0.
+     * > [!TIP]
+     * > Each start will be set to the current timepoint if it's 0.
      */
     function onInstall(bytes calldata initData) public virtual override(ERC7579SessionKeys, IERC7579Module) {
         if (!installed(msg.sender)) {
@@ -381,7 +384,8 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
      *   {ERC7579NativeSpenderInvalidStart} otherwise.
      * * Those from {ERC7579SessionKeys-_addKeys}.
      *
-     * TIP: Pass `starts[i] == 0` to resolve the start to the current timepoint.
+     * > [!TIP]
+     * > Pass `starts[i] == 0` to resolve the start to the current timepoint.
      */
     function _addKeys(
         address account,
@@ -401,10 +405,11 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
      * @dev Removes session keys from the calling account. Also clears the spending configuration
      * for each key.
      *
-     * NOTE: Spending history (per-period `spent` values) is preserved in storage at the historical
-     * start timepoint. It is no longer surfaced through {spent-address-bytes-uint256--} (which uses
-     * the current {validity}'s `from`, now zero) but can still be read via
-     * {spent-address-bytes-uint256-uint256--} with the historical start.
+     * > [!NOTE]
+     * > Spending history (per-period `spent` values) is preserved in storage at the historical
+     * > start timepoint. It is no longer surfaced through {spent-address-bytes-uint256--} (which uses
+     * > the current {validity}'s `from`, now zero) but can still be read via
+     * > {spent-address-bytes-uint256-uint256--} with the historical start.
      *
      * Emits {ERC7579SessionKeysERC7913KeyUnset} (via the parent) and {ERC7579NativeSpendingConfigUnset}
      * for each key.

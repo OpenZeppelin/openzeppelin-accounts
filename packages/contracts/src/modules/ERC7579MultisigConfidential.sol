@@ -30,43 +30,49 @@ import {IERC7579Module} from "@openzeppelin/contracts/interfaces/draft-IERC7579.
  * application must call `requestDiscloseOperation` to make the result publicly decryptable,
  * then call `discloseOperation` to verify the decryption proof and get the result.
  *
- * IMPORTANT: Due to the non-deterministic nature of FHE encryption, encrypting the same plaintext
- * uint256 value multiple times produces different ciphertexts. This means the same underlying signer
- * can be added multiple times with different encrypted handles, and duplicate detection by
- * comparing encrypted handles is not possible. Consider duplicate signers may cause the
- * threshold to become unreachable since {_validateSignatures} checks for duplicates.
+ * > [!IMPORTANT]
+ * > Due to the non-deterministic nature of FHE encryption, encrypting the same plaintext
+ * > uint256 value multiple times produces different ciphertexts. This means the same underlying signer
+ * > can be added multiple times with different encrypted handles, and duplicate detection by
+ * > comparing encrypted handles is not possible. Consider duplicate signers may cause the
+ * > threshold to become unreachable since {_validateSignatures} checks for duplicates.
  *
- * NOTE: This module supports both address-based signers (EOAs and ERC-1271 contracts) and
- * ERC-7913 signers (arbitrary keys with verifiers). Addresses are cast to uint256 and
- * encrypted, while ERC-7913 keys are hashed with `keccak256(verifier || key)` before
- * encryption. This hybrid approach allows addresses to be recognizable after decryption,
- * while ERC-7913 keys require an off-chain mapping from hash to preimage.
+ * > [!NOTE]
+ * > This module supports both address-based signers (EOAs and ERC-1271 contracts) and
+ * > ERC-7913 signers (arbitrary keys with verifiers). Addresses are cast to uint256 and
+ * > encrypted, while ERC-7913 keys are hashed with `keccak256(verifier || key)` before
+ * > encryption. This hybrid approach allows addresses to be recognizable after decryption,
+ * > while ERC-7913 keys require an off-chain mapping from hash to preimage.
  *
- * NOTE: The threshold can be set to 0 given it can't be validated in runtime. The account
- * operators must rely on external validation to ensure the threshold is not 0, which allows
- * arbitrary execution.
+ * > [!NOTE]
+ * > The threshold can be set to 0 given it can't be validated in runtime. The account
+ * > operators must rely on external validation to ensure the threshold is not 0, which allows
+ * > arbitrary execution.
  *
- * NOTE: A per-account configuration nonce (from {Nonces}) is incremented on every configuration
- * change ({addSigners}, {removeSigners}, {setThreshold}, {onInstall}). Disclosure state is scoped
- * to the nonce active at the time of {requestDiscloseOperation}, so any configuration change
- * automatically invalidates outstanding disclosure entries and closes the stale-approval window.
+ * > [!NOTE]
+ * > A per-account configuration nonce (from {Nonces}) is incremented on every configuration
+ * > change ({addSigners}, {removeSigners}, {setThreshold}, {onInstall}). Disclosure state is scoped
+ * > to the nonce active at the time of {requestDiscloseOperation}, so any configuration change
+ * > automatically invalidates outstanding disclosure entries and closes the stale-approval window.
  *
- * WARNING: When using ERC-1271 contract signers, signature validity can change over time (e.g. the
- * signer contract updates its owner). Because {requestDiscloseOperation} snapshots the validation
- * result, a later call to {_rawERC7579Validation} may accept a stale authorization even if the
- * ERC-1271 signer would now reject the signature. Prefer signers with non-revocable signatures
- * (e.g. EOAs), or call {dismissDisclosure} to invalidate outstanding disclosures when an
- * ERC-1271 signer's validity changes.
+ * > [!WARNING]
+ * > When using ERC-1271 contract signers, signature validity can change over time (e.g. the
+ * > signer contract updates its owner). Because {requestDiscloseOperation} snapshots the validation
+ * > result, a later call to {_rawERC7579Validation} may accept a stale authorization even if the
+ * > ERC-1271 signer would now reject the signature. Prefer signers with non-revocable signatures
+ * > (e.g. EOAs), or call {dismissDisclosure} to invalidate outstanding disclosures when an
+ * > ERC-1271 signer's validity changes.
  *
- * WARNING: This module provides confidentiality of signer identities and threshold values, but
- * does not provide confidentiality of threshold relationships among participants. Once a valid
- * disclosure is made via {requestDiscloseOperation}, any party that has observed valid signatures
- * for the operation hash (e.g. from mempool or calldata) can probe arbitrary signer subsets to
- * infer the threshold or weight distribution. To limit the exposure window, accounts can perform
- * a signer reset after sensitive operations: re-encrypting the signer set with fresh FHE handles
- * (and optionally updating the threshold) invalidates any oracle knowledge accumulated over the
- * previous handle set, since FHE encryption is non-deterministic and old handles are unlinkable
- * to new ones.
+ * > [!WARNING]
+ * > This module provides confidentiality of signer identities and threshold values, but
+ * > does not provide confidentiality of threshold relationships among participants. Once a valid
+ * > disclosure is made via {requestDiscloseOperation}, any party that has observed valid signatures
+ * > for the operation hash (e.g. from mempool or calldata) can probe arbitrary signer subsets to
+ * > infer the threshold or weight distribution. To limit the exposure window, accounts can perform
+ * > a signer reset after sensitive operations: re-encrypting the signer set with fresh FHE handles
+ * > (and optionally updating the threshold) invalidates any oracle knowledge accumulated over the
+ * > previous handle set, since FHE encryption is non-deterministic and old handles are unlinkable
+ * > to new ones.
  */
 abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
     using EnumerableSet for EnumerableSet.Bytes32Set;
@@ -131,9 +137,10 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
      * See {IERC7579Module-onInstall}. The `initData` encodes externally encrypted
      * `signerIds` and `threshold`. See {_decodeMultisigInitData} for the encoding details.
      *
-     * NOTE: An account can only call `onInstall` once. If called directly by the account,
-     * the signerIds will be set to the provided data. Future installations will revert with
-     * {ERC7579MultisigAlreadyInstalled}.
+     * > [!NOTE]
+     * > An account can only call `onInstall` once. If called directly by the account,
+     * > the signerIds will be set to the provided data. Future installations will revert with
+     * > {ERC7579MultisigAlreadyInstalled}.
      *
      * Requirements:
      *
@@ -167,8 +174,9 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
      *
      * See {IERC7579Module-onUninstall}.
      *
-     * WARNING: This function has unbounded gas costs and may become uncallable if the set grows too large.
-     * See {EnumerableSet-clear}.
+     * > [!WARNING]
+     * > This function has unbounded gas costs and may become uncallable if the set grows too large.
+     * > See {EnumerableSet-clear}.
      */
     function onUninstall(bytes calldata /* data */) public virtual {
         _signersSetByAccount[msg.sender].clear();
@@ -181,9 +189,10 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
      * The returned signers are encrypted uint256 values (euint256). Using `start = 0` and
      * `end = type(uint32).max` will return the entire set of signerIds.
      *
-     * WARNING: Depending on the `start` and `end`, this operation can copy a large amount of data to memory, which
-     * can be expensive. This is designed for view accessors queried without gas fees. Using it in state-changing
-     * functions may become uncallable if the slice grows too large.
+     * > [!WARNING]
+     * > Depending on the `start` and `end`, this operation can copy a large amount of data to memory, which
+     * > can be expensive. This is designed for view accessors queried without gas fees. Using it in state-changing
+     * > functions may become uncallable if the slice grows too large.
      */
     function getSigners(address account, uint32 start, uint32 end) public view virtual returns (euint256[] memory) {
         bytes32[] memory signerHandles = _signersSetByAccount[account].values(start, end);
@@ -216,7 +225,8 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
      * @dev Returns whether the multisignature validation result for an operation (hash) is requested for
      * disclosure under the account's current configuration nonce.
      *
-     * NOTE: Returns an uninitialized handle if the configuration has changed since the disclosure was requested.
+     * > [!NOTE]
+     * > Returns an uninitialized handle if the configuration has changed since the disclosure was requested.
      */
     function requestedDisclosure(address relayer, address account, bytes32 hash) public view virtual returns (ebool) {
         return _requestedDisclosure[relayer][account][nonces(account)][hash];
@@ -226,7 +236,8 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
      * @dev Returns whether the multisignature validation result for an operation (hash) is disclosed
      * under the account's current configuration nonce.
      *
-     * NOTE: Returns false if the configuration has changed since the operation was disclosed.
+     * > [!NOTE]
+     * > Returns false if the configuration has changed since the operation was disclosed.
      */
     function disclosed(address account, bytes32 hash) public view virtual returns (bool) {
         return _disclosed[account][nonces(account)][hash];
@@ -290,14 +301,16 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
      * must call this function off-chain first to enable the decryption proof to be included
      * in a subsequent call to `discloseOperation` to verify the proof.
      *
-     * NOTE: This function does not perform any access control. Anyone can request disclosure
-     * of the multisignature validation result for any operation.
+     * > [!NOTE]
+     * > This function does not perform any access control. Anyone can request disclosure
+     * > of the multisignature validation result for any operation.
      *
-     * IMPORTANT: Each call produces a secret-dependent encrypted boolean that is made publicly
-     * decryptable. A caller who possesses valid signatures for the operation `hash` can
-     * probe arbitrary signer subsets across multiple calls to infer the threshold or weight
-     * distribution, since the decrypted result reveals whether the chosen subset meets the
-     * threshold.
+     * > [!IMPORTANT]
+     * > Each call produces a secret-dependent encrypted boolean that is made publicly
+     * > decryptable. A caller who possesses valid signatures for the operation `hash` can
+     * > probe arbitrary signer subsets across multiple calls to infer the threshold or weight
+     * > distribution, since the decrypted result reveals whether the chosen subset meets the
+     * > threshold.
      *
      * Emits a {ERC7579MultisigOperationDiscloseRequested} event.
      */
@@ -350,14 +363,16 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
      *
      * * The number of signers must not exceed `type(uint32).max`. Reverts with {ERC7579MultisigTooManySigners} if exceeded.
      *
-     * IMPORTANT: This function does not increment the account's configuration nonce.
-     * Callers that change the configuration must call {Nonces-_useNonce} to invalidate
-     * outstanding disclosure entries.
+     * > [!IMPORTANT]
+     * > This function does not increment the account's configuration nonce.
+     * > Callers that change the configuration must call {Nonces-_useNonce} to invalidate
+     * > outstanding disclosure entries.
      *
-     * NOTE: FHE encryption is non-deterministic. Encrypting the same plaintext uint256 value multiple times
-     * produces different ciphertexts and thus different handles. This allows the same underlying
-     * signer to be added multiple times, so duplicate detection by comparing encrypted handles
-     * is not possible.
+     * > [!NOTE]
+     * > FHE encryption is non-deterministic. Encrypting the same plaintext uint256 value multiple times
+     * > produces different ciphertexts and thus different handles. This allows the same underlying
+     * > signer to be added multiple times, so duplicate detection by comparing encrypted handles
+     * > is not possible.
      *
      * Emits {ERC7579MultisigSignerAdded} for each new signer.
      */
@@ -382,12 +397,14 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
      * * Each of `oldSignerIds` must be authorized. Reverts with {ERC7579MultisigNonexistentSigner} if not.
      * * After removal, at least one signer must remain. Reverts with {ERC7579MultisigEmptySigners} if not.
      *
-     * IMPORTANT: This function does not increment the account's configuration nonce.
-     * Callers that change the configuration must call {Nonces-_useNonce} to invalidate
-     * outstanding disclosure entries.
+     * > [!IMPORTANT]
+     * > This function does not increment the account's configuration nonce.
+     * > Callers that change the configuration must call {Nonces-_useNonce} to invalidate
+     * > outstanding disclosure entries.
      *
-     * NOTE: The threshold will be automatically capped at the number of remaining signers to ensure it's
-     * always reachable.
+     * > [!NOTE]
+     * > The threshold will be automatically capped at the number of remaining signers to ensure it's
+     * > always reachable.
      *
      * Emits {ERC7579MultisigSignerRemoved} for each removed signer.
      */
@@ -407,12 +424,14 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
     /**
      * @dev Sets the encrypted signatures `threshold` required to approve a multisignature operation.
      *
-     * IMPORTANT: This function does not increment the account's configuration nonce.
-     * Callers that change the configuration must call {Nonces-_useNonce} to invalidate
-     * outstanding disclosure entries.
+     * > [!IMPORTANT]
+     * > This function does not increment the account's configuration nonce.
+     * > Callers that change the configuration must call {Nonces-_useNonce} to invalidate
+     * > outstanding disclosure entries.
      *
-     * NOTE: The threshold is automatically capped at the current number of signers to ensure it's
-     * always reachable.
+     * > [!NOTE]
+     * > The threshold is automatically capped at the current number of signers to ensure it's
+     * > always reachable.
      *
      * Emits {ERC7579MultisigThresholdSet} with the final threshold value.
      */
@@ -462,8 +481,9 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
      * `signerIdHandles` are their corresponding encrypted id handles, and `signatures` are their
      * signatures of the operation `hash`.
      *
-     * TIP: Given that both the threshold and signers are encrypted, it's possible to pass-in
-     * signatures that don't count towards the threshold.
+     * > [!TIP]
+     * > Given that both the threshold and signers are encrypted, it's possible to pass-in
+     * > signatures that don't count towards the threshold.
      */
     function _validateMultisig(
         address account,
