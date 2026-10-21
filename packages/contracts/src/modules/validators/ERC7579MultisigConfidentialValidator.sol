@@ -21,14 +21,16 @@ import {FHE, ebool} from "@fhevm/solidity/lib/FHE.sol";
  *    the entrypoint calls `validateUserOp`, which invokes `_rawERC7579Validation` to verify
  *    the proof (or that the operation was explicitly disclosed via {disclosed}).
  *
- * NOTE: The operation is not marked as disclosed in storage when validation succeeds via the
- * inline proof. That is intentional: the fact that the user op executed implies the
- * multisig was valid and effectively disclosed, and offchain indexers can infer it by
- * watching entrypoint events instead of relying on the {disclosed} boolean.
+ * > [!NOTE]
+ * > The operation is not marked as disclosed in storage when validation succeeds via the
+ * > inline proof. That is intentional: the fact that the user op executed implies the
+ * > multisig was valid and effectively disclosed, and offchain indexers can infer it by
+ * > watching entrypoint events instead of relying on the {disclosed} boolean.
  *
- * NOTE: By definition, the user operation is public in the bundler mempool the moment it's
- * submitted. Users must not assume that the user operation is confidential, and should consider
- * front running risks associated with the user operation payload.
+ * > [!NOTE]
+ * > By definition, the user operation is public in the bundler mempool the moment it's
+ * > submitted. Users must not assume that the user operation is confidential, and should consider
+ * > front running risks associated with the user operation payload.
  */
 contract ERC7579MultisigConfidentialValidator is ERC7579MultisigConfidential, ERC7579Validator {
     /**

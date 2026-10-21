@@ -11,6 +11,7 @@
     "compile": "hardhat compile",
     "clean": "hardhat clean && rimraf build contracts/build",
     "prepack": "bash scripts/prepack.sh",
+    "prepare-docs": "scripts/prepare-docs.sh",
     "coverage": "scripts/checks/coverage.sh",
     "test": "pnpm run test:regular && pnpm run test:fhe",
     "test:regular": "hardhat test",
@@ -42,6 +43,7 @@
     "hardhat-predeploy": "^0.4.1",
     "micromatch": "^4.0.8",
     "rimraf": "^6.0.1",
-    "solidity-coverage": "^0.8.16"
+    "solidity-coverage": "^0.8.16",
+    "solidity-docgen": "0.6.0-beta.36"
   }
 }

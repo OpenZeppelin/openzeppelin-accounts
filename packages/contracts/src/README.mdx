@@ -1,0 +1,23 @@
+# Accounts
+
+This package provides a production-ready ERC-4337 and ERC-7579 smart account and a set of ERC-7579 modules that can be installed on any ERC-7579 compliant account.
+
+- {OpenAccount}: A modular smart account with ERC-7579 module support, ERC-1271 signature validation and ERC-721/ERC-1155 holder capabilities.
+- {OpenAccountImplementation}: Upgradeable implementation of {OpenAccount} with ERC-8043 init mode, used by {OpenAccountFactory}.
+- {OpenAccountFactory}: A factory that deploys {OpenAccountImplementation} instances as ERC-1967 proxy clones at deterministic addresses.
+
+Modules, extensions and utilities are documented in their own pages:
+
+- [Modules](/accounts/api/modules): Validators, executors and the signer, multisig and session key primitives they are built from.
+- [Extensions](/accounts/api/extensions): Account extensions such as ERC-8043 init mode.
+- [Utilities](/accounts/api/utils): Libraries and helpers for multisignatures, crosschain signatures and FHE coordination.
+
+## Account
+
+{{OpenAccount}}
+
+{{OpenAccountImplementation}}
+
+## Factory
+
+{{OpenAccountFactory}}

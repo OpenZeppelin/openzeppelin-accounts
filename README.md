@@ -92,12 +92,13 @@ const hash = await bundlerClient.execute({
 
 ## Documentation
 
-Full documentation is available at **[docs.openzeppelin.com](https://docs.openzeppelin.com/accounts)** (or run the docs locally, see [`packages/docs`](./packages/docs)).
+Full documentation is available at **[docs.openzeppelin.com/accounts](https://docs.openzeppelin.com/accounts)**. Its sources live in [`docs`](./docs) and are synced to the [OpenZeppelin docs site](https://github.com/OpenZeppelin/docs) on release.
 
-- [Contracts overview](./packages/docs/content/docs/contracts/index.mdx): account setup, module installation, factory usage
-- [SDK overview](./packages/docs/content/docs/sdk/index.mdx): account factories, signers, and bundler client setup
-- [ERC-7579 Actions](./packages/docs/content/docs/sdk/actions.mdx): full action reference
-- [OpenAccount parameters](./packages/docs/content/docs/sdk/open-account.mdx): detailed `toOpenAccount` parameter reference
+- [Contracts overview](https://docs.openzeppelin.com/accounts/contracts): account setup, module installation, factory usage
+- [SDK overview](https://docs.openzeppelin.com/accounts/sdk): account factories, signers, and bundler client setup
+- [ERC-7579 Actions](https://docs.openzeppelin.com/accounts/sdk/actions): full action reference
+- [OpenAccount parameters](https://docs.openzeppelin.com/accounts/sdk/open-account): detailed `toOpenAccount` parameter reference
+- [API reference](https://docs.openzeppelin.com/accounts/api): generated from the contracts' NatSpec
 
 ## Security
 
@@ -107,7 +108,7 @@ This project has not yet had a stable release. Please report security vulnerabil
 
 ## Contributing
 
-Contributions are welcome. Please open an issue or pull request on [GitHub](https://github.com/OpenZeppelin/accounts).
+Contributions are welcome. Please open an issue or pull request on [GitHub](https://github.com/OpenZeppelin/openzeppelin-accounts).
 
 ## License
 

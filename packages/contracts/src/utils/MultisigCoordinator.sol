@@ -23,7 +23,7 @@ import {FheType} from "@fhevm/solidity/lib/FheType.sol";
  * recipients; it does not natively support smart-contract multisigs. This means signers that are
  * not EOAs cannot receive decryption rights that their signers can act on.
  *
- * === Solution
+ * ### Solution
  *
  * This contract provides two capabilities:
  *
@@ -37,11 +37,11 @@ import {FheType} from "@fhevm/solidity/lib/FheType.sol";
  *    This lets signers individually expose a confidential value to their own EOA for decryption,
  *    without the account contract having to approve anything.
  *
- * === Setup
+ * ### Setup
  *
  * This is an abstract contract. Concrete deployments must also inherit an fhEVM coprocessor
  * configuration. For Zama's fhEVM this is done by inheriting `ZamaEthereumConfig` from the
- * https://github.com/zama-ai/fhevm/tree/main/library-solidity[FHEVM Solidity package] alongside
+ * [FHEVM Solidity package](https://github.com/zama-ai/fhevm/tree/main/library-solidity) alongside
  * this contract:
  *
  * ```solidity
@@ -53,15 +53,16 @@ import {FheType} from "@fhevm/solidity/lib/FheType.sol";
  * {ERC7579Multisig} module by calling {setERC7579Multisig} from the account itself (e.g. via a
  * UserOperation's `execute` call).
  *
- * === Signature scheme
+ * ### Signature scheme
  *
  * When an explicit signer and signature are supplied, the signed digest is an EIP-712 typed
  * data hash anchored to the `account`'s own domain separator. The domain is retrieved at
  * call-time via {IERC5267-eip712Domain}, so no additional configuration of this coordinator
  * is needed.
  *
- * NOTE: {fromExternal} does not require prior registration; it grants ACL permissions to
- * any address provided as `account`, regardless of whether a multisig has been configured.
+ * > [!NOTE]
+ * > {fromExternal} does not require prior registration; it grants ACL permissions to
+ * > any address provided as `account`, regardless of whether a multisig has been configured.
  */
 abstract contract MultisigCoordinator {
     using MessageHashUtils for *;
@@ -124,8 +125,9 @@ abstract contract MultisigCoordinator {
      * for `ebool`, `eaddress.wrap(externalHandle)` for `eaddress`, `euint8.wrap(externalHandle)` for
      * `euint8` and so on.
      *
-     * NOTE: Anyone can call this function for any `account` address. ACL permissions are additive
-     * and the caller has no ability to revoke them, so there is no griefing risk.
+     * > [!NOTE]
+     * > Anyone can call this function for any `account` address. ACL permissions are additive
+     * > and the caller has no ability to revoke them, so there is no griefing risk.
      */
     function fromExternal(
         address account,
@@ -177,10 +179,11 @@ abstract contract MultisigCoordinator {
      * Once authorization is confirmed, the `handle` is permanently allowed to `to` via the FHE
      * ACL. This enables `to` (typically an EOA) to request off-chain decryption of the value.
      *
-     * WARNING: This grant is permanent and irrevocable. If `to` is later removed from the
-     * multisig, they will still be able to decrypt any handle they were previously allowed. To
-     * remove a former signer's access, re-encrypt the sensitive values using fresh FHE inputs
-     * and grant access only to current signers.
+     * > [!WARNING]
+     * > This grant is permanent and irrevocable. If `to` is later removed from the
+     * > multisig, they will still be able to decrypt any handle they were previously allowed. To
+     * > remove a former signer's access, re-encrypt the sensitive values using fresh FHE inputs
+     * > and grant access only to current signers.
      *
      * Requirements:
      *
@@ -224,10 +227,11 @@ abstract contract MultisigCoordinator {
      *   must be a registered signer and `signature` is forwarded to the verifier via
      *   {IERC7913SignatureVerifier-verify}.
      *
-     * NOTE: Existing FHE ACL permissions (`FHE.isAllowed`) are intentionally not checked here.
-     * Authorization is strictly tied to the account's multisig membership. Callers that already
-     * hold ACL access to a handle and wish to extend it to another address can do so directly via
-     * the FHE ACL (e.g. `FHE.allow`) without involving this coordinator.
+     * > [!NOTE]
+     * > Existing FHE ACL permissions (`FHE.isAllowed`) are intentionally not checked here.
+     * > Authorization is strictly tied to the account's multisig membership. Callers that already
+     * > hold ACL access to a handle and wish to extend it to another address can do so directly via
+     * > the FHE ACL (e.g. `FHE.allow`) without involving this coordinator.
      *
      * Requirements:
      *

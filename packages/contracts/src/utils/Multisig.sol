@@ -19,7 +19,8 @@ library Multisig {
      * `abi.decode(multisignature, (bytes[], bytes[]))` but operates directly on calldata to avoid
      * memory allocation, improving gas efficiency during multisignature validation.
      *
-     * NOTE: This function does not validate the returned signers and signatures have the same length.
+     * > [!NOTE]
+     * > This function does not validate the returned signers and signatures have the same length.
      */
     function tryDecodeMultisignatureCalldata(
         bytes calldata multisignature

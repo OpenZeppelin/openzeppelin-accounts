@@ -31,13 +31,15 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
  * a total weight of 10, with 3 guardians weighted as 5, 3, and 2), while keeping both the
  * signer identities, weights, and threshold confidential.
  *
- * IMPORTANT: When setting a threshold value, ensure it matches the scale used for signer weights.
- * For example, if signers have weights like 1, 2, or 3, then a threshold of 4 would require
- * signatures with a total weight of at least 4 (e.g., one with weight 1 and one with weight 3).
+ * > [!IMPORTANT]
+ * > When setting a threshold value, ensure it matches the scale used for signer weights.
+ * > For example, if signers have weights like 1, 2, or 3, then a threshold of 4 would require
+ * > signatures with a total weight of at least 4 (e.g., one with weight 1 and one with weight 3).
  *
- * NOTE: The threshold can be set to 0 given it can't be validated in runtime. The account
- * operators must rely on external validation to ensure the threshold is not 0, which allows
- * arbitrary execution.
+ * > [!NOTE]
+ * > The threshold can be set to 0 given it can't be validated in runtime. The account
+ * > operators must rely on external validation to ensure the threshold is not 0, which allows
+ * > arbitrary execution.
  */
 abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfidential {
     using EnumerableSet for EnumerableSet.Bytes32Set;
@@ -61,9 +63,10 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
      *
      * See {_decodeMultisigWeightedInitData} for the `initData` encoding details.
      *
-     * NOTE: An account can only call `onInstall` once. If called directly by the account,
-     * the signers, weights, and threshold will be set to the provided data. Future
-     * installations will revert with {ERC7579MultisigAlreadyInstalled}.
+     * > [!NOTE]
+     * > An account can only call `onInstall` once. If called directly by the account,
+     * > the signers, weights, and threshold will be set to the provided data. Future
+     * > installations will revert with {ERC7579MultisigAlreadyInstalled}.
      *
      * Requirements:
      *
@@ -230,12 +233,16 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
      * * `signers` and `weights` arrays must have the same length. Reverts with {ERC7579MultisigMismatchedSignerWeights} on mismatch.
      * * Each signer must exist in the set of authorized signers. Reverts with {ERC7579MultisigNonexistentSigner} if not.
      *
-     * IMPORTANT: This function does not increment the account's configuration nonce.
-     * Callers that change the configuration must call {Nonces-_useNonce} to invalidate
-     * outstanding disclosure entries.
+     * > [!IMPORTANT]
+     * > This function does not increment the account's configuration nonce.
+     * > Callers that change the configuration must call {Nonces-_useNonce} to invalidate
+     * > outstanding disclosure entries.
      *
-     * NOTE: The threshold will be automatically capped at the total weight to ensure it's always reachable.
-     * NOTE: Weights of 0 are automatically converted to weight 1 (base weight). See {signerWeight}.
+     * > [!NOTE]
+     * > The threshold will be automatically capped at the total weight to ensure it's always reachable.
+     *
+     * > [!NOTE]
+     * > Weights of 0 are automatically converted to weight 1 (base weight). See {signerWeight}.
      *
      * Emits {ERC7579MultisigWeightChanged} for each signer.
      */
