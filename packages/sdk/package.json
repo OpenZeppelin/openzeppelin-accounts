@@ -37,17 +37,17 @@
   "devDependencies": {
     "@ava/typescript": "^5.0.0",
     "@fast-check/ava": "^2.0.2",
-    "@noble/curves": "^2.0.1",
+    "@noble/curves": "^2.4.0",
     "@pimlico/alto": "^0.0.20",
-    "@types/node": "^25.0.10",
-    "ava": "^6.2.0",
-    "fast-check": "^4.1.1",
+    "@types/node": "^25.9.9",
+    "ava": "^6.4.1",
+    "fast-check": "^4.10.2",
     "hardhat-predeploy": "^0.4.1",
-    "ox": "^0.12.0",
+    "ox": "^0.12.4",
     "prettier": "^3.5.3",
-    "prool": "^0.2.2",
+    "prool": "^0.2.16",
     "ts-node": "^10.9.2",
-    "typescript": "^5.8.3"
+    "typescript": "^5.9.3"
   },
   "keywords": [
     "ethereum",
