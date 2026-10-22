@@ -36,7 +36,7 @@ import { toSigner } from '../../signers/index.js';
 interface MultisigTestContext extends OpenAccountContext {
   bundlerClient: Omit<
     BundlerClient<Transport, undefined, SmartAccount>,
-    'client' | 'paymaster' | 'paymasterContext' | 'userOperation'
+    'client' | 'dataSuffix' | 'paymaster' | 'paymasterContext' | 'userOperation'
   > &
     ERC7579Actions<SmartAccount>;
   eoaA: LocalAccount;

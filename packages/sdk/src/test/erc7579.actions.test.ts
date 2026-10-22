@@ -23,7 +23,7 @@ interface ERC7579ActionsTestContext extends OpenAccountContext {
   initialValidator: GetContractReturnType<typeof ECDSAValidatorArtifact.abi>;
   bundlerClient: Omit<
     BundlerClient<Transport, undefined, SmartAccount>,
-    'client' | 'paymaster' | 'paymasterContext' | 'userOperation'
+    'client' | 'dataSuffix' | 'paymaster' | 'paymasterContext' | 'userOperation'
   > &
     ERC7579Actions<SmartAccount>;
 }
