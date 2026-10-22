@@ -64,11 +64,7 @@ async function fixture() {
   ]);
 
   // ERC-7579 account with EIP-712 support
-  const validator = await ethers.deployContract('$ERC7579ValidatorMock');
-  const mockAccount = await helper.newAccount('$OpenAccount', [
-    validator.target,
-    ethers.solidityPacked(['address'], [ethers.Wallet.createRandom().address]),
-  ]);
+  const mockAccount = await helper.newAccount('$OpenAccount', ['OpenAccount', '1']);
   const mockFromAccount = await impersonate(mockAccount.address).then(asAccount => mock.connect(asAccount));
   const mockAccountFromEntrypoint = await impersonate(predeploy.entrypoint.v09.target).then(asEntrypoint =>
     mockAccount.connect(asEntrypoint),

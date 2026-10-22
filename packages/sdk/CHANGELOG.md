@@ -1,3 +1,7 @@
+## 22-10-2026
+
+- `erc1967ProxyCode`: Match the `ERC1967Clones` proxy bytecode from OpenZeppelin Contracts `v5.7.0`, used by `OpenAccountFactory` to predict account addresses.
+
 ## 31-07-2026
 
 - Add `packages/sdk/src/signers/`: composable signer abstraction that produces the on-chain envelopes the accounts library already knows how to verify.
