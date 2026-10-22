@@ -104,6 +104,8 @@ Full documentation is available at **[docs.openzeppelin.com/accounts](https://do
 
 This project is maintained by [OpenZeppelin](https://openzeppelin.com). Smart contracts are a nascent technology and carry a high level of technical risk and uncertainty. Using this library is not a substitute for a security audit.
 
+Audit reports are available in [`packages/contracts/audits`](./packages/contracts/audits), which also lists the contracts that have not been audited yet.
+
 This project has not yet had a stable release. Please report security vulnerabilities by email to [security@openzeppelin.com](mailto:security@openzeppelin.com).
 
 ## Contributing
