@@ -1,3 +1,7 @@
+## 22-10-2026
+
+- Pin OpenZeppelin Contracts and OpenZeppelin Contracts Upgradeable to `v5.7.0`. `EIP712` domain names and versions must now fit in 31 bytes, and `ERC1967Clones` proxies use updated bytecode, which changes `OpenAccountFactory` account addresses.
+
 ## 22-07-2026
 
 - Renamed `OpenAccountERC8043` to `AccountERC8043Upgradeable` and retargeted it to extend `AccountERC7579Upgradeable` directly, so the ERC-8043 init mode extension can be composed with any ERC-7579-based account instead of only `OpenAccount`.
