@@ -39,10 +39,10 @@ Since these contracts are designed to provide compatibility with major ERC-7579 
 
 #### Using OpenAccountFactory
 
-The `OpenAccountFactory` is deployed across all major EVM chains at the same deterministic address:
+The `v0.0.1` `OpenAccountFactory` is deployed at the same deterministic address on every supported chain. Addresses change between releases; see [Deployments](https://github.com/OpenZeppelin/openzeppelin-accounts#deployments) for the full list:
 
 ```
-0x9045eF209067701bE7b78AaC216C04Ffa6543330
+0xcdbE9DD6F837b6E894a8F8402857cF3fDABCaE37
 ```
 
 This factory creates minimal ERC-1967 proxy clones of the `OpenAccountImplementation` contract, providing deterministic addresses and efficient ERC-1967 proxy deployment. By design, the account is upgradeable, allowing the account itself (or the entrypoint) to upgrade the implementation contract.
@@ -99,7 +99,7 @@ contract MyFactoryAccount {
 ```
 
 <Callout type="info">
-  Most developers are fine using deployed `OpenAccountFactory` at `0x9045eF209067701bE7b78AaC216C04Ffa6543330`. Only
+  Most developers are fine using the deployed `OpenAccountFactory` (`v0.0.1`) at `0xcdbE9DD6F837b6E894a8F8402857cF3fDABCaE37`. Only
   create a custom factory if you need to extend `OpenAccount` with custom logic or implement a different account
   contract.
 </Callout>

@@ -16,10 +16,10 @@ npm install @openzeppelin-accounts/contracts
 
 A production-ready, ERC-4337 and ERC-7579 compliant smart account built on top of [OpenZeppelin Contracts](https://docs.openzeppelin.com/contracts). It provides full module support (validators, executors, hooks, fallbacks), EIP-712 signature validation, and NFT holder capabilities.
 
-`OpenAccountFactory` deploys minimal ERC-1967 proxy clones with deterministic addresses via CREATE2. It is pre-deployed on all major EVM chains at:
+`OpenAccountFactory` deploys minimal ERC-1967 proxy clones with deterministic addresses via CREATE2. The `v0.0.1` factory is deployed at the same address on every supported chain (see [Deployments](https://github.com/OpenZeppelin/openzeppelin-accounts#deployments) for each release):
 
 ```
-0x9045eF209067701bE7b78AaC216C04Ffa6543330
+0xcdbE9DD6F837b6E894a8F8402857cF3fDABCaE37
 ```
 
 ### Validators

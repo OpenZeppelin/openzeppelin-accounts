@@ -45,7 +45,7 @@ import { mainnet } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createBundlerClient } from 'viem/account-abstraction';
 import { toOpenAccount, erc7579Actions } from '@openzeppelin-accounts/sdk';
-import OpenAccountFactoryABI from '@openzeppelin-accounts/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' assert { type: 'json' };
+import OpenAccountFactoryABI from '@openzeppelin-accounts/contracts/build/contracts/OpenAccountFactory.json' assert { type: 'json' };
 
 const client = createPublicClient({ chain: mainnet, transport: http() });
 const signer = privateKeyToAccount('0x<privateKey>');
@@ -56,7 +56,7 @@ const account = await toOpenAccount({
   signer,
   validator: '0x<ecdsaValidatorAddress>',
   factory: getContract({
-    address: '0x9045eF209067701bE7b78AaC216C04Ffa6543330',
+    address: '0xcdbE9DD6F837b6E894a8F8402857cF3fDABCaE37',
     abi: OpenAccountFactoryABI.abi,
     client,
   }),

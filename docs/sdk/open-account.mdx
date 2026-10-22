@@ -120,10 +120,10 @@ Use this mode when no account has been deployed yet. The account address is comp
 
 ```typescript
 import { getContract, encodePacked } from 'viem';
-import OpenAccountFactoryABI from '@openzeppelin-accounts/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' assert { type: 'json' };
+import OpenAccountFactoryABI from '@openzeppelin-accounts/contracts/build/contracts/OpenAccountFactory.json' assert { type: 'json' };
 
 const factory = getContract({
-  address: '0x9045eF209067701bE7b78AaC216C04Ffa6543330',
+  address: '0xcdbE9DD6F837b6E894a8F8402857cF3fDABCaE37',
   abi: OpenAccountFactoryABI.abi,
   client,
 });
@@ -142,7 +142,7 @@ const account = await toOpenAccount({
 
 ### `factory`
 
-A Viem contract instance pointing to the `OpenAccountFactory`. The canonical deployment is at `0x9045eF209067701bE7b78AaC216C04Ffa6543330` on all major EVM chains.
+A Viem contract instance pointing to the `OpenAccountFactory`. The `v0.0.1` deployment is at `0xcdbE9DD6F837b6E894a8F8402857cF3fDABCaE37` on every supported chain; see [Deployments](https://github.com/OpenZeppelin/openzeppelin-accounts#deployments) for other releases.
 
 ### `moduleTypeIds`
 
@@ -256,13 +256,13 @@ import { mainnet } from 'viem/chains';
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts';
 import { createBundlerClient } from 'viem/account-abstraction';
 import { toOpenAccount, erc7579Actions } from '@openzeppelin-accounts/sdk';
-import OpenAccountFactoryABI from '@openzeppelin-accounts/contracts/out/OpenAccountFactory.sol/OpenAccountFactory.json' assert { type: 'json' };
+import OpenAccountFactoryABI from '@openzeppelin-accounts/contracts/build/contracts/OpenAccountFactory.json' assert { type: 'json' };
 
 const client = createPublicClient({ chain: mainnet, transport: http() });
 const signer = privateKeyToAccount(generatePrivateKey());
 
 const factory = getContract({
-  address: '0x9045eF209067701bE7b78AaC216C04Ffa6543330',
+  address: '0xcdbE9DD6F837b6E894a8F8402857cF3fDABCaE37',
   abi: OpenAccountFactoryABI.abi,
   client,
 });
