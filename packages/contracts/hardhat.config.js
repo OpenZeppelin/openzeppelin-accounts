@@ -1,6 +1,7 @@
 // - COMPILER:      compiler version (default: 0.8.27)
 // - HARDFORK:      hardfork version (default: prague)
 // - FHE:           enable FHE compilation (default: false)
+// - COMPILE_MODE:  production drops the metadata hash so artifacts match the Foundry deployments (default: development)
 
 const { argv } = require('yargs/yargs')()
   .env('')
@@ -16,6 +17,11 @@ const { argv } = require('yargs/yargs')()
     fhe: {
       type: 'boolean',
       default: false,
+    },
+    compileMode: {
+      type: 'string',
+      choices: ['production', 'development'],
+      default: 'development',
     },
   });
 
@@ -37,6 +43,8 @@ module.exports = {
         runs: 200,
       },
       evmVersion: argv.hardfork,
+      // Same as `bytecode_hash` and `cbor_metadata` in foundry.toml, used for deterministic deployments
+      ...(argv.compileMode === 'production' && { metadata: { bytecodeHash: 'none', appendCBOR: false } }),
     },
   },
   networks: {

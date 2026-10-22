@@ -17,7 +17,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 pnpm run clean
-pnpm run compile
+COMPILE_MODE=production pnpm run compile
 
 mkdir -p src/build/contracts
 # `find … -exec cp` instead of `**` globs so this runs on the bash 3.2 that

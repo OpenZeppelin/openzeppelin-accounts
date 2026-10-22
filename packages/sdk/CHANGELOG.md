@@ -1,4 +1,10 @@
-## 31-07-2026
+## v0.0.1
+
+### 22-10-2026
+
+- `viem` is now a peer dependency (`^2.44.4`). Install it alongside `@openzeppelin-accounts/sdk`.
+
+### 31-07-2026
 
 - Add `packages/sdk/src/signers/`: composable signer abstraction that produces the on-chain envelopes the accounts library already knows how to verify.
   - `toSigner(LocalAccount | WebAuthnAccount) → Signer` — normalizes viem's account shapes, unwrapping `WebAuthnAccount`'s discriminated return object so downstream code only sees `Hex`.
@@ -8,14 +14,14 @@
   - `toMultisigner([{ signer, signerBytes } | ERC7913Signer, ...]) → Signer` — packs `abi.encode(bytes[] signers, bytes[] signatures)` for `Multisig.tryDecodeMultisignatureCalldata` and the ERC-7579 multisig validators. Sorts pairs by `keccak256(signerBytes)` to match `SignatureChecker.areValidSignaturesNow`'s efficient-dedup path. ERC-7913-wrapped inputs are unwrapped via `.unwrap()` so the multisig envelope carries raw inner signatures rather than nested envelopes.
 - Widen the `signer` parameter of `toERC7579Account` and `toOpenAccount` to accept the SDK's `Signer` alongside viem's `LocalAccount | WebAuthnAccount`. Existing call sites keep working — `Signer` is a structural subset of `LocalAccount`.
 
-## 27-02-2026
+### 27-02-2026
 
 - `toOpenAccount` now requires a `validator: Address` parameter identifying the ERC-7579 validator module that authorises the signer. This parameter drives two automatic behaviors:
   - **ERC-1271 routing**: `signMessage` and `signTypedData` prepend `validator` (20 bytes) to the inner signature so that the account's `isValidSignature` can extract and route to the correct module without any manual encoding.
   - **UserOp nonce routing**: `getNonce` encodes `validator` in the upper 20 bytes of the 24-byte nonce key. An optional user-supplied `key` (at most 4 bytes) occupies the lower bytes, allowing parallel nonce sequences per validator. Passing a `key` larger than 4 bytes throws at runtime.
 - `toERC7579Account` no longer overrides `getNonce`. It now relies on the default nonce implementation provided by Viem's `toSmartAccount`, which reads from the entry point without any validator encoding. Applications that need validator-aware nonces should use `toOpenAccount`, or pass a custom `getNonce` override directly to `toERC7579Account`.
 
-## 26-02-2026
+### 26-02-2026
 
 - Add `toOpenAccount`: a `SmartAccount` factory for the `OpenAccount` contract. Supports two modes — factory-based deployment (deterministic CREATE2 address) and connecting to an already-deployed account (with on-chain `accountId` validation).
 - Add `toERC7579Account`: a lower-level `SmartAccount` factory for any ERC-7579 account, accepting caller-supplied `getAddress` and `getFactoryArgs` callbacks. The `signer` parameter accepts both a `LocalAccount` (ECDSA) and a `WebAuthnAccount` (passkey).
@@ -25,6 +31,6 @@
 - Expand `erc7579.utils.ts` with `encodeCalls` / `decodeCalls` for automatic single/batch call encoding and `encodeMode` / `decodeMode` for execution mode packing.
 - Replace plain-object constants with TypeScript `enum`s in `erc7579.utils.ts`: `ModuleTypes`, `ExecutionTypes`, and `CallTypes` are now proper enums while retaining string-literal union aliases (`ModuleType`, `ExecType`, `CallType`) for type-safe string input.
 
-## 20-10-2025
+### 20-10-2025
 
 - Add `erc7579.utils.ts`: Utility functions for encoding and decoding ERC-7579 modular smart account calls, execution batching, delegatecall, and execution mode packing/unpacking.
