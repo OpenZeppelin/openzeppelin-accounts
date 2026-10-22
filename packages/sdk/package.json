@@ -19,7 +19,7 @@
   ],
   "scripts": {
     "build": "node ../../scripts/sync-artifact.mjs && tsc -p tsconfig.build.json",
-    "prepare": "npm run build",
+    "prepack": "npm run build",
     "compile": "tsc",
     "compile:watch": "tsc -w",
     "test": "ava",
@@ -31,7 +31,7 @@
   },
   "author": "OpenZeppelin Accounts Contributors",
   "license": "MIT",
-  "dependencies": {
+  "peerDependencies": {
     "viem": "^2.44.4"
   },
   "devDependencies": {
@@ -47,7 +47,8 @@
     "prettier": "^3.5.3",
     "prool": "^0.2.16",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "viem": "^2.57.7"
   },
   "keywords": [
     "ethereum",
