@@ -1,3 +1,7 @@
+## 26-10-2026
+
+- `toCrossChainSigner` and `signCrossChainEnvelopes`: Removed the `fields` config option and the `fields` byte from the ERC-7964 envelope header, and extended `ERC7964_MAGIC` to 10 bytes. `domain.verifyingContract` no longer defaults to `application`. **Breaking change** to the envelope encoding.
+
 ## 22-10-2026
 
 - `erc1967ProxyCode`: Match the `ERC1967Clones` proxy bytecode from OpenZeppelin Contracts `v5.7.0`, used by `OpenAccountFactory` to predict account addresses.

@@ -112,7 +112,7 @@ The wrapper takes the full list of chain-specific operations, hashes each one of
 
 ```
 abi.encode(
-  bytes32 header,     // ERC7964_MAGIC || fields || structIndex || application
+  bytes32 header,     // ERC7964_MAGIC || structIndex || application
   bytes32[] structsArray,
   bytes crossChainSignature
 )
@@ -226,7 +226,7 @@ const envelopes = await signCrossChainEnvelopes(toSigner(passkey), {
 });
 ```
 
-### Outer domain and the `fields` byte
+### Outer domain
 
 The outer `domain` config accepts `name`, `version`, and optionally `verifyingContract`. `chainId` is intentionally omitted per ERC-7964 — that's what makes the signature crosschain-reusable.
 
@@ -238,18 +238,9 @@ domain: {
 },
 ```
 
-Include `verifyingContract` when the application is deployed deterministically at the same address on every target chain — this binds the outer signature to that address so per-chain operation structs can omit `verifyingContract`.
+The on-chain verifier derives the outer domain as the `application` ERC-5267 fields minus the fields its chain-specific structs bind (`chainFields`), so the `domain` passed here must contain exactly those fields. For a standard `EIP712` application and operations that nest `EIP712ChainDomain(uint256 chainId,address verifyingContract)`, the domain is `{ name, version }`.
 
-The ERC-5267 `fields` byte is derived automatically from the domain shape:
-
-| Domain shape                                 | Auto-computed `fields` |
-| -------------------------------------------- | ---------------------- |
-| `{ name, version }`                          | `0x03` (name + version) |
-| `{ name, version, verifyingContract }`       | `0x0b` (name + version + verifyingContract) |
-
-Callers can pass an explicit `fields` byte, but only bits inside `0x0b` (name / version / verifyingContract) are accepted — the SDK's outer typed data doesn't emit `chainId` (`0x04`, forbidden by ERC-7964) or `salt` (`0x10`), so setting either would make the on-chain domain separator diverge from the SDK's signed digest.
-
-If bit `0x08` is set in the explicit `fields` but `domain.verifyingContract` is omitted, it defaults to `application`. The wrapper still throws when an explicit `fields` disagrees with an explicit `domain.verifyingContract` (bit set vs value missing, or bit unset vs value present).
+Include `verifyingContract` only when the verifier doesn't bind it per chain, typically because the application is deployed deterministically at the same address on every target chain.
 
 <Callout type="info">
   `signMessage` is intentionally unsupported on a cross-chain signer — ERC-7964 is EIP-712-only by spec. Calling it

@@ -93,7 +93,7 @@ test('toERC7913Signer(toCrossChainSigner(eoa)): unwraps in two passes to recover
     parseAbiParameters(['bytes32', 'bytes32[]', 'bytes']),
     crossChainEnvelope,
   );
-  t.is(slice(header, 0, 9), ERC7964_MAGIC);
+  t.is(slice(header, 0, 10), ERC7964_MAGIC);
   t.is(structsArray.length, 2);
 
   const outerDigest = hashTypedData({

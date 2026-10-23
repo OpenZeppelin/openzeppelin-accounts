@@ -64,7 +64,7 @@ describe('CrossChainSignatureChecker', function () {
         );
 
         for (let i = 0; i < this.providers.length; i++) {
-          const header = encodeERC7964Header(fields, i, this.apps[i].target);
+          const header = encodeERC7964Header(i, this.apps[i].target);
           const domain = await getDomain(this.apps[i]);
           const crossChainDomain = Object.fromEntries(Object.entries(domain).filter((_, i) => fields & (1 << i)));
           const signature = await this.signer.signTypedData(crossChainDomain, types, {
@@ -105,7 +105,7 @@ describe('CrossChainSignatureChecker', function () {
         const signature = await this.signer.signTypedData(crossChainDomain, types, {
           operations,
         });
-        const header = encodeERC7964Header(fields, 1, this.apps[0].target); // Use wrong struct index (should be 0, but use 1)
+        const header = encodeERC7964Header(1, this.apps[0].target); // Use wrong struct index (should be 0, but use 1)
         const erc7964Signature = ethers.AbiCoder.defaultAbiCoder().encode(
           ['bytes32', 'bytes32[]', 'bytes'],
           [header, operations.map(op => ethers.TypedDataEncoder.hashStruct('ChainOperation', types, op)), signature],
@@ -142,7 +142,7 @@ describe('CrossChainSignatureChecker', function () {
         const erc7964Signature = ethers.AbiCoder.defaultAbiCoder().encode(
           ['bytes32', 'bytes32[]', 'bytes'],
           [
-            encodeERC7964Header(fields, 0, this.apps[0].target),
+            encodeERC7964Header(0, this.apps[0].target),
             operations.map(op => ethers.TypedDataEncoder.hashStruct('ChainOperation', types, op)),
             invalidSignature,
           ],
@@ -174,7 +174,7 @@ describe('CrossChainSignatureChecker', function () {
         const signature = await this.signer.signTypedData(crossChainDomain, types, {
           operations,
         });
-        const header = encodeERC7964Header(fields, 0, this.apps[0].target);
+        const header = encodeERC7964Header(0, this.apps[0].target);
         const erc7964Signature = ethers.AbiCoder.defaultAbiCoder().encode(
           ['bytes32', 'bytes32[]', 'bytes'],
           [header, operations.map(op => ethers.TypedDataEncoder.hashStruct('ChainOperation', types, op)), signature],
@@ -185,6 +185,37 @@ describe('CrossChainSignatureChecker', function () {
             nonce: await this.providers[0].provider.getTransactionCount(this.apps[0].runner.address),
           }),
         ).to.be.revertedWith('Invalid signature');
+      });
+
+      it('should revert when the main domain includes a chain-specific field', async function () {
+        const fields = '0x0b'; // name, version and verifyingContract, which CHAIN_FIELDS binds per chain
+        const value = 42n;
+
+        const domain = await getDomain(this.apps[0]);
+        const crossChainDomain = Object.fromEntries(Object.entries(domain).filter((_, i) => fields & (1 << i)));
+
+        const operations = await Promise.all(
+          this.providers.map(async ({ provider }, i) => ({
+            domain: {
+              chainId: await provider.getNetwork().then(n => n.chainId),
+              verifyingContract: this.apps[i].target,
+            },
+            value,
+          })),
+        );
+
+        const signature = await this.signer.signTypedData(crossChainDomain, types, {
+          operations,
+        });
+        const header = encodeERC7964Header(0, this.apps[0].target);
+        const erc7964Signature = ethers.AbiCoder.defaultAbiCoder().encode(
+          ['bytes32', 'bytes32[]', 'bytes'],
+          [header, operations.map(op => ethers.TypedDataEncoder.hashStruct('ChainOperation', types, op)), signature],
+        );
+
+        await expect(this.apps[0][fn](this.signer.address, value, erc7964Signature)).to.be.revertedWith(
+          'Invalid signature',
+        );
       });
 
       it('should revert with invalid magic prefix', async function () {
@@ -207,8 +238,7 @@ describe('CrossChainSignatureChecker', function () {
           operations,
         });
         const header = ethers.concat([
-          ethers.hexlify(ethers.randomBytes(9)), // Use wrong magic prefix
-          ethers.getBytes(fields),
+          ethers.hexlify(ethers.randomBytes(10)), // Use wrong magic prefix
           ethers.zeroPadValue(ethers.toBeHex(0), 2),
           ethers.getBytes(this.apps[0].target),
         ]);
