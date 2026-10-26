@@ -162,7 +162,7 @@ abstract contract MultisigCoordinator {
     /**
      * @dev Grants ACL permission over an encrypted `handle` to address `to`.
      *
-     * `msg.sender` must be `account` itself or a registered signer EOA.
+     * `msg.sender` must be `account` itself or a registered signer address (EOA or contract) calling directly.
      * See {allowHandle-address-bytes-bytes-bytes32-address-} for the full authorization
      * rules and requirements.
      */
@@ -220,7 +220,8 @@ abstract contract MultisigCoordinator {
      * the account (via {IERC7579ModuleConfig-isModuleInstalled}), then applies the following
      * authorization rules:
      *
-     * - If `signer` is empty: `msg.sender` must be `account` itself or a registered signer EOA.
+     * - If `signer` is empty: `msg.sender` must be `account` itself or a registered signer address
+     *   (EOA or contract) calling directly. Contract signers must not forward arbitrary calls to this coordinator.
      * - If `signer` is exactly 20 bytes: treated as an EOA; must be a registered signer and
      *   `signature` must be a valid EIP-712 signature over `hash`.
      * - If `signer` is more than 20 bytes: treated as an ERC-7913 signer (`verifier || key`);

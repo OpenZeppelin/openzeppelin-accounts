@@ -210,6 +210,11 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
      *
      * * The module must not be already installed on the account. Reverts with {ERC7579DelayedExecutorAlreadyInstalled} if not.
      * * `initData` must be empty or decode correctly to `(uint32, uint32)`.
+     *
+     * > [!NOTE]
+     * > On a first install, the initial delay applies immediately and can later only be lowered over
+     * > `currentDelay - newDelay` (see {setDelay}). An expiration of `0` makes every scheduled operation
+     * > expire as soon as it becomes executable, so choose one that leaves enough time to submit the execution.
      */
     function onInstall(bytes calldata initData) public virtual {
         require(!_configs[msg.sender].installed, ERC7579DelayedExecutorAlreadyInstalled());
@@ -242,7 +247,14 @@ abstract contract ERC7579DelayedExecutor is ERC7579Executor {
         _setDelay(msg.sender, newDelay, currentDelay == 0 ? 0 : _calculateSetback(currentDelay, newDelay));
     }
 
-    /// @dev Allows an account to update its execution expiration (see {getExpiration}).
+    /**
+     * @dev Allows an account to update its execution expiration (see {getExpiration}).
+     *
+     * > [!NOTE]
+     * > The expiration is read when an operation is scheduled. An expiration of `0` makes every operation
+     * > expire as soon as it becomes executable, and very small values leave little time to execute it.
+     * > Choose an expiration that leaves enough time to submit the execution.
+     */
     function setExpiration(uint32 newExpiration) public virtual {
         _setExpiration(msg.sender, newExpiration);
     }

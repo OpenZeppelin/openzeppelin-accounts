@@ -57,6 +57,9 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * >    other key can be reconfigured under the current installation. To change the spending policy,
  * >    the account must uninstall and reinstall the module (which bumps the installation nonce and
  * >    resets state).
+ * >
+ * > Install and uninstall both module types together. Uninstalling either one resets the whole
+ * > installation (session keys and spending policies) for both roles.
  *
  * > [!IMPORTANT]
  * > This module deliberately disables ERC-1271 signing
@@ -300,6 +303,10 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
      * * `amount` must not exceed the available limit for the current period. Reverts with
      *   {ERC7579NativeInsufficientAvailable} otherwise.
      * * Those from {_periodAt} for the current timepoint.
+     *
+     * > [!NOTE]
+     * > The limit bounds the total value spent per period, not the number of calls. A zero `amount`
+     * > is allowed and executes an empty call to `to`.
      */
     function transferFrom(address account, bytes calldata key, address to, uint256 amount) public virtual {
         uint256 installation_ = installation(account);
@@ -319,6 +326,10 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
      * * The caller is authorized via one of the two paths described in {transferFrom}.
      * * The sum of `amounts` must not exceed the available limit.
      * * Those from {_periodAt} for the current timepoint.
+     *
+     * > [!NOTE]
+     * > As in {transferFrom}, the limit bounds the total value per period, not the number of calls.
+     * > Zero-value entries are allowed and execute an empty call to their `tos[i]`.
      */
     function batchTransferFrom(
         address account,
