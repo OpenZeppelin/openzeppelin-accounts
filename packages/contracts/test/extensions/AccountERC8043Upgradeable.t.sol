@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
+import {ERC7579MultisigValidator} from "../../src/modules/validators/ERC7579MultisigValidator.sol";
 import {Test} from "forge-std/Test.sol";
 import {OpenAccountFactory, OpenAccountImplementation} from "../../src/OpenAccountFactory.sol";
 import {
@@ -14,10 +15,10 @@ import {ERC4337Utils, IEntryPointExtra} from "@openzeppelin/contracts/account/ut
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/IERC4337.sol";
 import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-AccountERC7579.sol";
-import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
+import {MODULE_TYPE_VALIDATOR, MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {ERC7579ValidatorMock} from "../../src/mocks/modules/ERC7579Mock.sol";
-import {ERC7579MultisigValidator} from "../../src/modules/validators/ERC7579MultisigValidator.sol";
 import {CallReceiverMock} from "../../src/mocks/CallReceiverMock.sol";
+import {ERC7579NativeSpender} from "../../src/modules/executors/ERC7579NativeSpender.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 contract AccountERC8043UpgradeableTest is Test {
@@ -370,6 +371,54 @@ contract AccountERC8043UpgradeableTest is Test {
         assertEq(multisig.threshold(address(_account)), 1);
     }
 
+    function testInitModeWithNativeSpenderKey(address bundler) public {
+        vm.assume(bundler.code.length == 0);
+
+        ERC7579NativeSpender spender = new ERC7579NativeSpender();
+        address recipient = makeAddr("recipient");
+        uint256 sessionKeyPrivateKey = 0xbbbb;
+        bytes memory key = abi.encodePacked(vm.addr(sessionKeyPrivateKey));
+
+        uint256 nonce = _prepareNonce(address(spender));
+        PackedUserOperation memory userOp = _prepareUserOperation(
+            nonce,
+            _buildNativeSpenderInitModeInitCode(nonce, address(spender), key)
+        );
+        userOp.accountGasLimits = bytes32(abi.encodePacked(uint128(2_000_000), uint128(500_000)));
+        userOp.callData = abi.encodeCall(
+            AccountERC7579.execute,
+            (
+                Mode.unwrap(
+                    ERC7579Utils.CALLTYPE_SINGLE.encodeMode(
+                        ERC7579Utils.EXECTYPE_DEFAULT,
+                        ModeSelector.wrap(0x00000000),
+                        ModePayload.wrap(0x00000000)
+                    )
+                ),
+                abi.encodePacked(
+                    address(spender),
+                    uint256(0),
+                    abi.encodeCall(ERC7579NativeSpender.transferFrom, (address(_account), key, recipient, 1 ether))
+                )
+            )
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
+            sessionKeyPrivateKey,
+            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp)
+        );
+        userOp.signature = abi.encode(key, abi.encodePacked(r, s, v));
+
+        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
+        ops[0] = userOp;
+        vm.prank(bundler, bundler);
+        ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
+
+        (uint48 from, ) = spender.validity(address(_account), key);
+        assertEq(from, block.timestamp);
+        assertEq(recipient.balance, 1 ether);
+        assertEq(spender.spent(address(_account), key, 0), 1 ether);
+    }
+
     function _buildMultisigAndValidatorInitCode(
         uint256 nonce,
         address multisig,
@@ -386,38 +435,34 @@ contract AccountERC8043UpgradeableTest is Test {
         initDatas[0] = multisigInitData;
         initDatas[1] = abi.encodePacked(_newValidatorSigner, extraInitData); // the mock reads the first 20 bytes
 
-        return _buildInitModeInitCode(nonce, moduleTypeIds, modules, initDatas);
+        return _buildInitModeInitCode(nonce, moduleTypeIds, modules, initDatas, _initialValidatorPrivateKey);
     }
 
-    function _buildInitModeInitCode(
+    function _buildNativeSpenderInitModeInitCode(
         uint256 nonce,
-        uint256[] memory moduleTypeIds,
-        address[] memory modules,
-        bytes[] memory initDatas
+        address spender,
+        bytes memory key
     ) private view returns (bytes memory) {
-        bytes32[] memory initDataHashes = new bytes32[](initDatas.length);
-        for (uint256 i = 0; i < initDatas.length; i++) initDataHashes[i] = keccak256(initDatas[i]);
+        bytes[] memory keys = new bytes[](1);
+        keys[0] = key;
+        uint48[] memory starts = new uint48[](1); // 0 resolves to the current timepoint
+        uint48[] memory ends = new uint48[](1); // 0 means no expiry
+        uint160[] memory limits = new uint160[](1);
+        limits[0] = 1 ether;
+        uint48[] memory renewPeriods = new uint48[](1);
+        renewPeriods[0] = 1 days;
 
-        bytes32 typedDataHash = MessageHashUtils.toTypedDataHash(
-            _accountDomainSeparator,
-            keccak256(
-                abi.encode(
-                    INIT_MODULES_TYPEHASH,
-                    keccak256(abi.encodePacked(moduleTypeIds)),
-                    keccak256(abi.encodePacked(modules)),
-                    keccak256(abi.encodePacked(initDataHashes)),
-                    nonce
-                )
-            )
-        );
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(_initialValidatorPrivateKey, typedDataHash);
-        bytes memory installationSignature = abi.encodePacked(address(_initialValidator), abi.encodePacked(r, s, v));
+        uint256[] memory moduleTypeIds = new uint256[](2);
+        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
+        moduleTypeIds[1] = MODULE_TYPE_EXECUTOR;
+        address[] memory modules = new address[](2);
+        modules[0] = spender;
+        modules[1] = spender;
+        bytes[] memory initDatas = new bytes[](2);
+        initDatas[0] = abi.encode(keys, starts, ends);
+        initDatas[1] = abi.encode(keys, limits, renewPeriods);
 
-        return
-            abi.encodePacked(
-                INIT_MODE_MAGIC_VALUE,
-                abi.encode(moduleTypeIds, modules, initDatas, installationSignature)
-            );
+        return _buildInitModeInitCode(nonce, moduleTypeIds, modules, initDatas, _initialValidatorPrivateKey);
     }
 
     function _buildMultiModuleInitModeInitCode(
@@ -481,9 +526,18 @@ contract AccountERC8043UpgradeableTest is Test {
         modules[0] = newValidator;
         bytes[] memory initDatas = new bytes[](1);
         initDatas[0] = initData;
+        return _buildInitModeInitCode(nonce, moduleTypeIds, modules, initDatas, installationSignerKey);
+    }
 
-        bytes32[] memory initDataHashes = new bytes32[](1);
-        initDataHashes[0] = keccak256(initData);
+    function _buildInitModeInitCode(
+        uint256 nonce,
+        uint256[] memory moduleTypeIds,
+        address[] memory modules,
+        bytes[] memory initDatas,
+        uint256 installationSignerKey
+    ) internal view returns (bytes memory) {
+        bytes32[] memory initDataHashes = new bytes32[](initDatas.length);
+        for (uint256 i = 0; i < initDatas.length; i++) initDataHashes[i] = keccak256(initDatas[i]);
 
         bytes32 typedDataHash = MessageHashUtils.toTypedDataHash(
             _accountDomainSeparator,

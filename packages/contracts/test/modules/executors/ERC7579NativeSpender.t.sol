@@ -17,6 +17,7 @@ contract ERC7579NativeSpenderTest is Test {
     using ERC7579Utils for *;
 
     uint256 private constant MAX_ETH = type(uint128).max;
+    uint48 private constant MAX_TIMEPOINT = type(uint48).max >> 1;
 
     ERC7579NativeSpender private _spender;
     OpenAccount private _account;
@@ -46,7 +47,7 @@ contract ERC7579NativeSpenderTest is Test {
     function testInstallation(uint48 startOffset, uint160 limit, uint48 renewPeriod) public {
         renewPeriod = uint48(bound(renewPeriod, 1, type(uint48).max));
         limit = uint160(bound(limit, 1, MAX_ETH));
-        startOffset = uint48(bound(startOffset, 0, type(uint48).max - uint48(block.timestamp)));
+        startOffset = uint48(bound(startOffset, 0, MAX_TIMEPOINT - uint48(block.timestamp)));
 
         uint48 from = uint48(block.timestamp) + startOffset;
 
@@ -113,8 +114,8 @@ contract ERC7579NativeSpenderTest is Test {
 
     function testPeriodCalculation(uint48 startOffset, uint48 renewPeriod, uint48 elapsed) public {
         renewPeriod = uint48(bound(renewPeriod, 1, type(uint48).max));
-        startOffset = uint48(bound(startOffset, 0, type(uint48).max / 2));
-        elapsed = uint48(bound(elapsed, 0, type(uint48).max - uint48(block.timestamp) - startOffset));
+        startOffset = uint48(bound(startOffset, 0, MAX_TIMEPOINT / 2));
+        elapsed = uint48(bound(elapsed, 0, MAX_TIMEPOINT - uint48(block.timestamp) - startOffset));
 
         uint48 from = uint48(block.timestamp) + startOffset;
         _installSpenderBoth(from, 0, 1 ether, renewPeriod);
@@ -158,7 +159,7 @@ contract ERC7579NativeSpenderTest is Test {
     function testSpendingAcrossPeriods(uint160 limit, uint8 numPeriods, uint48 renewPeriod) public {
         numPeriods = uint8(bound(numPeriods, 1, 5));
         limit = uint160(bound(limit, 2, MAX_ETH / numPeriods));
-        renewPeriod = uint48(bound(renewPeriod, 1, type(uint48).max / numPeriods));
+        renewPeriod = uint48(bound(renewPeriod, 1, MAX_TIMEPOINT / numPeriods));
 
         uint160 amountPerPeriod = limit / 2;
 

@@ -3,6 +3,7 @@ pragma solidity ^0.8.27;
 
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/IERC4337.sol";
 import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/ERC4337Utils.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Time} from "@openzeppelin/contracts/utils/types/Time.sol";
 import {ERC7579SessionKeys} from "../ERC7579SessionKeys.sol";
 import {ERC7579Validator} from "./ERC7579Validator.sol";
@@ -57,6 +58,10 @@ abstract contract ERC7579SessionKeysValidator is ERC7579SessionKeys, ERC7579Vali
      * See {_tryDecodeSignature} for the signature encoding details.
      *
      * > [!NOTE]
+     * > The key's `from` is inclusive while the ERC-4337 `validAfter` is exclusive, so `from - 1` is
+     * > packed as `validAfter`. The key is usable by the EntryPoint at `from` itself.
+     *
+     * > [!NOTE]
      * > Returns {ERC4337Utils.SIG_VALIDATION_FAILED} immediately if {CLOCK_MODE} returns a mode
      * > other than timestamp or blocknumber from the same chain (default), as the EntryPoint does not support
      * > other validity range formats.
@@ -82,7 +87,7 @@ abstract contract ERC7579SessionKeysValidator is ERC7579SessionKeys, ERC7579Vali
         return
             ERC4337Utils.packValidationData(
                 address(uint160(super._validateUserOp(userOp, userOpHash))),
-                from,
+                uint48(Math.saturatingSub(from, 1)), // Safe cast. Result is at most `from`.
                 until,
                 range
             );
