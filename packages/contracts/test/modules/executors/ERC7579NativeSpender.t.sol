@@ -4,7 +4,7 @@ pragma solidity ^0.8.27;
 import {Test} from "forge-std/Test.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ERC7579NativeSpender} from "../../../src/modules/executors/ERC7579NativeSpender.sol";
-import {ERC7579Utils, Mode} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
+import {ERC7579Utils, Mode, Execution} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {MODULE_TYPE_VALIDATOR, MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {OpenAccount} from "../../../src/OpenAccount.sol";
@@ -173,48 +173,213 @@ contract ERC7579NativeSpenderTest is Test {
         }
     }
 
-    function testThirdInstallReverts() public {
+    function testSingleCallInstallsBothRoles() public {
         _installSpenderBoth(uint48(block.timestamp), 0, 1 ether, 1 days);
 
+        assertTrue(_account.isModuleInstalled(MODULE_TYPE_EXECUTOR, address(_spender), ""));
+        assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_spender), ""));
+        assertTrue(_spender.installed(address(_account)));
+        assertTrue(_spender.isKey(address(_account), _key));
+        assertEq(_spender.limit(address(_account), _key), 1 ether);
+    }
+
+    function testSingleCallInstallAfterInitialization() public {
+        _initializeWithoutSpender();
+
+        vm.prank(address(_account));
+        _account.installModule(MODULE_TYPE_EXECUTOR, address(_spender), _bundle(_key, 1 ether, 1 days));
+
+        assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_spender), ""));
+        assertEq(_spender.limit(address(_account), _key), 1 ether);
+    }
+
+    function testDirectValidatorInstallReverts() public {
+        _initializeWithoutSpender();
+
+        // Neither the install bundle nor a plain session-keys bundle is accepted under the validator role
+        vm.prank(address(_account));
+        vm.expectPartialRevert(ERC7579NativeSpender.ERC7579NativeSpenderInvalidInstallFlow.selector);
+        _account.installModule(MODULE_TYPE_VALIDATOR, address(_spender), _bundle(_key, 1 ether, 1 days));
+
+        vm.prank(address(_account));
+        vm.expectPartialRevert(ERC7579NativeSpender.ERC7579NativeSpenderInvalidInstallFlow.selector);
+        _account.installModule(MODULE_TYPE_VALIDATOR, address(_spender), _keysInitData(_key));
+    }
+
+    function testDirectValidatorInstallRevertsWithExecutorInstalled() public {
+        _installSpenderBoth(uint48(block.timestamp), 0, 1 ether, 1 days);
+
+        // Drop the validator role only, then try to add it back directly. The transient flag set by the
+        // executor install has been cleared, even within the same transaction.
+        vm.prank(address(_account));
+        _account.uninstallModule(MODULE_TYPE_VALIDATOR, address(_spender), "");
+
+        vm.prank(address(_account));
+        vm.expectPartialRevert(ERC7579NativeSpender.ERC7579NativeSpenderInvalidInstallFlow.selector);
+        _account.installModule(MODULE_TYPE_VALIDATOR, address(_spender), _keysInitData(_key));
+    }
+
+    function testReinstallReverts() public {
+        _installSpenderBoth(uint48(block.timestamp), 0, 1 ether, 1 days);
+
+        vm.prank(address(_account));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ERC7579Utils.ERC7579AlreadyInstalledModule.selector,
+                MODULE_TYPE_EXECUTOR,
+                address(_spender)
+            )
+        );
+        _account.installModule(MODULE_TYPE_EXECUTOR, address(_spender), _bundle(_key, 2 ether, 2 days));
+    }
+
+    function testReconfigurationThroughOnInstallReverts() public {
+        _installSpenderBoth(uint48(block.timestamp), 0, 1 ether, 1 days);
+
+        vm.prank(address(_account));
+        vm.expectPartialRevert(ERC7579NativeSpender.ERC7579NativeSpenderInvalidInstallFlow.selector);
+        _spender.onInstall(_bundle(_key, 2 ether, 2 days));
+
+        assertEq(_spender.limit(address(_account), _key), 1 ether);
+    }
+
+    function testReconfigurationAfterKeyReorderingReverts() public {
+        // Register two keys but only configure the second one, so `keys[0]` has no spending config.
+        (address eoa2, ) = makeAddrAndKey("session-key-eoa-2");
+        bytes memory key2 = abi.encodePacked(eoa2);
+
+        bytes[] memory keys = new bytes[](2);
+        keys[0] = _key;
+        keys[1] = key2;
+        uint48[] memory startsEnds = new uint48[](2);
+        bytes[] memory configured = new bytes[](1);
+        configured[0] = key2;
+        uint160[] memory limits = new uint160[](1);
+        limits[0] = 1 ether;
+        uint48[] memory renewPeriods = new uint48[](1);
+        renewPeriods[0] = 1 days;
+        _installExecutor(
+            abi.encode(abi.encode(keys, startsEnds, startsEnds), abi.encode(configured, limits, renewPeriods))
+        );
+
+        // Reorder the key set by removing and re-adding `key2`.
+        bytes[] memory rm = new bytes[](1);
+        rm[0] = key2;
+        uint48[] memory zero = new uint48[](1);
+        vm.prank(address(_account));
+        _spender.removeKeys(rm);
+        vm.prank(address(_account));
+        _spender.addKeys(rm, zero, zero);
+
+        // A second `onInstall` can no longer write spending policies under the same installation.
+        uint160[] memory newLimits = new uint160[](2);
+        newLimits[0] = 100 ether;
+        newLimits[1] = 100 ether;
+        uint48[] memory newRenewPeriods = new uint48[](2);
+        newRenewPeriods[0] = 1;
+        newRenewPeriods[1] = 1;
+        bytes memory reconfig = abi.encode(keys, newLimits, newRenewPeriods);
+
+        vm.prank(address(_account));
+        vm.expectPartialRevert(ERC7579NativeSpender.ERC7579NativeSpenderInvalidInstallFlow.selector);
+        _spender.onInstall(abi.encode(_keysInitData(_key), reconfig));
+
+        // The old executor-schema bundle is rejected as well.
+        vm.prank(address(_account));
+        vm.expectPartialRevert(ERC7579NativeSpender.ERC7579NativeSpenderInvalidInstallFlow.selector);
+        _spender.onInstall(reconfig);
+
+        assertEq(_spender.limit(address(_account), _key), 0);
+    }
+
+    function testExecutorOnInstallWithRegisteredKeysReverts() public {
+        _initializeWithoutSpender();
+
+        // Keys registered before the module is installed block the install bundle.
+        uint48[] memory zero = new uint48[](1);
         bytes[] memory keys = new bytes[](1);
         keys[0] = _key;
-        uint160[] memory limits = new uint160[](1);
-        limits[0] = 2 ether;
-        uint48[] memory renewPeriods = new uint48[](1);
-        renewPeriods[0] = 2 days;
-        bytes memory configBundle = abi.encode(keys, limits, renewPeriods);
+        vm.prank(address(_account));
+        _spender.addKeys(keys, zero, zero);
 
         vm.prank(address(_account));
         vm.expectRevert(abi.encodeWithSignature("ERC7579NativeSpenderAlreadyInstalled()"));
-        _spender.onInstall(configBundle);
+        _account.installModule(MODULE_TYPE_EXECUTOR, address(_spender), _bundle(_key, 1 ether, 1 days));
     }
 
-    function testSecondInstallWithEmptyKeysReverts() public {
-        // Validator install registers `_key`
-        bytes[] memory keysOne = new bytes[](1);
-        keysOne[0] = _key;
-        uint48[] memory startsOne = new uint48[](1);
-        startsOne[0] = uint48(block.timestamp);
-        uint48[] memory endsOne = new uint48[](1);
-        endsOne[0] = 0;
+    function testInstallWithEmptySessionKeysReverts() public {
+        bytes[] memory emptyKeys = new bytes[](0);
+        uint48[] memory empty48 = new uint48[](0);
+        bytes memory sessionKeysInitData = abi.encode(emptyKeys, empty48, empty48);
+        (, bytes memory spendingInitData) = abi.decode(_bundle(_key, 1 ether, 1 days), (bytes, bytes));
 
-        uint256[] memory moduleTypeIds = new uint256[](1);
-        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
-        address[] memory modules = new address[](1);
-        modules[0] = address(_spender);
-        bytes[] memory initDatas = new bytes[](1);
-        initDatas[0] = abi.encode(keysOne, startsOne, endsOne);
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        vm.expectRevert(abi.encodeWithSignature("ERC7579NativeSpenderEmptyKeys()"));
+        _installExecutor(abi.encode(sessionKeysInitData, spendingInitData));
+    }
 
-        // Executor install with zero keys must revert
+    function testInstallWithEmptySpendingPoliciesReverts() public {
         bytes[] memory emptyKeys = new bytes[](0);
         uint160[] memory emptyLimits = new uint160[](0);
         uint48[] memory emptyRenewPeriods = new uint48[](0);
-        bytes memory emptyConfig = abi.encode(emptyKeys, emptyLimits, emptyRenewPeriods);
+
+        vm.expectRevert(abi.encodeWithSignature("ERC7579NativeSpenderEmptyKeys()"));
+        _installExecutor(abi.encode(_keysInitData(_key), abi.encode(emptyKeys, emptyLimits, emptyRenewPeriods)));
+    }
+
+    function testInstallWithUnregisteredPolicyKeyReverts() public {
+        (address eoa2, ) = makeAddrAndKey("session-key-eoa-2");
+        bytes memory key2 = abi.encodePacked(eoa2);
+        (, bytes memory spendingInitData) = abi.decode(_bundle(key2, 1 ether, 1 days), (bytes, bytes));
+
+        vm.expectRevert(abi.encodeWithSignature("ERC7579SessionKeysNonexistentKey(bytes)", key2));
+        _installExecutor(abi.encode(_keysInitData(_key), spendingInitData));
+    }
+
+    function testInstallWithMalformedBundleReverts() public {
+        vm.expectRevert(abi.encodeWithSignature("ERC7579NativeSpenderInvalidInitData()"));
+        _installExecutor(new bytes(0x7f));
+    }
+
+    function testUninstallExecutorOnlyBlocksReinstall() public {
+        _installSpenderBoth(uint48(block.timestamp), 0, 1 ether, 1 days);
+        uint256 nonceBefore = _spender.installation(address(_account));
 
         vm.prank(address(_account));
-        vm.expectRevert(abi.encodeWithSignature("ERC7579NativeSpenderEmptyKeys()"));
-        _account.installModule(MODULE_TYPE_EXECUTOR, address(_spender), emptyConfig);
+        _account.uninstallModule(MODULE_TYPE_EXECUTOR, address(_spender), "");
+        assertEq(_spender.installation(address(_account)), nonceBefore + 1);
+        assertFalse(_spender.isKey(address(_account), _key));
+        // The validator role is left installed.
+        assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_spender), ""));
+
+        vm.prank(address(_account));
+        vm.expectPartialRevert(ERC7579NativeSpender.ERC7579NativeSpenderInvalidInstallFlow.selector);
+        _account.installModule(MODULE_TYPE_EXECUTOR, address(_spender), _bundle(_key, 2 ether, 2 days));
+
+        vm.prank(address(_account));
+        _account.uninstallModule(MODULE_TYPE_VALIDATOR, address(_spender), "");
+        vm.prank(address(_account));
+        _account.installModule(MODULE_TYPE_EXECUTOR, address(_spender), _bundle(_key, 2 ether, 2 days));
+        assertEq(_spender.limit(address(_account), _key), 2 ether);
+        assertEq(_spender.renewPeriod(address(_account), _key), 2 days);
+    }
+
+    function testReinstallAfterFullUninstallWritesFreshConfig() public {
+        _installSpenderBoth(uint48(block.timestamp), 0, 1 ether, 1 days);
+
+        vm.prank(_eoa);
+        _spender.transferFrom(address(_account), _key, _recipient, 0.5 ether);
+
+        vm.prank(address(_account));
+        _account.uninstallModule(MODULE_TYPE_VALIDATOR, address(_spender), "");
+        vm.prank(address(_account));
+        _account.uninstallModule(MODULE_TYPE_EXECUTOR, address(_spender), "");
+
+        vm.prank(address(_account));
+        _account.installModule(MODULE_TYPE_EXECUTOR, address(_spender), _bundle(_key, 3 ether, 3 days));
+
+        assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_spender), ""));
+        assertEq(_spender.limit(address(_account), _key), 3 ether);
+        assertEq(_spender.spent(address(_account), _key, 0), 0);
     }
 
     function testAddKeysWithPastStartReverts() public {
@@ -353,7 +518,7 @@ contract ERC7579NativeSpenderTest is Test {
 
         uint256 nonceBefore = _spender.installation(address(_account));
 
-        // Uninstalling the validator role bumps the nonce; the executor uninstall is a no-op for storage
+        // Uninstalling either role bumps the nonce
         vm.prank(address(_account));
         _account.uninstallModule(MODULE_TYPE_VALIDATOR, address(_spender), "");
         vm.prank(address(_account));
@@ -384,8 +549,7 @@ contract ERC7579NativeSpenderTest is Test {
     }
 
     function _installAccountBoth(bytes memory initData) private {
-        // The combined install bundle is split: keys/starts/ends go to the first install (validator),
-        // and a matching keys/limits/renewPeriods bundle goes to the second install (executor).
+        // The flat test bundle is split into the session-keys and spending-policy halves of the install bundle.
         (
             bytes[] memory keys,
             uint48[] memory starts,
@@ -394,15 +558,45 @@ contract ERC7579NativeSpenderTest is Test {
             uint48[] memory renewPeriods
         ) = abi.decode(initData, (bytes[], uint48[], uint48[], uint160[], uint48[]));
 
-        uint256[] memory moduleTypeIds = new uint256[](2);
-        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
-        moduleTypeIds[1] = MODULE_TYPE_EXECUTOR;
-        address[] memory modules = new address[](2);
+        _installExecutor(abi.encode(abi.encode(keys, starts, ends), abi.encode(keys, limits, renewPeriods)));
+    }
+
+    /// @dev Initializes the account with the spender as its only module, installed as an executor.
+    function _installExecutor(bytes memory bundle) private {
+        uint256[] memory moduleTypeIds = new uint256[](1);
+        moduleTypeIds[0] = MODULE_TYPE_EXECUTOR;
+        address[] memory modules = new address[](1);
         modules[0] = address(_spender);
-        modules[1] = address(_spender);
-        bytes[] memory initDatas = new bytes[](2);
-        initDatas[0] = abi.encode(keys, starts, ends);
-        initDatas[1] = abi.encode(keys, limits, renewPeriods);
+        bytes[] memory initDatas = new bytes[](1);
+        initDatas[0] = bundle;
         _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+    }
+
+    /// @dev Initializes the account with an unrelated executor so the spender can be installed afterwards.
+    function _initializeWithoutSpender() private {
+        uint256[] memory moduleTypeIds = new uint256[](1);
+        moduleTypeIds[0] = MODULE_TYPE_EXECUTOR;
+        address[] memory modules = new address[](1);
+        modules[0] = address(new ERC7579NativeSpender());
+        bytes[] memory initDatas = new bytes[](1);
+        initDatas[0] = _bundle(_key, 1 ether, 1 days);
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+    }
+
+    function _keysInitData(bytes memory key) private pure returns (bytes memory) {
+        bytes[] memory keys = new bytes[](1);
+        keys[0] = key;
+        uint48[] memory zero = new uint48[](1);
+        return abi.encode(keys, zero, zero);
+    }
+
+    function _bundle(bytes memory key, uint160 limit, uint48 renewPeriod) private pure returns (bytes memory) {
+        bytes[] memory keys = new bytes[](1);
+        keys[0] = key;
+        uint160[] memory limits = new uint160[](1);
+        limits[0] = limit;
+        uint48[] memory renewPeriods = new uint48[](1);
+        renewPeriods[0] = renewPeriod;
+        return abi.encode(_keysInitData(key), abi.encode(keys, limits, renewPeriods));
     }
 }

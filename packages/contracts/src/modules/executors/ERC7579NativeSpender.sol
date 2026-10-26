@@ -4,6 +4,7 @@ pragma solidity ^0.8.27;
 import {
     IERC7579Module,
     IERC7579Execution,
+    IERC7579ModuleConfig,
     MODULE_TYPE_VALIDATOR,
     MODULE_TYPE_EXECUTOR
 } from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
@@ -19,6 +20,8 @@ import {
 } from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Calldata} from "@openzeppelin/contracts/utils/Calldata.sol";
+import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
+import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 import {ERC7579SessionKeys} from "../ERC7579SessionKeys.sol";
 import {ERC7579Validator} from "../validators/ERC7579Validator.sol";
 import {ERC7579SessionKeysValidator} from "../validators/ERC7579SessionKeysValidator.sol";
@@ -46,17 +49,19 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * requiring manual intervention. It implements ERC-6372 clock functions.
  *
  * > [!NOTE]
- * > The module should be installed under both module types, in this order:
+ * > The module is installed with a single `installModule(MODULE_TYPE_EXECUTOR, module, initData)`
+ * > call. Its executor-role {onInstall} installs the validator role itself through
+ * > `executeFromExecutor`. See {onInstall} for the `initData` layout. Installing the module
+ * > directly as a validator is not supported and reverts.
  * >
- * > 1. **Validator install (first)**: `initData` is `abi.encode(bytes[] keys, uint48[] starts, uint48[] ends)`.
- * >    This registers session keys with their validity ranges through {ERC7579SessionKeys-_addKeys}.
- * >    At least one key must be registered, otherwise the install reverts.
- * > 2. **Executor install (second)**: `initData` is `abi.encode(bytes[] keys, uint160[] limits, uint48[] renewPeriods)`.
- * >    This writes a spending policy for each already-registered key. The `keys` array MUST be
- * >    non-empty and reconfiguration is banned: once a key has been configured, neither it nor any
- * >    other key can be reconfigured under the current installation. To change the spending policy,
- * >    the account must uninstall and reinstall the module (which bumps the installation nonce and
- * >    resets state).
+ * > Reconfiguration is banned: the install bundle is written once per installation. To change the
+ * > spending policy, the account must uninstall both roles and install the module again (which bumps
+ * > the installation nonce and resets state).
+ * >
+ * > Uninstalling either role bumps the installation nonce (see {ERC7579SessionKeys-onUninstall}), which
+ * > resets all keys and spending policies. Uninstalling one role does not uninstall the other, and the
+ * > executor-role {onInstall} reverts while the validator role is still installed, so the account must
+ * > uninstall both roles (e.g. in a single batch) before installing the module again.
  *
  * > [!IMPORTANT]
  * > This module deliberately disables ERC-1271 signing
@@ -85,8 +90,16 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
     /// @dev The arrays in `initData` have mismatched lengths.
     error ERC7579NativeSpenderMismatchedInitDataLengths(uint256 keys, uint256 limits, uint256 renewPeriods);
 
-    /// @dev The first install registered zero session keys.
+    /// @dev The install bundle registers zero session keys or configures zero spending policies.
     error ERC7579NativeSpenderEmptyKeys();
+
+    /**
+     * @dev The executor-role {onInstall} ran while the module is already installed as a validator on
+     * the account. The validator role is only installed by the executor-role {onInstall} itself, so this
+     * covers a direct `installModule(MODULE_TYPE_VALIDATOR, ...)` and an executor install while a
+     * previous validator role is still installed.
+     */
+    error ERC7579NativeSpenderInvalidInstallFlow(address account);
 
     /// @dev The `tos` and `amounts` arrays have mismatched lengths in batch transfer.
     error ERC7579NativeSpenderMismatchedBatchLengths(uint256 tos, uint256 amounts);
@@ -130,6 +143,10 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         uint160 limit; // Up to 1.4615016373e30 with 18 decimals (2**160 / 1e18)
     }
 
+    // keccak256(abi.encode(uint256(keccak256("openzeppelin.transient.ERC7579NativeSpender.installingAccount")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant INSTALLING_ACCOUNT_SLOT_BASE =
+        0x1cfe1853780c177807705802cbc50170826da93921842e2b4410c0457d5da600;
+
     mapping(address account => mapping(uint256 installation => mapping(bytes32 keyId => SpendingConfig)))
         private _config;
     mapping(address account => mapping(uint256 installation => mapping(bytes32 keyId => mapping(uint256 start => mapping(uint256 period => uint256)))))
@@ -142,7 +159,7 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         return ERC7579Validator.isModuleType(moduleTypeId) || ERC7579Executor.isModuleType(moduleTypeId);
     }
 
-    /// @dev Returns whether the module's first-install step has completed for `account`.
+    /// @dev Returns whether `account` has session keys registered under the current installation.
     function installed(address account) public view virtual returns (bool) {
         return _installed(account, installation(account));
     }
@@ -206,58 +223,83 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
     /**
      * @dev Sets up the module's initial configuration when installed by an account.
      *
-     * This module is installed under BOTH module types and `onInstall` is called twice. The
-     * shape of `initData` differs between the two calls:
+     * The account installs the module once, as an executor, with
+     * `installModule(MODULE_TYPE_EXECUTOR, module, initData)` where `initData` is:
      *
-     * * **First call** (validator install, `installed(msg.sender) == false`):
-     *   `abi.encode(bytes[] keys, uint48[] starts, uint48[] ends)`.
-     * * **Second call** (executor install, `installed(msg.sender) == true`):
-     *   `abi.encode(bytes[] keys, uint160[] limits, uint48[] renewPeriods)`.
+     * ```solidity
+     * abi.encode(
+     *     abi.encode(bytes[] keys, uint48[] starts, uint48[] ends), // sessionKeysInitData
+     *     abi.encode(bytes[] keys, uint160[] limits, uint48[] renewPeriods) // spendingInitData
+     * )
+     * ```
      *
-     * First call requirements:
+     * This executor-role call installs the validator role by calling back into the account with
+     * `executeFromExecutor(installModule(MODULE_TYPE_VALIDATOR, address(this), sessionKeysInitData))`,
+     * which registers the session keys, and then writes one spending policy per `spendingInitData` row.
+     * The account adds the module to its executors before calling {onInstall}, so the callback is
+     * accepted.
      *
-     * * The `keys` array must be non-empty. Reverts with {ERC7579NativeSpenderEmptyKeys} otherwise.
-     * * Those from the parent's {ERC7579SessionKeys-onInstall} (key registration).
+     * ERC-7579 does not pass the module type to {onInstall}. The module tells the two calls apart with
+     * a per-account transient flag that is only set while the callback runs. A call with the flag set is
+     * the validator-role install. Any other call is treated as the executor-role install, which reverts
+     * if the module is already installed as a validator. As a result, a direct
+     * `installModule(MODULE_TYPE_VALIDATOR, ...)` always reverts.
      *
-     * Second call requirements:
+     * Requirements:
      *
-     * * The account must not have configured the keys yet. Reverts with {ERC7579NativeSpenderAlreadyInstalled} otherwise.
-     * * Those of {_decodeKeyConfigsInitData} for the decoding requirements.
-     * * All arrays must have equal length. Reverts with {ERC7579NativeSpenderMismatchedInitDataLengths} if not.
-     * * The `keys` array must be non-empty. Reverts with {ERC7579NativeSpenderEmptyKeys} otherwise.
-     * * Each key must be registered. Reverts with {ERC7579SessionKeysNonexistentKey} otherwise.
+     * * The module must not be installed as a validator on the account. Reverts with
+     *   {ERC7579NativeSpenderInvalidInstallFlow} otherwise.
+     * * No session keys may be registered under the current installation. Reverts with
+     *   {ERC7579NativeSpenderAlreadyInstalled} otherwise.
+     * * Those of {_decodeInstallData} and {_decodeKeyConfigsInitData} for the decoding requirements.
+     * * The account must accept the callback (the module must be installed as an executor).
+     * * Those from the parent's {ERC7579SessionKeys-onInstall} (key registration). At least one key
+     *   must be registered. Reverts with {ERC7579NativeSpenderEmptyKeys} otherwise.
+     * * All `spendingInitData` arrays must have equal length. Reverts with
+     *   {ERC7579NativeSpenderMismatchedInitDataLengths} if not.
+     * * The `spendingInitData` keys array must be non-empty. Reverts with {ERC7579NativeSpenderEmptyKeys} otherwise.
+     * * Each configured key must be registered by `sessionKeysInitData`. Reverts with
+     *   {ERC7579SessionKeysNonexistentKey} otherwise.
      * * Those from {_setConfig} for the spending config requirements.
      *
-     * Emits {ERC7579SessionKeysERC7913KeySet} on the first call and {ERC7579NativeSpendingConfigSet}
-     * for each entry on the second call.
+     * Emits {ERC7579SessionKeysERC7913KeySet} for each registered key and {ERC7579NativeSpendingConfigSet}
+     * for each spending policy.
      *
      * > [!TIP]
      * > Each start will be set to the current timepoint if it's 0.
      */
     function onInstall(bytes calldata initData) public virtual override(ERC7579SessionKeys, IERC7579Module) {
-        if (!installed(msg.sender)) {
+        if (TransientSlot.tload(TransientSlot.asBoolean(_installingSlot(msg.sender)))) {
+            // Validator role: only reachable through the callback below.
             super.onInstall(initData);
             require(installed(msg.sender), ERC7579NativeSpenderEmptyKeys());
         } else {
-            uint256 installation_ = installation(msg.sender);
-
-            // After the second install, there must be at least one key with non-zero spending config.
-            bytes[] memory keys = _keys(msg.sender, installation_, 0, 1);
+            // Executor role.
             require(
-                _limit(msg.sender, installation_, _keyId(keys[0])) == 0,
-                /* && _renewPeriod(msg.sender, installation_, _keyId(keys[0])) == 0 */ ERC7579NativeSpenderAlreadyInstalled()
+                !IERC7579ModuleConfig(msg.sender).isModuleInstalled(
+                    MODULE_TYPE_VALIDATOR,
+                    address(this),
+                    Calldata.emptyBytes()
+                ),
+                ERC7579NativeSpenderInvalidInstallFlow(msg.sender)
             );
+            uint256 installation_ = installation(msg.sender);
+            require(!_installed(msg.sender, installation_), ERC7579NativeSpenderAlreadyInstalled());
 
+            (bytes calldata sessionKeysInitData, bytes calldata spendingInitData) = _decodeInstallData(initData);
             (
                 bytes[] calldata keys_,
                 uint160[] calldata limits,
                 uint48[] calldata renewPeriods
-            ) = _decodeKeyConfigsInitData(initData);
+            ) = _decodeKeyConfigsInitData(spendingInitData);
             require(
                 keys_.length == limits.length && keys_.length == renewPeriods.length,
                 ERC7579NativeSpenderMismatchedInitDataLengths(keys_.length, limits.length, renewPeriods.length)
             );
             require(keys_.length > 0, ERC7579NativeSpenderEmptyKeys());
+
+            _installValidatorRole(msg.sender, sessionKeysInitData);
+
             for (uint256 i = 0; i < keys_.length; ++i) {
                 require(_isKey(msg.sender, installation_, keys_[i]), ERC7579SessionKeysNonexistentKey(keys_[i]));
                 _setConfig(msg.sender, installation_, keys_[i], limits[i], renewPeriods[i]);
@@ -422,6 +464,49 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
             _config[account][installation_][kId].renewPeriod = 0;
             emit ERC7579NativeSpendingConfigUnset(account, oldKeys[i]);
         }
+    }
+
+    /**
+     * @dev Installs this module as a validator on `account` by calling
+     * `installModule(MODULE_TYPE_VALIDATOR, address(this), sessionKeysInitData)` through
+     * `executeFromExecutor`.
+     *
+     * Sets the transient flag read by {onInstall} for the duration of the callback, so the nested
+     * {onInstall} call is handled as the validator-role install. The flag is cleared afterwards so
+     * later calls in the same transaction are not affected.
+     */
+    function _installValidatorRole(address account, bytes calldata sessionKeysInitData) internal virtual {
+        TransientSlot.tstore(TransientSlot.asBoolean(_installingSlot(account)), true);
+        _execute(
+            account,
+            bytes32(0),
+            Mode.unwrap(
+                ERC7579Utils.encodeMode(
+                    ERC7579Utils.CALLTYPE_SINGLE,
+                    ERC7579Utils.EXECTYPE_DEFAULT,
+                    ModeSelector.wrap(0),
+                    ModePayload.wrap(0)
+                )
+            ),
+            abi.encodePacked(
+                account,
+                uint256(0),
+                abi.encodeCall(
+                    IERC7579ModuleConfig.installModule,
+                    (MODULE_TYPE_VALIDATOR, address(this), sessionKeysInitData)
+                )
+            )
+        );
+        TransientSlot.tstore(TransientSlot.asBoolean(_installingSlot(account)), false);
+    }
+
+    /**
+     * @dev Transient slot of the per-account install flag. Derived like a `mapping(address => bool)` entry
+     * so it stays associated with the account under the ERC-7562 storage rules (e.g. when the module is
+     * installed during validation through ERC-8043 init mode).
+     */
+    function _installingSlot(address account) private pure returns (bytes32) {
+        return SlotDerivation.deriveMapping(INSTALLING_ACCOUNT_SLOT_BASE, account);
     }
 
     /// @dev Internal version of {installed}.
@@ -713,7 +798,26 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
     }
 
     /**
-     * @dev Decodes the initialization data for the second install of the module.
+     * @dev Decodes the install bundle passed to the executor-role {onInstall}.
+     *
+     * The `initData` must be ABI-encoded as `abi.encode(bytes sessionKeysInitData, bytes spendingInitData)`.
+     *
+     * Requirements:
+     *
+     * * `initData` must be at least 128 bytes (2 ABI offsets and 2 lengths).
+     * * All offsets and lengths must point within the `initData` bounds.
+     *
+     * Reverts with {ERC7579NativeSpenderInvalidInitData} if the encoding is invalid.
+     */
+    function _decodeInstallData(
+        bytes calldata initData
+    ) internal pure returns (bytes calldata sessionKeysInitData, bytes calldata spendingInitData) {
+        require(initData.length > 0x7f, ERC7579NativeSpenderInvalidInitData());
+        return (_decodeInstallDataBytes(initData, 0x00), _decodeInstallDataBytes(initData, 0x20));
+    }
+
+    /**
+     * @dev Decodes the spending policies of the install bundle (`spendingInitData`, see {onInstall}).
      *
      * The `initData` must be ABI-encoded as `abi.encode(bytes[] keys, uint160[] limits, uint48[] renewPeriods)`
      * where each array has the same length.
@@ -738,6 +842,15 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
             _decodeKeyConfigsInitDataLimits(initData),
             _decodeKeyConfigsInitDataRenewPeriods(initData)
         );
+    }
+
+    function _decodeInstallDataBytes(bytes calldata initData, uint256 pos) private pure returns (bytes calldata) {
+        uint256 offset = uint256(bytes32(initData[pos:pos + 0x20]));
+        uint256 dataOffset = offset + 0x20;
+        require(dataOffset <= initData.length, ERC7579NativeSpenderInvalidInitData());
+        uint256 length = uint256(bytes32(initData[offset:dataOffset]));
+        require(dataOffset + length <= initData.length, ERC7579NativeSpenderInvalidInitData());
+        return initData[dataOffset:dataOffset + length];
     }
 
     function _decodeKeyConfigsInitDataKeys(bytes calldata initData) private pure returns (bytes[] calldata keys) {

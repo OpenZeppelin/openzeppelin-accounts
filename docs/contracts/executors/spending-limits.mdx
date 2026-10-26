@@ -14,18 +14,29 @@ Both modules are simultaneously **validators and executors**:
 - As a **validator**, the module authorizes a UserOp signed by a registered session key, provided `userOp.callData` is a single call into the module's own `transferFrom` or `batchTransferFrom`. The session key's validity range is packed into `validationData` so the EntryPoint enforces it natively — the validator does not need to re-check the range itself.
 - As an **executor**, the module spends from the account through `executeFromExecutor`, decrementing the per-key, per-period limit before the transfer.
 
-This means the module MUST be installed under **both** module types. The install is a two-step process:
+This means the module MUST be installed under **both** module types. The account does it with a single `installModule(MODULE_TYPE_EXECUTOR, ...)` call, and the module installs its validator role itself:
 
 ```
-First install  (MODULE_TYPE_VALIDATOR): register session keys
-Second install (MODULE_TYPE_EXECUTOR):  write the spending policies
+account.installModule(MODULE_TYPE_EXECUTOR, module, abi.encode(sessionKeysInitData, spendingInitData))
+    └─ module.onInstall (executor role)
+         ├─ account.executeFromExecutor(installModule(MODULE_TYPE_VALIDATOR, module, sessionKeysInitData))
+         │    └─ module.onInstall (validator role): register session keys
+         └─ write the spending policies
 ```
 
-The two installs commit one half of the state each. Once any policy is written, the module is "fully installed" and further `onInstall` calls revert with `AlreadyInstalled`. To change a policy, the account must **uninstall and reinstall** (which bumps the installation nonce and clears all state).
+The account registers the module as an executor before calling `onInstall`, so the callback through `executeFromExecutor` is accepted. ERC-7579 does not tell `onInstall` which module type it is installing, so the module sets a per-account transient flag around the callback: the nested call is handled as the validator-role install, and any other call as the executor-role install.
+
+Installing the module directly as a validator is not supported: it reverts with `InvalidInstallFlow`. The bundle is written once per installation, so calling `onInstall` again also reverts. To change a policy, the account must **uninstall both roles and install again** (which bumps the installation nonce and clears all state).
+
+<Callout>
+  Uninstalling either role bumps the installation nonce, so all keys and policies are reset. Uninstalling one role
+  does not uninstall the other, and the executor install reverts while the validator role is still installed, so
+  uninstall both roles (e.g. in one batch `execute`) before installing the module again.
+</Callout>
 
 <Callout type="warn">
   Session keys are immutable once configured: you cannot change a key's `(limit, renewPeriod)` or add new tokens to an
-  already-installed key. Plan all policies up-front in the second install, or use `addKeysWithConfig` to register fresh
+  already-installed key. Plan all policies up-front in the install bundle, or use `addKeysWithConfig` to register fresh
   session keys with their own policies.
 </Callout>
 
@@ -35,10 +46,10 @@ One session key has one `(limit, renewPeriod)` policy. The session key authorize
 
 ### Installing
 
-Install the module under both module types in the same atomic flow. The two `initData` payloads have different shapes:
+Install the module with a single executor install. The `initData` carries both the session keys and their spending policies:
 
 ```solidity
-import {MODULE_TYPE_VALIDATOR, MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
+import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {ERC7579NativeSpender} from "@openzeppelin-accounts/contracts/modules/executors/ERC7579NativeSpender.sol";
 
 ERC7579NativeSpender nativeSpender = new ERC7579NativeSpender(); // singleton
@@ -62,24 +73,20 @@ uint48[] memory renewPeriods = new uint48[](2);
 renewPeriods[0] = 1 days;
 renewPeriods[1] = 30 days;
 
-// First install: validator role - registers the session keys
-account.installModule(
-    MODULE_TYPE_VALIDATOR,
-    address(nativeSpender),
-    abi.encode(keys, starts, ends)
-);
-
-// Second install: executor role - writes the spending policies
+// Installs the executor role, which installs the validator role (session keys) and writes the spending policies
 account.installModule(
     MODULE_TYPE_EXECUTOR,
     address(nativeSpender),
-    abi.encode(keys, limits, renewPeriods)
+    abi.encode(
+        abi.encode(keys, starts, ends),        // session keys
+        abi.encode(keys, limits, renewPeriods) // spending policies
+    )
 );
 ```
 
 <Callout>
-  Both installs can be bundled into a single transaction via the account's batch `execute`, or executed atomically
-  alongside the first session-key UserOp via [ERC-8043 init mode](/accounts/contracts/erc8043).
+  The install can also be executed atomically alongside the first UserOp via [ERC-8043 init
+  mode](/accounts/contracts/erc8043).
 </Callout>
 
 ### Spending via UserOp (recommended)
@@ -140,7 +147,7 @@ nativeSpender.removeKeys(oldKeys);  // called by the account
 
 ## ERC7579ERC20Spender
 
-Same dual-role design, with an explicit `token` axis. A single session key can hold spending policies for **multiple tokens** by listing it more than once in the executor install bundle.
+Same dual-role design, with an explicit `token` axis. A single session key can hold spending policies for **multiple tokens** by listing it more than once in the spending policies of the install bundle.
 
 ### Installing
 
@@ -157,12 +164,6 @@ uint48[] memory ends   = new uint48[](1);
 starts[0] = 0;
 ends[0]   = uint48(block.timestamp + 30 days);
 
-account.installModule(
-    MODULE_TYPE_VALIDATOR,
-    address(erc20Spender),
-    abi.encode(keys, starts, ends)
-);
-
 // Configure the same key for TWO tokens by repeating it across rows
 bytes[]   memory cfgKeys   = new bytes[](2);
 address[] memory cfgTokens = new address[](2);
@@ -174,7 +175,10 @@ cfgKeys[1]   = keys[0]; cfgTokens[1] = DAI;   cfgLimits[1] = 1000e18;   cfgRenew
 account.installModule(
     MODULE_TYPE_EXECUTOR,
     address(erc20Spender),
-    abi.encode(cfgKeys, cfgTokens, cfgLimits, cfgRenews)
+    abi.encode(
+        abi.encode(keys, starts, ends),                          // session keys
+        abi.encode(cfgKeys, cfgTokens, cfgLimits, cfgRenews)     // spending policies
+    )
 );
 ```
 
@@ -213,15 +217,15 @@ The rationale is that multi-token configs would otherwise require unbounded gas 
 
 - **ERC-1271 disabled.** Both modules deliberately make `isValidSignatureWithSender` return `0xffffffff`. A spending session key cannot be repurposed to sign EIP-2612 permits or other arbitrary off-chain digests on the account's behalf.
 - **Past starts banned.** Both modules override `_addKeys` to reject any `start` timepoint older than `clock()`. This prevents a removed-then-re-registered key from inheriting stale `_spentFor` storage slots written under a previous validity range. Pass `starts[i] == 0` to resolve to the current timepoint.
-- **Reconfiguration banned.** Once a policy is written, neither it nor any sibling policy can be reconfigured under the current installation. Change requires uninstall + reinstall, which bumps the installation nonce and resets state.
+- **Reconfiguration banned.** The install bundle is written once per installation: neither a policy nor any sibling policy can be reconfigured under the current installation. Change requires uninstalling both roles and installing again, which bumps the installation nonce and resets state.
 - **No external `value` channel.** The validator gate rejects user operations where the outer execution carries non-zero `value` to the module, so the only ETH ever leaving the account is the one the module itself sends via `_execute`.
 
 ## Atomic install + first use with ERC-8043
 
-Because both module-type installs are routine `installModule` calls on the account, they compose with [ERC-8043 init mode](/accounts/contracts/erc8043). A dapp can:
+Because the install is a routine `installModule` call on the account, it composes with [ERC-8043 init mode](/accounts/contracts/erc8043). A dapp can:
 
-1. Have the account owner sign an EIP-712 `InitModules` authorization for `[VALIDATOR, EXECUTOR]` with `[validatorInitData, executorInitData]`.
+1. Have the account owner sign an EIP-712 `InitModules` authorization for `[EXECUTOR]` with `[installBundle]`.
 2. Have the session key sign the first `transferFrom`/`batchTransferFrom` user operation.
-3. Bundle both signatures into a single UserOp — the account installs both module roles inline, then validates the session key's signature through the freshly-installed validator.
+3. Bundle both signatures into a single UserOp — the account installs the executor role inline (which installs the validator role), then validates the session key's signature through the freshly-installed validator.
 
 This is the recommended onboarding path for end-user dapps: the owner authorizes once (off-chain), the session key handles everything else (on-chain) for the duration of its validity window.

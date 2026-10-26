@@ -12,25 +12,28 @@ const {
 const {
   MODULE_TYPE_VALIDATOR,
   MODULE_TYPE_EXECUTOR,
+  encodeBatch,
 } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/erc7579');
 const { ValidationRange } = require('../../../../../lib/@openzeppelin-contracts/test/helpers/enums');
 const time = require('../../../../../lib/@openzeppelin-contracts/test/helpers/time');
 
-const { shouldBehaveLikeERC7579Module } = require('../ERC7579Module.behavior');
-
 const SINGLE_MODE = ethers.ZeroHash;
 const BATCH_MODE = '0x01' + '00'.repeat(31);
 
-// First-install bundle: (bytes[] keys, uint48[] starts, uint48[] ends)
+// Session keys half of the install bundle: (bytes[] keys, uint48[] starts, uint48[] ends)
 const encodeKeysInstall = (keys, starts, ends) =>
   ethers.AbiCoder.defaultAbiCoder().encode(['bytes[]', 'uint48[]', 'uint48[]'], [keys, starts, ends]);
 
-// Second-install bundle: (bytes[] keys, address[] tokens, uint160[] limits, uint48[] renewPeriods)
+// Spending policies half of the install bundle: (bytes[] keys, address[] tokens, uint160[] limits, uint48[] renewPeriods)
 const encodeConfigInstall = (keys, tokens, limits, renewPeriods) =>
   ethers.AbiCoder.defaultAbiCoder().encode(
     ['bytes[]', 'address[]', 'uint160[]', 'uint48[]'],
     [keys, tokens, limits, renewPeriods],
   );
+
+// Executor install bundle: (bytes sessionKeysInitData, bytes spendingInitData)
+const encodeInstall = (keysData, configData) =>
+  ethers.AbiCoder.defaultAbiCoder().encode(['bytes', 'bytes'], [keysData, configData]);
 
 const encodeSessionKeySig = (key, keySignature) =>
   ethers.AbiCoder.defaultAbiCoder().encode(['bytes', 'bytes'], [key, keySignature]);
@@ -75,10 +78,9 @@ async function fixture() {
   const keysInstallData = encodeKeysInstall([key], [start], [end]);
   const configInstallData = encodeConfigInstall([key], [token1.target], [limit], [renewPeriod]);
 
-  const installBoth = async (keysData = keysInstallData, configData = configInstallData) => {
-    await mockAccountFromEntrypoint.installModule(MODULE_TYPE_VALIDATOR, mock.target, keysData);
-    await mockAccountFromEntrypoint.installModule(MODULE_TYPE_EXECUTOR, mock.target, configData);
-  };
+  // Single executor install; the module installs its validator role itself
+  const install = (keysData = keysInstallData, configData = configInstallData) =>
+    mockAccountFromEntrypoint.installModule(MODULE_TYPE_EXECUTOR, mock.target, encodeInstall(keysData, configData));
 
   const validatorNonceKey = BigInt(mock.target) << 32n;
 
@@ -106,7 +108,6 @@ async function fixture() {
   };
 
   return {
-    moduleType: MODULE_TYPE_VALIDATOR, // for shouldBehaveLikeERC7579Module
     mock,
     mockAccount,
     mockFromAccount,
@@ -127,8 +128,7 @@ async function fixture() {
     end,
     keysInstallData,
     configInstallData,
-    installData: keysInstallData,
-    installBoth,
+    install,
     buildSpendUserOp,
     entrypointDomain,
   };
@@ -138,8 +138,6 @@ describe('ERC7579ERC20Spender', function () {
   beforeEach(async function () {
     Object.assign(this, await loadFixture(fixture));
   });
-
-  shouldBehaveLikeERC7579Module();
 
   describe('isModuleType', function () {
     it('returns true for both validator and executor', async function () {
@@ -155,7 +153,7 @@ describe('ERC7579ERC20Spender', function () {
 
   describe('isValidSignatureWithSender', function () {
     beforeEach(async function () {
-      await this.installBoth();
+      await this.install();
     });
 
     it('always returns 0xffffffff (ERC-1271 disabled)', async function () {
@@ -173,21 +171,16 @@ describe('ERC7579ERC20Spender', function () {
       await expect(this.mock.tokensCount(this.mockAccount.address)).to.eventually.equal(0n);
     });
 
-    it('installed flips true after validator install; tokensCount stays 0', async function () {
-      await this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_VALIDATOR, this.mock.target, this.keysInstallData);
+    it('installed flips true and tokensCount goes up after install', async function () {
+      await this.install();
       await expect(this.mock.installed(this.mockAccount.address)).to.eventually.be.true;
-      await expect(this.mock.tokensCount(this.mockAccount.address)).to.eventually.equal(0n);
-    });
-
-    it('tokensCount goes up after executor install', async function () {
-      await this.installBoth();
       await expect(this.mock.tokensCount(this.mockAccount.address)).to.eventually.equal(1n);
       const tokens = await this.mock.tokens(this.mockAccount.address, 0, ethers.MaxUint256);
       expect(tokens).to.deep.equal([this.token1.target]);
     });
 
     it('counts unique tokens across multi-token executor install', async function () {
-      await this.installBoth(
+      await this.install(
         encodeKeysInstall([this.key, this.otherKey], [0n, 0n], [0n, 0n]),
         encodeConfigInstall(
           [this.key, this.key, this.otherKey],
@@ -200,7 +193,7 @@ describe('ERC7579ERC20Spender', function () {
     });
 
     it('resets after uninstall', async function () {
-      await this.installBoth();
+      await this.install();
       await this.mockAccountFromEntrypoint.uninstallModule(MODULE_TYPE_VALIDATOR, this.mock.target, '0x');
       await expect(this.mock.installed(this.mockAccount.address)).to.eventually.be.false;
       await expect(this.mock.tokensCount(this.mockAccount.address)).to.eventually.equal(0n);
@@ -208,46 +201,22 @@ describe('ERC7579ERC20Spender', function () {
   });
 
   describe('onInstall', function () {
-    describe('first call (validator install)', function () {
-      it('registers keys via the parent', async function () {
-        await expect(
-          this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_VALIDATOR, this.mock.target, this.keysInstallData),
-        ).to.emit(this.mock, 'ERC7579SessionKeysERC7913KeySet');
-        await expect(this.mock.isKey(this.mockAccount.address, this.key)).to.eventually.be.true;
-      });
-
-      it('reverts when the first install registers zero keys', async function () {
-        const empty = encodeKeysInstall([], [], []);
-        await expect(this.mockFromAccount.onInstall(empty)).to.be.revertedWithCustomError(
-          this.mock,
-          'ERC7579ERC20SpenderEmptyKeys',
-        );
-      });
-
-      it('reverts when a start is in the past', async function () {
-        const bad = encodeKeysInstall([this.key], [1n], [0n]);
-        await expect(this.mockFromAccount.onInstall(bad))
-          .to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpenderInvalidStart')
-          .withArgs(1n);
-      });
-    });
-
-    describe('second call (executor install)', function () {
-      beforeEach(async function () {
-        await this.mockAccountFromEntrypoint.installModule(
-          MODULE_TYPE_VALIDATOR,
-          this.mock.target,
-          this.keysInstallData,
-        );
-      });
-
-      it('writes the (key, token) config and tracks the token', async function () {
-        await expect(
-          this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_EXECUTOR, this.mock.target, this.configInstallData),
-        )
+    describe('executor install', function () {
+      it('installs both roles with a single call', async function () {
+        await expect(this.install())
+          .to.emit(this.mockAccount, 'ModuleInstalled')
+          .withArgs(MODULE_TYPE_VALIDATOR, this.mock.target)
+          .to.emit(this.mockAccount, 'ModuleInstalled')
+          .withArgs(MODULE_TYPE_EXECUTOR, this.mock.target)
+          .to.emit(this.mock, 'ERC7579SessionKeysERC7913KeySet')
           .to.emit(this.mock, 'ERC7579ERC20SpendingConfigSet')
           .withArgs(this.mockAccount.address, this.key, this.token1.target, this.limit, this.renewPeriod);
 
+        await expect(this.mockAccount.isModuleInstalled(MODULE_TYPE_VALIDATOR, this.mock.target, '0x')).to.eventually.be
+          .true;
+        await expect(this.mockAccount.isModuleInstalled(MODULE_TYPE_EXECUTOR, this.mock.target, '0x')).to.eventually.be
+          .true;
+        await expect(this.mock.isKey(this.mockAccount.address, this.key)).to.eventually.be.true;
         await expect(this.mock.limit(this.mockAccount.address, this.key, this.token1.target)).to.eventually.equal(
           this.limit,
         );
@@ -256,10 +225,22 @@ describe('ERC7579ERC20Spender', function () {
         );
       });
 
+      it('reverts when the session keys bundle registers zero keys', async function () {
+        await expect(this.install(encodeKeysInstall([], [], []))).to.be.revertedWithCustomError(
+          this.mock,
+          'ERC7579ERC20SpenderEmptyKeys',
+        );
+      });
+
+      it('reverts when a start is in the past', async function () {
+        await expect(this.install(encodeKeysInstall([this.key], [1n], [0n])))
+          .to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpenderInvalidStart')
+          .withArgs(1n);
+      });
+
       it('allows the same key on multiple tokens (keys repeat across rows)', async function () {
-        await this.mockAccountFromEntrypoint.installModule(
-          MODULE_TYPE_EXECUTOR,
-          this.mock.target,
+        await this.install(
+          this.keysInstallData,
           encodeConfigInstall(
             [this.key, this.key],
             [this.token1.target, this.token2.target],
@@ -282,69 +263,178 @@ describe('ERC7579ERC20Spender', function () {
           [this.limit],
           [this.renewPeriod],
         );
-        await expect(
-          this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_EXECUTOR, this.mock.target, bad),
-        ).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpenderMismatchedInitDataLengths');
+        await expect(this.install(this.keysInstallData, bad)).to.be.revertedWithCustomError(
+          this.mock,
+          'ERC7579ERC20SpenderMismatchedInitDataLengths',
+        );
       });
 
       it('reverts when keys array is empty', async function () {
-        const bad = encodeConfigInstall([], [], [], []);
         await expect(
-          this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_EXECUTOR, this.mock.target, bad),
+          this.install(this.keysInstallData, encodeConfigInstall([], [], [], [])),
         ).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpenderEmptyKeys');
       });
 
       it('reverts when a key is not registered', async function () {
         const bad = encodeConfigInstall([this.otherKey], [this.token1.target], [this.limit], [this.renewPeriod]);
-        await expect(this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_EXECUTOR, this.mock.target, bad))
+        await expect(this.install(this.keysInstallData, bad))
           .to.be.revertedWithCustomError(this.mock, 'ERC7579SessionKeysNonexistentKey')
           .withArgs(this.otherKey);
       });
 
       it('reverts on zero limit', async function () {
         const bad = encodeConfigInstall([this.key], [this.token1.target], [0n], [this.renewPeriod]);
-        await expect(
-          this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_EXECUTOR, this.mock.target, bad),
-        ).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpenderInvalidLimit');
+        await expect(this.install(this.keysInstallData, bad)).to.be.revertedWithCustomError(
+          this.mock,
+          'ERC7579ERC20SpenderInvalidLimit',
+        );
       });
 
       it('reverts on zero renewPeriod', async function () {
         const bad = encodeConfigInstall([this.key], [this.token1.target], [this.limit], [0n]);
-        await expect(
-          this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_EXECUTOR, this.mock.target, bad),
-        ).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpenderInvalidRenewPeriod');
+        await expect(this.install(this.keysInstallData, bad)).to.be.revertedWithCustomError(
+          this.mock,
+          'ERC7579ERC20SpenderInvalidRenewPeriod',
+        );
       });
 
       it('reverts when token is not a contract', async function () {
         const bad = encodeConfigInstall([this.key], [this.other.address], [this.limit], [this.renewPeriod]);
-        await expect(this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_EXECUTOR, this.mock.target, bad))
+        await expect(this.install(this.keysInstallData, bad))
           .to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpenderInvalidToken')
           .withArgs(this.other.address);
       });
 
-      it('reverts on a too-short config bundle', async function () {
-        const short = '0x' + '00'.repeat(0xff); // 255 bytes
+      it('reverts on a too-short install bundle', async function () {
+        const short = '0x' + '00'.repeat(0x7f); // 127 bytes
         await expect(
           this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_EXECUTOR, this.mock.target, short),
         ).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpenderInvalidInitData');
       });
+
+      it('reverts on a too-short spending policies bundle', async function () {
+        const short = '0x' + '00'.repeat(0xff); // 255 bytes
+        await expect(this.install(this.keysInstallData, short)).to.be.revertedWithCustomError(
+          this.mock,
+          'ERC7579ERC20SpenderInvalidInitData',
+        );
+      });
+
+      it('reverts when keys are already registered under the current installation', async function () {
+        await this.mockFromAccount.addKeys([this.key], [0n], [0n]);
+        await expect(this.install()).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpenderAlreadyInstalled');
+      });
     });
 
-    describe('third call (reconfiguration ban)', function () {
-      it('reverts with AlreadyInstalled when onInstall is invoked after the executor install', async function () {
-        await this.installBoth();
+    describe('direct validator install', function () {
+      it('reverts with the install bundle', async function () {
         await expect(
-          this.mockFromAccount.onInstall(
-            encodeConfigInstall([this.key], [this.token2.target], [this.limit], [this.renewPeriod]),
+          this.mockAccountFromEntrypoint.installModule(
+            MODULE_TYPE_VALIDATOR,
+            this.mock.target,
+            encodeInstall(this.keysInstallData, this.configInstallData),
           ),
-        ).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpenderAlreadyInstalled');
+        ).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpenderInvalidInstallFlow');
       });
+
+      it('reverts with a session keys bundle', async function () {
+        await expect(
+          this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_VALIDATOR, this.mock.target, this.keysInstallData),
+        ).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpenderInvalidInstallFlow');
+      });
+
+      it('reverts when the executor role is installed', async function () {
+        await this.install();
+        await this.mockAccountFromEntrypoint.uninstallModule(MODULE_TYPE_VALIDATOR, this.mock.target, '0x');
+        await expect(
+          this.mockAccountFromEntrypoint.installModule(MODULE_TYPE_VALIDATOR, this.mock.target, this.keysInstallData),
+        ).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpenderInvalidInstallFlow');
+      });
+
+      it('reverts later in the same transaction as the executor install', async function () {
+        const installCall = this.mockAccount.interface.encodeFunctionData('installModule', [
+          MODULE_TYPE_EXECUTOR,
+          this.mock.target,
+          encodeInstall(this.keysInstallData, this.configInstallData),
+        ]);
+        const uninstallCall = this.mockAccount.interface.encodeFunctionData('uninstallModule', [
+          MODULE_TYPE_VALIDATOR,
+          this.mock.target,
+          '0x',
+        ]);
+        const directCall = this.mockAccount.interface.encodeFunctionData('installModule', [
+          MODULE_TYPE_VALIDATOR,
+          this.mock.target,
+          this.keysInstallData,
+        ]);
+        await expect(
+          this.mockAccountFromEntrypoint.execute(
+            BATCH_MODE,
+            encodeBatch(
+              [this.mockAccount.target, 0n, installCall],
+              [this.mockAccount.target, 0n, uninstallCall],
+              [this.mockAccount.target, 0n, directCall],
+            ),
+          ),
+        ).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpenderInvalidInstallFlow');
+      });
+    });
+
+    describe('reconfiguration ban', function () {
+      it('reverts on a second executor install', async function () {
+        await this.install();
+        await expect(this.install()).to.be.revertedWithCustomError(this.mockAccount, 'ERC7579AlreadyInstalledModule');
+      });
+
+      it('reverts when onInstall is invoked after the install', async function () {
+        await this.install();
+        const config = encodeConfigInstall([this.key], [this.token2.target], [this.limit], [this.renewPeriod]);
+        await expect(
+          this.mockFromAccount.onInstall(encodeInstall(encodeKeysInstall([this.otherKey], [0n], [0n]), config)),
+        ).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpenderInvalidInstallFlow');
+        await expect(this.mockFromAccount.onInstall(config)).to.be.revertedWithCustomError(
+          this.mock,
+          'ERC7579ERC20SpenderInvalidInstallFlow',
+        );
+        await expect(this.mock.tokensCount(this.mockAccount.address)).to.eventually.equal(1n);
+      });
+    });
+  });
+
+  describe('onUninstall', function () {
+    beforeEach(async function () {
+      await this.install();
+    });
+
+    it('increments the installation nonce for either role', async function () {
+      const before = await this.mock.installation(this.mockAccount.address);
+      await this.mockAccountFromEntrypoint.uninstallModule(MODULE_TYPE_EXECUTOR, this.mock.target, '0x');
+      await expect(this.mock.installation(this.mockAccount.address)).to.eventually.equal(before + 1n);
+      await this.mockAccountFromEntrypoint.uninstallModule(MODULE_TYPE_VALIDATOR, this.mock.target, '0x');
+      await expect(this.mock.installation(this.mockAccount.address)).to.eventually.equal(before + 2n);
+    });
+
+    it('requires uninstalling both roles before installing again', async function () {
+      await this.mockAccountFromEntrypoint.uninstallModule(MODULE_TYPE_EXECUTOR, this.mock.target, '0x');
+      await expect(this.mockAccount.isModuleInstalled(MODULE_TYPE_VALIDATOR, this.mock.target, '0x')).to.eventually.be
+        .true;
+      await expect(this.install()).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpenderInvalidInstallFlow');
+
+      await this.mockAccountFromEntrypoint.uninstallModule(MODULE_TYPE_VALIDATOR, this.mock.target, '0x');
+      await this.install(
+        this.keysInstallData,
+        encodeConfigInstall([this.key], [this.token2.target], [this.limit], [this.renewPeriod]),
+      );
+      await expect(this.mock.limit(this.mockAccount.address, this.key, this.token1.target)).to.eventually.equal(0n);
+      await expect(this.mock.limit(this.mockAccount.address, this.key, this.token2.target)).to.eventually.equal(
+        this.limit,
+      );
     });
   });
 
   describe('addKeysWithConfig', function () {
     beforeEach(async function () {
-      await this.installBoth();
+      await this.install();
     });
 
     it('adds a new key with one (token, limit, renewPeriod) config', async function () {
@@ -400,7 +490,7 @@ describe('ERC7579ERC20Spender', function () {
   describe('removeKeys', function () {
     beforeEach(async function () {
       // Install with `key` for both tokens
-      await this.installBoth(
+      await this.install(
         this.keysInstallData,
         encodeConfigInstall(
           [this.key, this.key],
@@ -466,7 +556,7 @@ describe('ERC7579ERC20Spender', function () {
 
   describe('transferFrom (EOA self-call)', function () {
     beforeEach(async function () {
-      await this.installBoth();
+      await this.install();
     });
 
     it('transfers tokens when called by the EOA holder', async function () {
@@ -543,7 +633,7 @@ describe('ERC7579ERC20Spender', function () {
 
   describe('batchTransferFrom (EOA self-call)', function () {
     beforeEach(async function () {
-      await this.installBoth();
+      await this.install();
     });
 
     it('transfers to multiple recipients', async function () {
@@ -592,7 +682,7 @@ describe('ERC7579ERC20Spender', function () {
 
   describe('UserOp flow (validator + executor)', function () {
     beforeEach(async function () {
-      await this.installBoth();
+      await this.install();
     });
 
     it('processes a transferFrom UserOp end-to-end', async function () {
@@ -628,7 +718,7 @@ describe('ERC7579ERC20Spender', function () {
 
   describe('_validateUserOp (callData gate)', function () {
     beforeEach(async function () {
-      await this.installBoth();
+      await this.install();
     });
 
     it('packs success with validity range for a valid UserOp', async function () {

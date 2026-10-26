@@ -14,8 +14,9 @@ import {ERC4337Utils, IEntryPointExtra} from "@openzeppelin/contracts/account/ut
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/IERC4337.sol";
 import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-AccountERC7579.sol";
-import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
+import {MODULE_TYPE_VALIDATOR, MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {ERC7579ValidatorMock} from "../../src/mocks/modules/ERC7579Mock.sol";
+import {ERC7579NativeSpender} from "../../src/modules/executors/ERC7579NativeSpender.sol";
 import {CallReceiverMock} from "../../src/mocks/CallReceiverMock.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
@@ -335,6 +336,104 @@ contract AccountERC8043UpgradeableTest is Test {
         assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
         assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(validator2), bytes("")));
         assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(validator3), bytes("")));
+    }
+
+    function testInitModeInstallsSpender(address bundler) public {
+        vm.assume(bundler.code.length == 0);
+
+        ERC7579NativeSpender spender = new ERC7579NativeSpender();
+        address sessionKey = makeAddr("session-key");
+        address recipient = makeAddr("recipient");
+        bytes memory key = abi.encodePacked(sessionKey);
+
+        // The owner only authorizes the executor install. The spender installs its validator role itself
+        // during validation. The operation is validated by the initial validator and spends from the account
+        // through the freshly installed executor role.
+        uint256 nonce = _prepareNonce(address(_initialValidator));
+        bytes memory initCode = _buildSpenderInitModeInitCode(nonce, address(spender), _spenderBundle(key));
+
+        PackedUserOperation memory userOp = _prepareUserOperation(nonce, initCode);
+        userOp.accountGasLimits = bytes32(abi.encodePacked(uint128(1_000_000), uint128(300_000)));
+        userOp.callData = abi.encodeCall(
+            AccountERC7579.execute,
+            (
+                Mode.unwrap(
+                    ERC7579Utils.CALLTYPE_SINGLE.encodeMode(
+                        ERC7579Utils.EXECTYPE_DEFAULT,
+                        ModeSelector.wrap(0x00000000),
+                        ModePayload.wrap(0x00000000)
+                    )
+                ),
+                abi.encodePacked(
+                    address(spender),
+                    uint256(0),
+                    abi.encodeCall(ERC7579NativeSpender.transferFrom, (address(_account), key, recipient, 0.4 ether))
+                )
+            )
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
+            _initialValidatorPrivateKey,
+            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp)
+        );
+        userOp.signature = abi.encodePacked(r, s, v);
+
+        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
+        ops[0] = userOp;
+        vm.prank(bundler, bundler);
+        ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
+
+        assertTrue(_account.isModuleInstalled(MODULE_TYPE_EXECUTOR, address(spender), bytes("")));
+        assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(spender), bytes("")));
+        assertEq(recipient.balance, 0.4 ether);
+        assertEq(spender.spent(address(_account), key, 0), 0.4 ether);
+    }
+
+    /// @dev Spender install bundle: abi.encode(sessionKeysInitData, spendingInitData)
+    function _spenderBundle(bytes memory key) private pure returns (bytes memory) {
+        bytes[] memory keys = new bytes[](1);
+        keys[0] = key;
+        uint48[] memory zero = new uint48[](1);
+        uint160[] memory limits = new uint160[](1);
+        limits[0] = 1 ether;
+        uint48[] memory renewPeriods = new uint48[](1);
+        renewPeriods[0] = 1 days;
+        return abi.encode(abi.encode(keys, zero, zero), abi.encode(keys, limits, renewPeriods));
+    }
+
+    function _buildSpenderInitModeInitCode(
+        uint256 nonce,
+        address spender,
+        bytes memory bundle
+    ) private view returns (bytes memory) {
+        uint256[] memory moduleTypeIds = new uint256[](1);
+        moduleTypeIds[0] = MODULE_TYPE_EXECUTOR;
+        address[] memory modules = new address[](1);
+        modules[0] = spender;
+        bytes[] memory initDatas = new bytes[](1);
+        initDatas[0] = bundle;
+        bytes32[] memory initDataHashes = new bytes32[](1);
+        initDataHashes[0] = keccak256(bundle);
+
+        bytes32 typedDataHash = MessageHashUtils.toTypedDataHash(
+            _accountDomainSeparator,
+            keccak256(
+                abi.encode(
+                    INIT_MODULES_TYPEHASH,
+                    keccak256(abi.encodePacked(moduleTypeIds)),
+                    keccak256(abi.encodePacked(modules)),
+                    keccak256(abi.encodePacked(initDataHashes)),
+                    nonce
+                )
+            )
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(_initialValidatorPrivateKey, typedDataHash);
+        bytes memory installationSignature = abi.encodePacked(address(_initialValidator), abi.encodePacked(r, s, v));
+
+        return
+            abi.encodePacked(
+                INIT_MODE_MAGIC_VALUE,
+                abi.encode(moduleTypeIds, modules, initDatas, installationSignature)
+            );
     }
 
     function _buildMultiModuleInitModeInitCode(

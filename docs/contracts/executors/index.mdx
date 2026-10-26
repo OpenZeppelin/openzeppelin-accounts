@@ -414,9 +414,9 @@ import {ERC7579NativeSpender} from "@openzeppelin-accounts/contracts/modules/exe
 
 ERC7579NativeSpender nativeSpender = new ERC7579NativeSpender();
 
-// initData: abi.encode(spenders, starts, limits, renewPeriods)
+// A single executor install also installs the validator role (session keys). See Spending Limits.
 // starts: pass 0 to start immediately; all arrays must be equal length
-bytes memory initData = abi.encode(spenders, starts, limits, renewPeriods);
+bytes memory initData = abi.encode(abi.encode(keys, starts, ends), abi.encode(keys, limits, renewPeriods));
 account.installModule(MODULE_TYPE_EXECUTOR, address(nativeSpender), initData);
 ```
 
@@ -448,8 +448,11 @@ import {ERC7579ERC20Spender} from "@openzeppelin-accounts/contracts/modules/exec
 
 ERC7579ERC20Spender erc20Spender = new ERC7579ERC20Spender();
 
-// initData: abi.encode(tokens, spenders, starts, limits, renewPeriods)
-bytes memory initData = abi.encode(tokens, spenders, starts, limits, renewPeriods);
+// A single executor install also installs the validator role (session keys). See Spending Limits.
+bytes memory initData = abi.encode(
+    abi.encode(keys, starts, ends),
+    abi.encode(policyKeys, tokens, limits, renewPeriods)
+);
 account.installModule(MODULE_TYPE_EXECUTOR, address(erc20Spender), initData);
 ```
 

@@ -118,7 +118,7 @@ UserOp (signed by session key)
 
 `ERC7579NativeSpender` and `ERC7579ERC20Spender` are the canonical implementations of this pattern. They:
 
-- Install under BOTH `MODULE_TYPE_VALIDATOR` and `MODULE_TYPE_EXECUTOR`, in that order.
+- Install under BOTH `MODULE_TYPE_VALIDATOR` and `MODULE_TYPE_EXECUTOR` with a single `installModule(MODULE_TYPE_EXECUTOR, ...)` call: the executor-role `onInstall` installs the validator role through `executeFromExecutor`.
 - Override `_validateUserOp` to require that `userOp.callData` is exactly `IERC7579Execution.execute(SINGLE, encodeSingle(address(this), 0, transferFromOrBatchTransferFrom(...)))`.
 - Disable ERC-1271 signing (`isValidSignatureWithSender` returns `0xffffffff`) so a spending session key cannot be repurposed to sign arbitrary off-chain digests.
 

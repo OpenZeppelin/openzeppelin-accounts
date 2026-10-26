@@ -152,49 +152,115 @@ contract ERC7579ERC20SpenderTest is Test {
         }
     }
 
-    function testThirdInstallReverts() public {
+    function testSingleCallInstallsBothRoles() public {
         _installSpender(uint48(block.timestamp), address(_token1), 1 ether, 1 days);
 
-        bytes[] memory keys = new bytes[](1);
-        keys[0] = _key;
-        address[] memory tokens = new address[](1);
-        tokens[0] = address(_token2);
-        uint160[] memory limits = new uint160[](1);
-        limits[0] = 1 ether;
-        uint48[] memory renewPeriods = new uint48[](1);
-        renewPeriods[0] = 1 days;
-        bytes memory configBundle = abi.encode(keys, tokens, limits, renewPeriods);
-
-        vm.prank(address(_account));
-        vm.expectRevert(abi.encodeWithSignature("ERC7579ERC20SpenderAlreadyInstalled()"));
-        _spender.onInstall(configBundle);
+        assertTrue(_account.isModuleInstalled(MODULE_TYPE_EXECUTOR, address(_spender), ""));
+        assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_spender), ""));
+        assertTrue(_spender.installed(address(_account)));
+        assertTrue(_spender.isKey(address(_account), _key));
+        assertEq(_spender.limit(address(_account), _key, address(_token1)), 1 ether);
     }
 
-    function testSecondInstallWithEmptyKeysReverts() public {
-        bytes[] memory keysOne = new bytes[](1);
-        keysOne[0] = _key;
-        uint48[] memory startsOne = new uint48[](1);
-        startsOne[0] = uint48(block.timestamp);
-        uint48[] memory endsOne = new uint48[](1);
-        endsOne[0] = 0;
+    function testDirectValidatorInstallReverts() public {
+        _initializeWithoutSpender();
 
-        uint256[] memory moduleTypeIds = new uint256[](1);
-        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
-        address[] memory modules = new address[](1);
-        modules[0] = address(_spender);
-        bytes[] memory initDatas = new bytes[](1);
-        initDatas[0] = abi.encode(keysOne, startsOne, endsOne);
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        vm.prank(address(_account));
+        vm.expectPartialRevert(ERC7579ERC20Spender.ERC7579ERC20SpenderInvalidInstallFlow.selector);
+        _account.installModule(MODULE_TYPE_VALIDATOR, address(_spender), _bundle(address(_token1), 1 ether, 1 days));
 
+        vm.prank(address(_account));
+        vm.expectPartialRevert(ERC7579ERC20Spender.ERC7579ERC20SpenderInvalidInstallFlow.selector);
+        _account.installModule(MODULE_TYPE_VALIDATOR, address(_spender), _keysInitData(uint48(block.timestamp)));
+    }
+
+    function testDirectValidatorInstallRevertsWithExecutorInstalled() public {
+        _installSpender(uint48(block.timestamp), address(_token1), 1 ether, 1 days);
+
+        vm.prank(address(_account));
+        _account.uninstallModule(MODULE_TYPE_VALIDATOR, address(_spender), "");
+
+        vm.prank(address(_account));
+        vm.expectPartialRevert(ERC7579ERC20Spender.ERC7579ERC20SpenderInvalidInstallFlow.selector);
+        _account.installModule(MODULE_TYPE_VALIDATOR, address(_spender), _keysInitData(uint48(block.timestamp)));
+    }
+
+    function testReinstallReverts() public {
+        _installSpender(uint48(block.timestamp), address(_token1), 1 ether, 1 days);
+
+        vm.prank(address(_account));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ERC7579Utils.ERC7579AlreadyInstalledModule.selector,
+                MODULE_TYPE_EXECUTOR,
+                address(_spender)
+            )
+        );
+        _account.installModule(MODULE_TYPE_EXECUTOR, address(_spender), _bundle(address(_token2), 1 ether, 1 days));
+    }
+
+    function testReconfigurationThroughOnInstallReverts() public {
+        _installSpender(uint48(block.timestamp), address(_token1), 1 ether, 1 days);
+
+        vm.prank(address(_account));
+        vm.expectPartialRevert(ERC7579ERC20Spender.ERC7579ERC20SpenderInvalidInstallFlow.selector);
+        _spender.onInstall(_bundle(address(_token2), 1 ether, 1 days));
+
+        // The old executor-schema bundle is rejected as well.
+        (, bytes memory spendingInitData) = abi.decode(_bundle(address(_token2), 1 ether, 1 days), (bytes, bytes));
+        vm.prank(address(_account));
+        vm.expectPartialRevert(ERC7579ERC20Spender.ERC7579ERC20SpenderInvalidInstallFlow.selector);
+        _spender.onInstall(spendingInitData);
+
+        assertEq(_spender.limit(address(_account), _key, address(_token2)), 0);
+        assertEq(_spender.tokensCount(address(_account)), 1);
+    }
+
+    function testInstallWithEmptySessionKeysReverts() public {
+        bytes[] memory emptyKeys = new bytes[](0);
+        uint48[] memory empty48 = new uint48[](0);
+        (, bytes memory spendingInitData) = abi.decode(_bundle(address(_token1), 1 ether, 1 days), (bytes, bytes));
+
+        vm.expectRevert(abi.encodeWithSignature("ERC7579ERC20SpenderEmptyKeys()"));
+        _installExecutor(abi.encode(abi.encode(emptyKeys, empty48, empty48), spendingInitData));
+    }
+
+    function testInstallWithEmptySpendingPoliciesReverts() public {
         bytes[] memory emptyKeys = new bytes[](0);
         address[] memory emptyTokens = new address[](0);
         uint160[] memory emptyLimits = new uint160[](0);
         uint48[] memory emptyRenewPeriods = new uint48[](0);
         bytes memory empty = abi.encode(emptyKeys, emptyTokens, emptyLimits, emptyRenewPeriods);
 
-        vm.prank(address(_account));
         vm.expectRevert(abi.encodeWithSignature("ERC7579ERC20SpenderEmptyKeys()"));
-        _account.installModule(MODULE_TYPE_EXECUTOR, address(_spender), empty);
+        _installExecutor(abi.encode(_keysInitData(uint48(block.timestamp)), empty));
+    }
+
+    function testInstallWithMalformedBundleReverts() public {
+        vm.expectRevert(abi.encodeWithSignature("ERC7579ERC20SpenderInvalidInitData()"));
+        _installExecutor(new bytes(0x7f));
+    }
+
+    function testUninstallExecutorOnlyBlocksReinstall() public {
+        _installSpender(uint48(block.timestamp), address(_token1), 1 ether, 1 days);
+        uint256 nonceBefore = _spender.installation(address(_account));
+
+        vm.prank(address(_account));
+        _account.uninstallModule(MODULE_TYPE_EXECUTOR, address(_spender), "");
+        assertEq(_spender.installation(address(_account)), nonceBefore + 1);
+        assertEq(_spender.tokensCount(address(_account)), 0);
+        assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_spender), ""));
+
+        vm.prank(address(_account));
+        vm.expectPartialRevert(ERC7579ERC20Spender.ERC7579ERC20SpenderInvalidInstallFlow.selector);
+        _account.installModule(MODULE_TYPE_EXECUTOR, address(_spender), _bundle(address(_token2), 2 ether, 2 days));
+
+        vm.prank(address(_account));
+        _account.uninstallModule(MODULE_TYPE_VALIDATOR, address(_spender), "");
+        vm.prank(address(_account));
+        _account.installModule(MODULE_TYPE_EXECUTOR, address(_spender), _bundle(address(_token2), 2 ether, 2 days));
+        assertEq(_spender.limit(address(_account), _key, address(_token1)), 0);
+        assertEq(_spender.limit(address(_account), _key, address(_token2)), 2 ether);
     }
 
     function testAddKeysWithPastStartReverts() public {
@@ -225,7 +291,7 @@ contract ERC7579ERC20SpenderTest is Test {
     }
 
     function testMultipleTokensPerKey() public {
-        // Validator install registers `_key`
+        // Session keys bundle registers `_key`
         bytes[] memory keys = new bytes[](1);
         keys[0] = _key;
         uint48[] memory starts = new uint48[](1);
@@ -233,7 +299,7 @@ contract ERC7579ERC20SpenderTest is Test {
         uint48[] memory ends = new uint48[](1);
         ends[0] = 0;
 
-        // Executor install configures TWO tokens for the same key
+        // Spending policies configure TWO tokens for the same key
         bytes[] memory configKeys = new bytes[](2);
         configKeys[0] = _key;
         configKeys[1] = _key;
@@ -247,16 +313,12 @@ contract ERC7579ERC20SpenderTest is Test {
         configRenewPeriods[0] = 1 days;
         configRenewPeriods[1] = 1 days;
 
-        uint256[] memory moduleTypeIds = new uint256[](2);
-        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
-        moduleTypeIds[1] = MODULE_TYPE_EXECUTOR;
-        address[] memory modules = new address[](2);
-        modules[0] = address(_spender);
-        modules[1] = address(_spender);
-        bytes[] memory initDatas = new bytes[](2);
-        initDatas[0] = abi.encode(keys, starts, ends);
-        initDatas[1] = abi.encode(configKeys, configTokens, configLimits, configRenewPeriods);
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        _installExecutor(
+            abi.encode(
+                abi.encode(keys, starts, ends),
+                abi.encode(configKeys, configTokens, configLimits, configRenewPeriods)
+            )
+        );
 
         assertEq(_spender.tokensCount(address(_account)), 2);
         assertEq(_spender.limit(address(_account), _key, address(_token1)), 1 ether);
@@ -311,31 +373,50 @@ contract ERC7579ERC20SpenderTest is Test {
     // ----- Helpers -----
 
     function _installSpender(uint48 from, address token, uint160 limit, uint48 renewPeriod) private {
+        (, bytes memory spendingInitData) = abi.decode(_bundle(token, limit, renewPeriod), (bytes, bytes));
+        _installExecutor(abi.encode(_keysInitData(from), spendingInitData));
+    }
+
+    /// @dev Initializes the account with the spender as its only module, installed as an executor.
+    function _installExecutor(bytes memory bundle) private {
+        uint256[] memory moduleTypeIds = new uint256[](1);
+        moduleTypeIds[0] = MODULE_TYPE_EXECUTOR;
+        address[] memory modules = new address[](1);
+        modules[0] = address(_spender);
+        bytes[] memory initDatas = new bytes[](1);
+        initDatas[0] = bundle;
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+    }
+
+    /// @dev Initializes the account with an unrelated executor so the spender can be installed afterwards.
+    function _initializeWithoutSpender() private {
+        uint256[] memory moduleTypeIds = new uint256[](1);
+        moduleTypeIds[0] = MODULE_TYPE_EXECUTOR;
+        address[] memory modules = new address[](1);
+        modules[0] = address(new ERC7579ERC20Spender());
+        bytes[] memory initDatas = new bytes[](1);
+        initDatas[0] = _bundle(address(_token1), 1 ether, 1 days);
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+    }
+
+    function _keysInitData(uint48 from) private view returns (bytes memory) {
         bytes[] memory keys = new bytes[](1);
         keys[0] = _key;
         uint48[] memory starts = new uint48[](1);
         starts[0] = from;
         uint48[] memory ends = new uint48[](1);
-        ends[0] = 0;
+        return abi.encode(keys, starts, ends);
+    }
 
-        bytes[] memory configKeys = new bytes[](1);
-        configKeys[0] = _key;
-        address[] memory configTokens = new address[](1);
-        configTokens[0] = token;
-        uint160[] memory configLimits = new uint160[](1);
-        configLimits[0] = limit;
-        uint48[] memory configRenewPeriods = new uint48[](1);
-        configRenewPeriods[0] = renewPeriod;
-
-        uint256[] memory moduleTypeIds = new uint256[](2);
-        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
-        moduleTypeIds[1] = MODULE_TYPE_EXECUTOR;
-        address[] memory modules = new address[](2);
-        modules[0] = address(_spender);
-        modules[1] = address(_spender);
-        bytes[] memory initDatas = new bytes[](2);
-        initDatas[0] = abi.encode(keys, starts, ends);
-        initDatas[1] = abi.encode(configKeys, configTokens, configLimits, configRenewPeriods);
-        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+    function _bundle(address token, uint160 limit, uint48 renewPeriod) private view returns (bytes memory) {
+        bytes[] memory keys = new bytes[](1);
+        keys[0] = _key;
+        address[] memory tokens = new address[](1);
+        tokens[0] = token;
+        uint160[] memory limits = new uint160[](1);
+        limits[0] = limit;
+        uint48[] memory renewPeriods = new uint48[](1);
+        renewPeriods[0] = renewPeriod;
+        return abi.encode(_keysInitData(0), abi.encode(keys, tokens, limits, renewPeriods));
     }
 }

@@ -1,3 +1,7 @@
+## 26-10-2026
+
+- `ERC7579NativeSpender` and `ERC7579ERC20Spender`: Installed with a single `installModule(MODULE_TYPE_EXECUTOR, module, initData)` call. The executor-role `onInstall` installs the validator role through `executeFromExecutor` and then writes the spending policies. `initData` is `abi.encode(bytes sessionKeysInitData, bytes spendingInitData)`, where `sessionKeysInitData` is `abi.encode(bytes[] keys, uint48[] starts, uint48[] ends)` and `spendingInitData` is the previous executor bundle. Installing the module directly as a validator reverts with `ERC7579NativeSpenderInvalidInstallFlow` / `ERC7579ERC20SpenderInvalidInstallFlow`, and so does the executor install while the validator role is still installed. **Breaking change** to the install data layout.
+
 ## 22-10-2026
 
 - Pin OpenZeppelin Contracts and OpenZeppelin Contracts Upgradeable to `v5.7.0`. `EIP712` domain names and versions must now fit in 31 bytes, and `ERC1967Clones` proxies use updated bytecode, which changes `OpenAccountFactory` account addresses.
