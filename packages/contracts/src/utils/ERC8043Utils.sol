@@ -115,13 +115,13 @@ library ERC8043Utils {
         bytes calldata data
     ) private pure returns (uint256[] calldata moduleTypeIds) {
         uint256 moduleTypeIdsOffset = uint256(bytes32(data[0x00:0x20]));
-        if (moduleTypeIdsOffset < 0x80 || data.length < moduleTypeIdsOffset + 0x20) {
+        if (moduleTypeIdsOffset < 0x80 || moduleTypeIdsOffset > data.length - 0x20) {
             return _emptyUint256Array();
         }
         uint256 moduleTypeIdsLength = uint256(bytes32(data[moduleTypeIdsOffset:moduleTypeIdsOffset + 0x20]));
 
         // Bounds check fixed-size array (uint256[])
-        if (data.length < moduleTypeIdsOffset + 0x20 + moduleTypeIdsLength * 0x20) {
+        if (moduleTypeIdsLength > (data.length - moduleTypeIdsOffset - 0x20) / 0x20) {
             return _emptyUint256Array();
         }
 
@@ -136,13 +136,13 @@ library ERC8043Utils {
     /// @dev Attempts to decode modules from `userOp.initCode[4:]`. Returns an empty address[] calldata slice if the array is invalid.
     function _tryDecodeInstallModulesModules(bytes calldata data) private pure returns (address[] calldata modules) {
         uint256 modulesOffset = uint256(bytes32(data[0x20:0x40]));
-        if (modulesOffset < 0x80 || data.length < modulesOffset + 0x20) {
+        if (modulesOffset < 0x80 || modulesOffset > data.length - 0x20) {
             return _emptyAddressArray();
         }
         uint256 modulesLength = uint256(bytes32(data[modulesOffset:modulesOffset + 0x20]));
 
         // Bounds check fixed-size array (address[])
-        if (data.length < modulesOffset + 0x20 + modulesLength * 0x20) {
+        if (modulesLength > (data.length - modulesOffset - 0x20) / 0x20) {
             return _emptyAddressArray();
         }
 
@@ -156,7 +156,7 @@ library ERC8043Utils {
     /// @dev Attempts to decode init datas from `userOp.initCode[4:]`. Returns an empty bytes[] calldata slice if the array is invalid.
     function _tryDecodeInstallModulesInitDatas(bytes calldata data) private pure returns (bytes[] calldata initDatas) {
         uint256 initDatasOffset = uint256(bytes32(data[0x40:0x60]));
-        if (initDatasOffset < 0x80 || data.length < initDatasOffset + 0x20) {
+        if (initDatasOffset < 0x80 || initDatasOffset > data.length - 0x20) {
             return _emptyBytesArray();
         }
         uint256 initDatasLength = uint256(bytes32(data[initDatasOffset:initDatasOffset + 0x20]));
@@ -172,11 +172,11 @@ library ERC8043Utils {
         bytes calldata data
     ) private pure returns (bytes calldata installationSignature) {
         uint256 installationSigOffset = uint256(bytes32(data[0x60:0x80]));
-        if (installationSigOffset < 0x80 || data.length < installationSigOffset + 0x20) {
+        if (installationSigOffset < 0x80 || installationSigOffset > data.length - 0x20) {
             return Calldata.emptyBytes();
         }
         uint256 installationSigLength = uint256(bytes32(data[installationSigOffset:installationSigOffset + 0x20]));
-        if (installationSigLength > data.length || data.length < installationSigOffset + 0x20 + installationSigLength) {
+        if (installationSigLength > data.length - installationSigOffset - 0x20) {
             return Calldata.emptyBytes();
         }
         return data[installationSigOffset + 0x20:installationSigOffset + 0x20 + installationSigLength];
@@ -190,32 +190,37 @@ library ERC8043Utils {
      * 1. The array length is within bounds
      * 2. All offset pointers are valid
      * 3. All individual bytes elements are within bounds
+     *
+     * Element offsets are relative to the start of the offset table (`arrayOffset + 0x20`), as in the
+     * ABI encoding. Callers must ensure `arrayOffset + 0x20 <= data.length`.
      */
     function _extractBytesArray(
         bytes calldata data,
         uint256 arrayOffset,
         uint256 arrayLength
     ) private pure returns (bytes[] calldata result) {
-        // Start after the array length (32 bytes)
-        uint256 currentOffset = arrayOffset + 0x20;
+        // Start after the array length (32 bytes). Element offsets are relative to this position.
+        uint256 base = arrayOffset + 0x20;
+        uint256 currentOffset = base;
 
         // Check if we have enough space for all offset pointers (arrayLength * 32 bytes)
-        if (data.length < currentOffset + arrayLength * 0x20) return _emptyBytesArray();
+        if (arrayLength > (data.length - base) / 0x20) return _emptyBytesArray();
 
         // Validate each bytes element
         for (uint256 i = 0; i < arrayLength; (i++, currentOffset += 0x20)) {
-            // Get the offset for this bytes element
-            uint256 elementOffset = uint256(bytes32(data[currentOffset:currentOffset + 0x20]));
+            // Get the offset for this bytes element, relative to `base`
+            uint256 relativeOffset = uint256(bytes32(data[currentOffset:currentOffset + 0x20]));
 
-            // Check if the element offset is within bounds (need at least 32 bytes for length)
-            if (data.length < elementOffset + 0x20) return _emptyBytesArray();
+            // Check if the element offset is within bounds (need at least 32 bytes for length).
+            // `data.length - base >= 0x20` holds since the offset table has at least one entry.
+            if (relativeOffset > data.length - base - 0x20) return _emptyBytesArray();
+            uint256 elementOffset = base + relativeOffset;
 
             // Get the length of this bytes element
             uint256 elementLength = uint256(bytes32(data[elementOffset:elementOffset + 0x20]));
 
             // Check if the element data is within bounds
-            uint256 elementEnd = elementOffset + 0x20 + elementLength;
-            if (data.length < elementEnd) return _emptyBytesArray();
+            if (elementLength > data.length - elementOffset - 0x20) return _emptyBytesArray();
         }
 
         // Extract bytes array directly from calldata
