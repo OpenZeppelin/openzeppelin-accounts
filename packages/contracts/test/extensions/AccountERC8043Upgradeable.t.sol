@@ -16,6 +16,7 @@ import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/IERC4337.s
 import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-AccountERC7579.sol";
 import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {ERC7579ValidatorMock} from "../../src/mocks/modules/ERC7579Mock.sol";
+import {ERC7579MultisigValidator} from "../../src/modules/validators/ERC7579MultisigValidator.sol";
 import {CallReceiverMock} from "../../src/mocks/CallReceiverMock.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
@@ -335,6 +336,88 @@ contract AccountERC8043UpgradeableTest is Test {
         assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
         assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(validator2), bytes("")));
         assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(validator3), bytes("")));
+    }
+
+    function testInitModeWithMultisigAndValidator(address bundler, bytes memory extraInitData) public {
+        vm.assume(bundler.code.length == 0);
+
+        ERC7579MultisigValidator multisig = new ERC7579MultisigValidator();
+        bytes[] memory signers = new bytes[](1);
+        signers[0] = abi.encodePacked(vm.addr(0x9999));
+
+        uint256 nonce = _prepareNonce(address(_newValidator));
+        PackedUserOperation memory userOp = _prepareUserOperation(
+            nonce,
+            _buildMultisigAndValidatorInitCode(nonce, address(multisig), abi.encode(signers, uint64(1)), extraInitData)
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
+            _newValidatorPrivateKey,
+            IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp)
+        );
+        userOp.signature = abi.encodePacked(r, s, v);
+
+        vm.expectEmit(true, true, true, false);
+        emit CallReceiverMock.MockFunctionCalledExtra(address(_account), 1 ether);
+
+        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
+        ops[0] = userOp;
+        vm.prank(bundler, bundler);
+        ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
+
+        assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(multisig), bytes("")));
+        assertTrue(_account.isModuleInstalled(MODULE_TYPE_VALIDATOR, address(_newValidator), bytes("")));
+        assertTrue(multisig.isSigner(address(_account), signers[0]));
+        assertEq(multisig.threshold(address(_account)), 1);
+    }
+
+    function _buildMultisigAndValidatorInitCode(
+        uint256 nonce,
+        address multisig,
+        bytes memory multisigInitData,
+        bytes memory extraInitData
+    ) private view returns (bytes memory) {
+        uint256[] memory moduleTypeIds = new uint256[](2);
+        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
+        moduleTypeIds[1] = MODULE_TYPE_VALIDATOR;
+        address[] memory modules = new address[](2);
+        modules[0] = multisig;
+        modules[1] = address(_newValidator);
+        bytes[] memory initDatas = new bytes[](2);
+        initDatas[0] = multisigInitData;
+        initDatas[1] = abi.encodePacked(_newValidatorSigner, extraInitData); // the mock reads the first 20 bytes
+
+        return _buildInitModeInitCode(nonce, moduleTypeIds, modules, initDatas);
+    }
+
+    function _buildInitModeInitCode(
+        uint256 nonce,
+        uint256[] memory moduleTypeIds,
+        address[] memory modules,
+        bytes[] memory initDatas
+    ) private view returns (bytes memory) {
+        bytes32[] memory initDataHashes = new bytes32[](initDatas.length);
+        for (uint256 i = 0; i < initDatas.length; i++) initDataHashes[i] = keccak256(initDatas[i]);
+
+        bytes32 typedDataHash = MessageHashUtils.toTypedDataHash(
+            _accountDomainSeparator,
+            keccak256(
+                abi.encode(
+                    INIT_MODULES_TYPEHASH,
+                    keccak256(abi.encodePacked(moduleTypeIds)),
+                    keccak256(abi.encodePacked(modules)),
+                    keccak256(abi.encodePacked(initDataHashes)),
+                    nonce
+                )
+            )
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(_initialValidatorPrivateKey, typedDataHash);
+        bytes memory installationSignature = abi.encodePacked(address(_initialValidator), abi.encodePacked(r, s, v));
+
+        return
+            abi.encodePacked(
+                INIT_MODE_MAGIC_VALUE,
+                abi.encode(moduleTypeIds, modules, initDatas, installationSignature)
+            );
     }
 
     function _buildMultiModuleInitModeInitCode(

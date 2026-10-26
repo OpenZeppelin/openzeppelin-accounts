@@ -1,3 +1,7 @@
+## 26-10-2026
+
+- `ERC8043Utils`: Decode `bytes[]` element offsets relative to the array, as in the ABI encoding. Malformed lengths and offsets now return an invalid result instead of reverting.
+
 ## 22-10-2026
 
 - Pin OpenZeppelin Contracts and OpenZeppelin Contracts Upgradeable to `v5.7.0`. `EIP712` domain names and versions must now fit in 31 bytes, and `ERC1967Clones` proxies use updated bytecode, which changes `OpenAccountFactory` account addresses.
