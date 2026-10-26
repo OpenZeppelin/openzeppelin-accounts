@@ -670,14 +670,18 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
             return (false, Calldata.emptyBytes()); // Not single
         }
 
-        // executionCalldata offset is relative to position after the selector
-        uint256 execLenPos = 4 + uint256(bytes32(callData[36:68]));
-        if (execLenPos + 32 > callData.length) return (false, Calldata.emptyBytes()); // Invalid
-        uint256 execLen = uint256(bytes32(callData[execLenPos:execLenPos + 32]));
-        uint256 execStart = execLenPos + 32;
-        if (execStart + execLen > callData.length) return (false, Calldata.emptyBytes()); // Invalid
+        unchecked {
+            // executionCalldata offset is relative to position after the selector.
+            // The length field must be within bounds. Safe subtraction given `callData.length >= 100`.
+            uint256 execOffset = uint256(bytes32(callData[36:68]));
+            if (execOffset > callData.length - 36) return (false, Calldata.emptyBytes()); // Invalid
+            uint256 execLenPos = 4 + execOffset; // Cannot overflow given the check above
+            uint256 execStart = execLenPos + 32; // Cannot overflow given the check above
+            uint256 execLen = uint256(bytes32(callData[execLenPos:execStart]));
+            if (execLen > callData.length - execStart) return (false, Calldata.emptyBytes()); // Invalid
 
-        return (true, callData[execStart:execStart + execLen]);
+            return (true, callData[execStart:execStart + execLen]);
+        }
     }
 
     /**
@@ -702,14 +706,18 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
             return (false, Calldata.emptyBytes());
         }
 
-        // keyOffset is relative to start of args (innerData[4:]).
-        uint256 keyLenPos = 4 + uint256(bytes32(innerData[0x24:0x44]));
-        if (keyLenPos + 32 > innerData.length) return (false, Calldata.emptyBytes());
-        uint256 keyLen = uint256(bytes32(innerData[keyLenPos:keyLenPos + 0x20]));
-        uint256 keyDataStart = keyLenPos + 0x20;
-        if (keyDataStart + keyLen > innerData.length) return (false, Calldata.emptyBytes());
+        unchecked {
+            // keyOffset is relative to start of args (innerData[4:]).
+            // The length field must be within bounds. Safe subtraction given `innerData.length >= 100`.
+            uint256 keyOffset = uint256(bytes32(innerData[0x24:0x44]));
+            if (keyOffset > innerData.length - 0x24) return (false, Calldata.emptyBytes());
+            uint256 keyLenPos = 4 + keyOffset; // Cannot overflow given the check above
+            uint256 keyDataStart = keyLenPos + 0x20; // Cannot overflow given the check above
+            uint256 keyLen = uint256(bytes32(innerData[keyLenPos:keyDataStart]));
+            if (keyLen > innerData.length - keyDataStart) return (false, Calldata.emptyBytes());
 
-        return (true, innerData[keyDataStart:keyDataStart + keyLen]);
+            return (true, innerData[keyDataStart:keyDataStart + keyLen]);
+        }
     }
 
     /**

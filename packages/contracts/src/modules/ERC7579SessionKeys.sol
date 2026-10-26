@@ -353,29 +353,35 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
         // Minimum length: key offset (32 bytes) + signature offset (32 bytes) + key length (32 bytes) + signature length (32 bytes) = 128 bytes
         if (signature.length < 0x80) return (false, Calldata.emptyBytes(), Calldata.emptyBytes());
 
-        uint256 keyOffset = uint256(bytes32(signature[0x00:0x20]));
-        uint256 signatureOffset = uint256(bytes32(signature[0x20:0x40]));
+        unchecked {
+            uint256 bufferLength = signature.length;
 
-        uint256 keyDataOffset = keyOffset + 0x20;
-        uint256 signatureDataOffset = signatureOffset + 0x20;
+            uint256 keyOffset = uint256(bytes32(signature[0x00:0x20]));
+            uint256 signatureOffset = uint256(bytes32(signature[0x20:0x40]));
 
-        if (keyDataOffset > signature.length || signatureDataOffset > signature.length)
-            return (false, Calldata.emptyBytes(), Calldata.emptyBytes());
+            // The length fields must be within the bounds of the buffer. Safe subtraction given `bufferLength >= 0x80`.
+            if (keyOffset > bufferLength - 0x20 || signatureOffset > bufferLength - 0x20)
+                return (false, Calldata.emptyBytes(), Calldata.emptyBytes());
 
-        uint256 keyLength = uint256(bytes32(signature[keyOffset:keyDataOffset]));
-        uint256 signatureLength = uint256(bytes32(signature[signatureOffset:signatureDataOffset]));
+            // Data is just after the length fields. Cannot overflow given the check above.
+            uint256 keyDataOffset = keyOffset + 0x20;
+            uint256 signatureDataOffset = signatureOffset + 0x20;
 
-        if (keyDataOffset + keyLength > signature.length || signatureDataOffset + signatureLength > signature.length)
-            return (false, Calldata.emptyBytes(), Calldata.emptyBytes());
+            uint256 keyLength = uint256(bytes32(signature[keyOffset:keyDataOffset]));
+            uint256 signatureLength = uint256(bytes32(signature[signatureOffset:signatureDataOffset]));
 
-        assembly ("memory-safe") {
-            key.offset := add(signature.offset, keyDataOffset)
-            key.length := keyLength
-            keySignature.offset := add(signature.offset, signatureDataOffset)
-            keySignature.length := signatureLength
+            // The data must fit within the bounds of the buffer. Safe subtraction given `dataOffset <= bufferLength`.
+            if (keyLength > bufferLength - keyDataOffset || signatureLength > bufferLength - signatureDataOffset)
+                return (false, Calldata.emptyBytes(), Calldata.emptyBytes());
+
+            assembly ("memory-safe") {
+                success := 1 // true
+                key.offset := add(signature.offset, keyDataOffset)
+                key.length := keyLength
+                keySignature.offset := add(signature.offset, signatureDataOffset)
+                keySignature.length := signatureLength
+            }
         }
-
-        return (true, key, keySignature);
     }
 
     /**
