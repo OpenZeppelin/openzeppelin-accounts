@@ -11,6 +11,9 @@
 - `ERC7579SessionKeys`: Track a generation per key, bumped on removal and readable through `keyGeneration(account, key)`. `_keyId(account, installation, key)` includes the key's current generation and replaces `_keyId(key)`. **Breaking change**.
 - `ERC7579SessionKeysValidator`, `ERC7579NativeSpender`, `ERC7579ERC20Spender`: Scope gas budgets, spending policies and spent amounts to the key's current generation. Removing a key invalidates all of its policies, including the `(key, token)` configs of `ERC7579ERC20Spender`, and spending history of removed keys is no longer readable through `spent`.
 - `ERC7579NativeSpender`: Track whether the executor-role `onInstall` ran per installation, so any later `onInstall` reverts with `ERC7579NativeSpenderAlreadyInstalled` regardless of key order.
+- `EnumerableSetERC4337`: Add a library of enumerable `bytes32`, `address` and `bytes` sets whose storage slots are all associated with an account under ERC-7562. `bytes` values are limited to 4064 bytes.
+- `ERC7579SessionKeys`, `ERC7579ERC20Spender`, `ERC7579Multisig`, `ERC7579MultisigConfidential`: Store session keys, tokens and signers in `EnumerableSetERC4337`, which changes the storage layout of these modules and their derived contracts. Adding a session key or signer longer than 4064 bytes reverts with `EnumerableSetERC4337ValueTooLong`.
+- `ERC7579SessionKeys`: `_isKey` checks the validity range of the key's current `_keyId` instead of the set of keys.
 
 ## 22-10-2026
 
