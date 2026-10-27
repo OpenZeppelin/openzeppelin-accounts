@@ -2,8 +2,8 @@
 pragma solidity ^0.8.27;
 
 import {IERC7579Module} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+import {EnumerableSetERC4337} from "../utils/structs/EnumerableSetERC4337.sol";
 
 /**
  * @dev Implementation of an {IERC7579Module} that uses ERC-7913 signers for multisignature
@@ -19,7 +19,7 @@ import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/Signa
  * a social recovery operation.
  */
 abstract contract ERC7579Multisig is IERC7579Module {
-    using EnumerableSet for EnumerableSet.BytesSet;
+    using EnumerableSetERC4337 for EnumerableSetERC4337.BytesSet;
     using SignatureChecker for bytes32;
 
     /// @dev Emitted when signers are added.
@@ -55,7 +55,7 @@ abstract contract ERC7579Multisig is IERC7579Module {
     /// @dev The `account` has already installed the module.
     error ERC7579MultisigAlreadyInstalled();
 
-    mapping(address account => EnumerableSet.BytesSet) private _signersSetByAccount;
+    EnumerableSetERC4337.BytesSet private _signers;
     mapping(address account => uint64) private _thresholdByAccount;
 
     /**
@@ -92,10 +92,10 @@ abstract contract ERC7579Multisig is IERC7579Module {
      *
      * > [!WARNING]
      * > This function has unbounded gas costs and may become uncallable if the set grows too large.
-     * > See {EnumerableSet-clear}.
+     * > See {EnumerableSetERC4337-clear}.
      */
     function onUninstall(bytes calldata /* data */) public virtual {
-        _signersSetByAccount[msg.sender].clear();
+        _signers.clear(msg.sender);
         delete _thresholdByAccount[msg.sender];
     }
 
@@ -110,17 +110,17 @@ abstract contract ERC7579Multisig is IERC7579Module {
      * > functions may become uncallable if the slice grows too large.
      */
     function getSigners(address account, uint64 start, uint64 end) public view virtual returns (bytes[] memory) {
-        return _signersSetByAccount[account].values(start, end);
+        return _signers.values(account, start, end);
     }
 
     /// @dev Returns the number of authorized signers for the specified account.
     function getSignerCount(address account) public view virtual returns (uint256) {
-        return _signersSetByAccount[account].length();
+        return _signers.length(account);
     }
 
     /// @dev Returns whether the `signer` is an authorized signer for the specified account.
     function isSigner(address account, bytes calldata signer) public view virtual returns (bool) {
-        return _signersSetByAccount[account].contains(signer);
+        return _signers.contains(account, signer);
     }
 
     /**
@@ -175,6 +175,8 @@ abstract contract ERC7579Multisig is IERC7579Module {
      * Requirements:
      *
      * * Each of `newSigners` must be at least 20 bytes long. Reverts with {ERC7579MultisigInvalidSigner} if not.
+     * * Each of `newSigners` must be at most {EnumerableSetERC4337-MAX_BYTES_LENGTH} bytes long. Reverts with
+     *   {EnumerableSetERC4337-EnumerableSetERC4337ValueTooLong} if not.
      * * Each of `newSigners` must not be authorized. Reverts with {ERC7579MultisigAlreadyExists} if it already exists.
      *
      * > [!NOTE]
@@ -189,7 +191,7 @@ abstract contract ERC7579Multisig is IERC7579Module {
         for (uint256 i = 0; i < newSigners.length; ++i) {
             bytes calldata signer = newSigners[i];
             require(signer.length >= 20, ERC7579MultisigInvalidSigner(signer));
-            require(_signersSetByAccount[account].add(signer), ERC7579MultisigAlreadyExists(signer));
+            require(_signers.add(account, signer), ERC7579MultisigAlreadyExists(signer));
             emit ERC7913SignerAdded(account, signer);
         }
     }
@@ -205,7 +207,7 @@ abstract contract ERC7579Multisig is IERC7579Module {
     function _removeSigners(address account, bytes[] calldata oldSigners) internal virtual {
         for (uint256 i = 0; i < oldSigners.length; ++i) {
             bytes calldata signer = oldSigners[i];
-            require(_signersSetByAccount[account].remove(signer), ERC7579MultisigNonexistentSigner(signer));
+            require(_signers.remove(account, signer), ERC7579MultisigNonexistentSigner(signer));
             emit ERC7913SignerRemoved(account, signer);
         }
         _validateReachableThreshold(account);

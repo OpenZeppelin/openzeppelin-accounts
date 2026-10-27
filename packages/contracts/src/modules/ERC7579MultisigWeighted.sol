@@ -3,7 +3,6 @@ pragma solidity ^0.8.27;
 
 import {ERC7579Multisig} from "./ERC7579Multisig.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 /**
  * @dev Extension of {ERC7579Multisig} that supports weighted signatures.
@@ -25,7 +24,6 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
  * > signatures with a total weight of at least 4 (e.g., one with weight 1 and one with weight 3).
  */
 abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
-    using EnumerableSet for EnumerableSet.BytesSet;
     using SafeCast for *;
 
     // Sum of all the extra weights of all signers. Each signer has a base weight of 1.
