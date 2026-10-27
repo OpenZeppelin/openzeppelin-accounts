@@ -456,7 +456,12 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
     }
 
     /// @dev Verifies the decryption proof for a disclosed operation (hash).
-    function _discloseOperation(address relayer, address account, bytes32 hash, bytes calldata decryptionProof) public {
+    function _discloseOperation(
+        address relayer,
+        address account,
+        bytes32 hash,
+        bytes calldata decryptionProof
+    ) internal virtual {
         uint256 currentNonce = nonces(account);
         ebool valid = _requestedDisclosure[relayer][account][currentNonce][hash];
         require(FHE.isInitialized(valid), ERC7579MultisigUnknownDisclosure(hash));

@@ -396,6 +396,29 @@ function shouldBehaveLikeOperationDiscloser() {
         .withArgs(unknownHash);
     });
 
+    it('does not expose _discloseOperation externally', async function () {
+      const selector = ethers.id('_discloseOperation(address,address,bytes32,bytes)').slice(0, 10);
+      expect(this.mock.interface.hasFunction('_discloseOperation')).to.be.false;
+      await expect(this.mock.runner.call({ to: this.mock.target, data: selector })).to.be.reverted;
+    });
+
+    it('validates an already disclosed operation even with a malformed inline proof', async function () {
+      const signer = new NonNativeSigner(new MultiERC7913SigningKey([...this.signers]));
+      const { encryptedBool } = await this.requestDiscloseOperation(signer);
+      const decryptResult = await fhevm.publicDecrypt([encryptedBool]);
+      await this.mock.discloseOperation(this.mockAccount.address, operationHash, decryptResult.decryptionProof);
+
+      // Request again so the inline proof check would run against an initialized handle
+      await this.requestDiscloseOperation(signer);
+
+      // numSigners = 0xff makes the proof too short to deserialize
+      const malformedProof = ethers.concat(['0xff', ethers.ZeroHash, ethers.ZeroHash]);
+      const signature = ethers.concat([this.mock.runner.address, malformedProof]);
+
+      await expect(this.mock.$_rawERC7579Validation(this.mockAccount.address, operationHash, signature)).to.eventually
+        .be.true;
+    });
+
     describe('dismissDisclosure', function () {
       it('increments the nonce', async function () {
         const nonceBefore = await this.mock.nonces(this.mockAccount.address);
