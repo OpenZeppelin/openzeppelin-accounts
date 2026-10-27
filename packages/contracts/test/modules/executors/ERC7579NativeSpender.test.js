@@ -23,9 +23,15 @@ const SINGLE_MODE = ethers.ZeroHash;
 // CALLTYPE_BATCH = 0x01 in the first byte
 const BATCH_MODE = '0x01' + '00'.repeat(31);
 
-// Encode first-install (validator role) data: (bytes[] keys, uint48[] starts, uint48[] ends)
-const encodeKeysInstall = (keys, starts, ends) =>
-  ethers.AbiCoder.defaultAbiCoder().encode(['bytes[]', 'uint48[]', 'uint48[]'], [keys, starts, ends]);
+// Default gas budget, in wei, of each session key
+const GAS_BUDGET = ethers.parseEther('1');
+
+// Encode first-install (validator role) data: (bytes[] keys, uint48[] starts, uint48[] ends, uint256[] gasBudgets)
+const encodeKeysInstall = (keys, starts, ends, gasBudgets = keys.map(() => GAS_BUDGET)) =>
+  ethers.AbiCoder.defaultAbiCoder().encode(
+    ['bytes[]', 'uint48[]', 'uint48[]', 'uint256[]'],
+    [keys, starts, ends, gasBudgets],
+  );
 
 // Encode second-install (executor role) data: (bytes[] keys, uint160[] limits, uint48[] renewPeriods)
 const encodeConfigInstall = (keys, limits, renewPeriods) =>
@@ -97,6 +103,7 @@ async function fixture() {
     batch = false,
     tos,
     amounts,
+    gas = {},
   } = {}) => {
     const innerCall = batch
       ? mock.interface.encodeFunctionData('batchTransferFrom', [mockAccount.address, usedKey, tos, amounts])
@@ -105,7 +112,7 @@ async function fixture() {
     const callData = mockAccount.interface.encodeFunctionData('execute', [SINGLE_MODE, execCalldata]);
 
     const nonce = await predeploy.entrypoint.v09.getNonce(mockAccount.address, validatorNonceKey);
-    const userOp = await mockAccount.createUserOp({ callData, nonce });
+    const userOp = await mockAccount.createUserOp({ callData, nonce, ...gas });
     const keySignature = await signer.signTypedData(entrypointDomain, { PackedUserOperation }, userOp.packed);
     userOp.signature = encodeSessionKeySig(usedKey, keySignature);
     return userOp;
@@ -601,6 +608,120 @@ describe('ERC7579NativeSpender', function () {
       await expect(
         this.mock.connect(this.sessionKey).batchTransferFrom(this.mockAccount.address, this.key, tos, amounts),
       ).to.be.revertedWithCustomError(this.mock, 'ERC7579NativeInsufficientAvailable');
+    });
+  });
+
+  describe('gas budget (UserOp flow)', function () {
+    // Maximum gas cost of a UserOp, as prefunded to the EntryPoint
+    const maxGasCost = userOp =>
+      (userOp.preVerificationGas +
+        userOp.verificationGas +
+        userOp.callGas +
+        userOp.paymasterVerificationGasLimit +
+        userOp.paymasterPostOpGasLimit) *
+      userOp.maxFeePerGas;
+
+    const installWithGasBudget = function (gasBudget) {
+      return this.installBoth(encodeKeysInstall([this.key], [0n], [0n], [gasBudget]));
+    };
+
+    it('sets the gas budget on the validator install', async function () {
+      const gasBudget = ethers.parseEther('0.01');
+      await expect(
+        this.mockAccountFromEntrypoint.installModule(
+          MODULE_TYPE_VALIDATOR,
+          this.mock.target,
+          encodeKeysInstall([this.key], [0n], [0n], [gasBudget]),
+        ),
+      )
+        .to.emit(this.mock, 'ERC7579SessionKeysValidatorGasBudgetSet')
+        .withArgs(this.mockAccount.address, this.key, gasBudget);
+      await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(gasBudget);
+    });
+
+    it('reverts the validator install on mismatched gas budgets length', async function () {
+      await expect(this.mockFromAccount.onInstall(encodeKeysInstall([this.key], [0n], [0n], [])))
+        .to.be.revertedWithCustomError(this.mock, 'ERC7579SessionKeysValidatorMismatchedGasBudgetsLength')
+        .withArgs(1n, 0n);
+    });
+
+    it('processes a UserOp at the budget and exhausts it', async function () {
+      const amount = ethers.parseEther('3');
+      await installWithGasBudget.call(this, maxGasCost(await this.buildSpendUserOp({ amount })));
+      const userOp = await this.buildSpendUserOp({ amount });
+
+      await predeploy.entrypoint.v09.handleOps([userOp.packed], this.other.address);
+      await expect(this.mock.spent(this.mockAccount.address, this.key, 0)).to.eventually.equal(amount);
+      await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(0n);
+    });
+
+    it('rejects a UserOp above the budget', async function () {
+      const amount = ethers.parseEther('3');
+      await installWithGasBudget.call(this, maxGasCost(await this.buildSpendUserOp({ amount })) - 1n);
+      const userOp = await this.buildSpendUserOp({ amount });
+
+      await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+        .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+        .withArgs(SIG_VALIDATION_FAILURE);
+      await expect(predeploy.entrypoint.v09.handleOps([userOp.packed], this.other.address))
+        .to.be.revertedWithCustomError(predeploy.entrypoint.v09, 'FailedOp')
+        .withArgs(0n, 'AA24 signature error');
+    });
+
+    it('does not deduct when validateUserOp is called by a third party', async function () {
+      await this.installBoth();
+      const userOp = await this.buildSpendUserOp({ amount: 1n });
+
+      await expect(this.mock.connect(this.other).$_validateUserOp(userOp.packed, userOp.hash()))
+        .to.emit(this.mock, 'return$_validateUserOp')
+        .withArgs(SIG_VALIDATION_FAILURE);
+      await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(GAS_BUDGET);
+    });
+
+    it('clears the budget when the key is removed', async function () {
+      await this.installBoth();
+      await expect(this.mockFromAccount.removeKeys([this.key]))
+        .to.emit(this.mock, 'ERC7579SessionKeysValidatorGasBudgetSet')
+        .withArgs(this.mockAccount.address, this.key, 0n);
+      await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(0n);
+    });
+
+    it('requires a gas budget for keys added with addKeysWithConfig', async function () {
+      await this.installBoth();
+      await this.mockFromAccount.addKeysWithConfig([this.otherKey], [0n], [0n], [this.limit], [this.renewPeriod]);
+      await expect(this.mock.gasBudget(this.mockAccount.address, this.otherKey)).to.eventually.equal(0n);
+
+      const userOp = await this.buildSpendUserOp({ key: this.otherKey, signer: this.otherSessionKey, amount: 1n });
+      await expect(predeploy.entrypoint.v09.handleOps([userOp.packed], this.other.address))
+        .to.be.revertedWithCustomError(predeploy.entrypoint.v09, 'FailedOp')
+        .withArgs(0n, 'AA24 signature error');
+
+      await this.mockFromAccount.setGasBudget(this.otherKey, GAS_BUDGET);
+      await predeploy.entrypoint.v09.handleOps([userOp.packed], this.other.address);
+      await expect(this.mock.gasBudget(this.mockAccount.address, this.otherKey)).to.eventually.equal(
+        GAS_BUDGET - maxGasCost(userOp),
+      );
+    });
+
+    it('rejects a self-bundled UserOp that inflates preVerificationGas to collect the account balance', async function () {
+      await this.other.sendTransaction({ to: this.mockAccount.address, value: ethers.parseEther('100') });
+      await installWithGasBudget.call(this, ethers.parseEther('0.01'));
+      const userOp = await this.buildSpendUserOp({
+        amount: 1n,
+        gas: { preVerificationGas: 500_000_000n, maxFeePerGas: 100_000_000_000n, maxPriorityFee: 100_000_000_000n },
+      });
+      const before = await ethers.provider.getBalance(this.mockAccount.address);
+
+      // The session key holder bundles its own UserOp and names itself beneficiary.
+      await expect(
+        predeploy.entrypoint.v09.connect(this.sessionKey).handleOps([userOp.packed], this.sessionKey.address),
+      )
+        .to.be.revertedWithCustomError(predeploy.entrypoint.v09, 'FailedOp')
+        .withArgs(0n, 'AA24 signature error');
+      await expect(ethers.provider.getBalance(this.mockAccount.address)).to.eventually.equal(before);
+      await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(
+        ethers.parseEther('0.01'),
+      );
     });
   });
 

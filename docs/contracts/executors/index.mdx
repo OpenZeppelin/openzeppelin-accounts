@@ -417,6 +417,8 @@ nativeSpender.batchTransferFrom(account, key, recipients, amounts);
 
 Policies can't be changed once written. The account adds keys with fresh policies through `addKeysWithConfig(keys, starts, ends, limits, renewPeriods)` and revokes them with `removeKeys(keys)`.
 
+Gas fees are not counted against the limit. They are charged to the key's gas budget, which the account sets at install time or with `setGasBudget(key, budget)`.
+
 <Callout>
   Setting `renewPeriod` to `type(uint48).max` effectively disables automatic renewal (one-time limit).
 </Callout>

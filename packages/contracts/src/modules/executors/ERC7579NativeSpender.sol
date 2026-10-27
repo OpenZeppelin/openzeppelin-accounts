@@ -48,7 +48,8 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * > [!NOTE]
  * > The module should be installed under both module types, in this order:
  * >
- * > 1. **Validator install (first)**: `initData` is `abi.encode(bytes[] keys, uint48[] starts, uint48[] ends)`.
+ * > 1. **Validator install (first)**: `initData` is
+ * >    `abi.encode(bytes[] keys, uint48[] starts, uint48[] ends, uint256[] gasBudgets)`.
  * >    This registers session keys with their validity ranges through {ERC7579SessionKeys-_addKeys}.
  * >    At least one key must be registered, otherwise the install reverts.
  * > 2. **Executor install (second)**: `initData` is `abi.encode(bytes[] keys, uint160[] limits, uint48[] renewPeriods)`.
@@ -60,6 +61,10 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * >
  * > Install and uninstall both module types together. Uninstalling either one resets the whole
  * > installation (session keys and spending policies) for both roles.
+ *
+ * > [!NOTE]
+ * > Gas fees are not counted against the spending limits. They are charged to the key's
+ * > {ERC7579SessionKeysValidator-gasBudget} instead.
  *
  * > [!IMPORTANT]
  * > This module deliberately disables ERC-1271 signing
@@ -215,14 +220,14 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
      * shape of `initData` differs between the two calls:
      *
      * * **First call** (validator install, `installed(msg.sender) == false`):
-     *   `abi.encode(bytes[] keys, uint48[] starts, uint48[] ends)`.
+     *   `abi.encode(bytes[] keys, uint48[] starts, uint48[] ends, uint256[] gasBudgets)`.
      * * **Second call** (executor install, `installed(msg.sender) == true`):
      *   `abi.encode(bytes[] keys, uint160[] limits, uint48[] renewPeriods)`.
      *
      * First call requirements:
      *
      * * The `keys` array must be non-empty. Reverts with {ERC7579NativeSpenderEmptyKeys} otherwise.
-     * * Those from the parent's {ERC7579SessionKeys-onInstall} (key registration).
+     * * Those from the parent's {ERC7579SessionKeysValidator-onInstall} (key registration and gas budgets).
      *
      * Second call requirements:
      *
@@ -239,7 +244,7 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
      * > [!TIP]
      * > Each start will be set to the current timepoint if it's 0.
      */
-    function onInstall(bytes calldata initData) public virtual override(ERC7579SessionKeys, IERC7579Module) {
+    function onInstall(bytes calldata initData) public virtual override(ERC7579SessionKeysValidator, IERC7579Module) {
         if (!installed(msg.sender)) {
             super.onInstall(initData);
             require(installed(msg.sender), ERC7579NativeSpenderEmptyKeys());
@@ -273,6 +278,10 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
     /**
      * @dev Adds new session keys with their spending configurations in a single call. Can only be
      * called by the account itself. See {_addKeysWithConfig} for requirements.
+     *
+     * > [!TIP]
+     * > New keys have no gas budget. Set it with {ERC7579SessionKeysValidator-setGasBudget}, for example in
+     * > the same batch.
      */
     function addKeysWithConfig(
         bytes[] calldata newKeys,
