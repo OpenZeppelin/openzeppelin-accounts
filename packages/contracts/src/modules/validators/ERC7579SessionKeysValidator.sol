@@ -22,6 +22,16 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
  * > operation and sign any ERC-1271 message on behalf of the account. Derived contracts
  * > should restrict the scope of what a session key is authorized to do.
  *
+ * > [!NOTE]
+ * > All session keys of an account share the account's ERC-4337 nonce streams, so one key can
+ * > use a nonce that invalidates another key's pending user operations. Derived contracts that
+ * > need per-key isolation can override {_validateUserOp} to require a nonce key bound to the session key.
+ *
+ * > [!NOTE]
+ * > Accounts supporting ERC-8043 init mode authorize the `installationSignature` through ERC-1271
+ * > (see {AccountERC8043Upgradeable-_validateUserOp}). Derived contracts that restrict the user
+ * > operation scope of a key should restrict {isValidSignatureWithSender} as well.
+ *
  * Example usage:
  *
  * ```solidity

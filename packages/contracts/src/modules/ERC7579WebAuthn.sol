@@ -10,6 +10,10 @@ import {WebAuthn} from "@openzeppelin/contracts/utils/cryptography/WebAuthn.sol"
  *
  * This module provides a base implementation for WebAuthn signature validation that can be
  * attached to any function through the {_validateWebAuthn} internal function.
+ *
+ * > [!NOTE]
+ * > As in the {WebAuthn} library, `clientDataJSON.origin` and `authenticatorData.rpIdHash` are not
+ * > checked. Register credentials under an RP ID you fully control.
  */
 abstract contract ERC7579WebAuthn is ERC7579P256 {
     /**
