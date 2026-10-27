@@ -57,6 +57,9 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * >    other key can be reconfigured under the current installation. To change the spending policy,
  * >    the account must uninstall and reinstall the module (which bumps the installation nonce and
  * >    resets state).
+ * >
+ * > Install and uninstall both module types together. Uninstalling either one resets the whole
+ * > installation (session keys and spending policies) for both roles.
  *
  * > [!IMPORTANT]
  * > This module deliberately disables ERC-1271 signing
@@ -300,6 +303,10 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
      * * `amount` must not exceed the available limit for the current period. Reverts with
      *   {ERC7579NativeInsufficientAvailable} otherwise.
      * * Those from {_periodAt} for the current timepoint.
+     *
+     * > [!NOTE]
+     * > The limit bounds the total value spent per period, not the number of calls. A zero `amount`
+     * > is allowed and executes an empty call to `to`.
      */
     function transferFrom(address account, bytes calldata key, address to, uint256 amount) public virtual {
         uint256 installation_ = installation(account);
@@ -319,6 +326,10 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
      * * The caller is authorized via one of the two paths described in {transferFrom}.
      * * The sum of `amounts` must not exceed the available limit.
      * * Those from {_periodAt} for the current timepoint.
+     *
+     * > [!NOTE]
+     * > As in {transferFrom}, the limit bounds the total value per period, not the number of calls.
+     * > Zero-value entries are allowed and execute an empty call to their `tos[i]`.
      */
     function batchTransferFrom(
         address account,
@@ -670,14 +681,18 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
             return (false, Calldata.emptyBytes()); // Not single
         }
 
-        // executionCalldata offset is relative to position after the selector
-        uint256 execLenPos = 4 + uint256(bytes32(callData[36:68]));
-        if (execLenPos + 32 > callData.length) return (false, Calldata.emptyBytes()); // Invalid
-        uint256 execLen = uint256(bytes32(callData[execLenPos:execLenPos + 32]));
-        uint256 execStart = execLenPos + 32;
-        if (execStart + execLen > callData.length) return (false, Calldata.emptyBytes()); // Invalid
+        unchecked {
+            // executionCalldata offset is relative to position after the selector.
+            // The length field must be within bounds. Safe subtraction given `callData.length >= 100`.
+            uint256 execOffset = uint256(bytes32(callData[36:68]));
+            if (execOffset > callData.length - 36) return (false, Calldata.emptyBytes()); // Invalid
+            uint256 execLenPos = 4 + execOffset; // Cannot overflow given the check above
+            uint256 execStart = execLenPos + 32; // Cannot overflow given the check above
+            uint256 execLen = uint256(bytes32(callData[execLenPos:execStart]));
+            if (execLen > callData.length - execStart) return (false, Calldata.emptyBytes()); // Invalid
 
-        return (true, callData[execStart:execStart + execLen]);
+            return (true, callData[execStart:execStart + execLen]);
+        }
     }
 
     /**
@@ -702,14 +717,18 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
             return (false, Calldata.emptyBytes());
         }
 
-        // keyOffset is relative to start of args (innerData[4:]).
-        uint256 keyLenPos = 4 + uint256(bytes32(innerData[0x24:0x44]));
-        if (keyLenPos + 32 > innerData.length) return (false, Calldata.emptyBytes());
-        uint256 keyLen = uint256(bytes32(innerData[keyLenPos:keyLenPos + 0x20]));
-        uint256 keyDataStart = keyLenPos + 0x20;
-        if (keyDataStart + keyLen > innerData.length) return (false, Calldata.emptyBytes());
+        unchecked {
+            // keyOffset is relative to start of args (innerData[4:]).
+            // The length field must be within bounds. Safe subtraction given `innerData.length >= 100`.
+            uint256 keyOffset = uint256(bytes32(innerData[0x24:0x44]));
+            if (keyOffset > innerData.length - 0x24) return (false, Calldata.emptyBytes());
+            uint256 keyLenPos = 4 + keyOffset; // Cannot overflow given the check above
+            uint256 keyDataStart = keyLenPos + 0x20; // Cannot overflow given the check above
+            uint256 keyLen = uint256(bytes32(innerData[keyLenPos:keyDataStart]));
+            if (keyLen > innerData.length - keyDataStart) return (false, Calldata.emptyBytes());
 
-        return (true, innerData[keyDataStart:keyDataStart + keyLen]);
+            return (true, innerData[keyDataStart:keyDataStart + keyLen]);
+        }
     }
 
     /**

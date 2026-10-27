@@ -76,6 +76,11 @@ contract OpenAccountFactory {
      * Deploys a minimal ERC-1967 proxy clone using CREATE2 for deterministic addresses.
      * The proxy delegates all calls to the implementation contract and maintains its own storage.
      * If an account at the predicted address already exists, returns that address without redeploying.
+     *
+     * > [!NOTE]
+     * > The `configCalldata` runs once, at deployment, by whoever calls this function first. Use
+     * > `EXECTYPE_DEFAULT` in `configMode` for mandatory bootstrap actions, since failures under
+     * > `EXECTYPE_TRY` are not retried. See {OpenAccount-initialize}.
      */
     function createAndInitialize(
         uint256[] memory moduleTypeIds,

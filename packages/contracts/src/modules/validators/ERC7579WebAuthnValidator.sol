@@ -11,6 +11,8 @@ import {ERC7579WebAuthn} from "../ERC7579WebAuthn.sol";
  * can have a single authorized WebAuthn credential (P256 public key) that can approve
  * operations through WebAuthn authentication assertions.
  *
+ * The origin and RP ID of the assertion are not checked. See {ERC7579WebAuthn}.
+ *
  * Example usage:
  *
  * ```solidity
