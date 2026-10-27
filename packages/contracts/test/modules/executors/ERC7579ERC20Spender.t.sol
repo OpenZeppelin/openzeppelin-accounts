@@ -15,6 +15,7 @@ contract OpenAccountMock is OpenAccount {
 
 contract ERC7579ERC20SpenderTest is Test {
     uint256 private constant MAX_TOKENS = type(uint128).max;
+    uint48 private constant MAX_TIMEPOINT = type(uint48).max >> 1;
 
     ERC7579ERC20Spender private _spender;
     OpenAccount private _account;
@@ -50,7 +51,7 @@ contract ERC7579ERC20SpenderTest is Test {
     function testInstallation(uint48 startOffset, uint160 limit, uint48 renewPeriod) public {
         renewPeriod = uint48(bound(renewPeriod, 1, type(uint48).max));
         limit = uint160(bound(limit, 1, MAX_TOKENS));
-        startOffset = uint48(bound(startOffset, 0, type(uint48).max - uint48(block.timestamp)));
+        startOffset = uint48(bound(startOffset, 0, MAX_TIMEPOINT - uint48(block.timestamp)));
         uint48 from = uint48(block.timestamp) + startOffset;
 
         _installSpender(from, address(_token1), limit, renewPeriod);
@@ -108,8 +109,8 @@ contract ERC7579ERC20SpenderTest is Test {
 
     function testPeriodCalculation(uint48 startOffset, uint48 renewPeriod, uint48 elapsed) public {
         renewPeriod = uint48(bound(renewPeriod, 1, type(uint48).max));
-        startOffset = uint48(bound(startOffset, 0, type(uint48).max / 2));
-        elapsed = uint48(bound(elapsed, 0, type(uint48).max - uint48(block.timestamp) - startOffset));
+        startOffset = uint48(bound(startOffset, 0, MAX_TIMEPOINT / 2));
+        elapsed = uint48(bound(elapsed, 0, MAX_TIMEPOINT - uint48(block.timestamp) - startOffset));
 
         uint48 from = uint48(block.timestamp) + startOffset;
         _installSpender(from, address(_token1), 1 ether, renewPeriod);

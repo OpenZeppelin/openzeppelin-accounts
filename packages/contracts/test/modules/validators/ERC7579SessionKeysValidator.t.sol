@@ -13,7 +13,7 @@ import {
 } from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {ERC4337Utils, IEntryPointExtra} from "@openzeppelin/contracts/account/utils/ERC4337Utils.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/IERC4337.sol";
+import {PackedUserOperation, IEntryPoint} from "@openzeppelin/contracts/interfaces/IERC4337.sol";
 import {AccountERC7579} from "@openzeppelin/contracts/account/extensions/draft-AccountERC7579.sol";
 import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {OpenAccount} from "../../../src/OpenAccount.sol";
@@ -27,6 +27,7 @@ contract ERC7579SessionKeysValidatorTest is Test {
     using ERC4337Utils for PackedUserOperation;
 
     uint256 private constant MAX_ETH = type(uint128).max;
+    uint48 private constant MAX_TIMEPOINT = type(uint48).max >> 1;
     uint256 private constant SECP256K1_CURVE_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141;
 
     CallReceiverMock private _target;
@@ -177,7 +178,8 @@ contract ERC7579SessionKeysValidatorTest is Test {
 
     function testValidity(uint256 privateKey, uint48 from, uint48 until) public {
         privateKey = bound(privateKey, 1, SECP256K1_CURVE_ORDER - 1);
-        vm.assume(from > 0 && until > from);
+        from = uint48(bound(from, 1, MAX_TIMEPOINT - 1));
+        until = uint48(bound(until, from + 1, MAX_TIMEPOINT));
 
         bytes memory key = abi.encodePacked(vm.addr(privateKey));
         _installKey(address(_account), key, from, until);
@@ -272,7 +274,7 @@ contract ERC7579SessionKeysValidatorTest is Test {
 
         vm.prank(address(_account));
         uint256 result = _validator.validateUserOp(userOp, userOpHash);
-        assertEq(result, ERC4337Utils.packValidationData(true, from, until));
+        assertEq(result, ERC4337Utils.packValidationData(true, from - 1, until));
     }
 
     function testValidateUserOpWrongSigner(uint256 correctKey, uint256 wrongKey, uint256 nonce) public {
@@ -293,7 +295,147 @@ contract ERC7579SessionKeysValidatorTest is Test {
 
         vm.prank(address(_account));
         uint256 result = _validator.validateUserOp(userOp, userOpHash);
-        assertEq(result, ERC4337Utils.packValidationData(false, from, until));
+        assertEq(result, ERC4337Utils.packValidationData(false, from - 1, until));
+    }
+
+    function testOnInstallRevertsWhenEndExceeds47Bits(uint256 privateKey, uint48 start, uint48 end) public {
+        privateKey = bound(privateKey, 1, SECP256K1_CURVE_ORDER - 1);
+        start = uint48(bound(start, 0, MAX_TIMEPOINT));
+        end = uint48(bound(end, uint256(MAX_TIMEPOINT) + 1, type(uint48).max));
+
+        bytes memory key = abi.encodePacked(vm.addr(privateKey));
+        uint48 resolvedStart = start == 0 ? uint48(block.timestamp) : start;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(ERC7579SessionKeys.ERC7579SessionKeysInvalidValidity.selector, resolvedStart, end)
+        );
+        _installKey(address(_account), key, start, end);
+    }
+
+    function testOnInstallRevertsWhenStartExceeds47Bits(uint256 privateKey, uint48 start) public {
+        privateKey = bound(privateKey, 1, SECP256K1_CURVE_ORDER - 1);
+        start = uint48(bound(start, uint256(MAX_TIMEPOINT) + 1, type(uint48).max));
+
+        bytes memory key = abi.encodePacked(vm.addr(privateKey));
+
+        // `ends == 0` resolves to MAX_TIMEPOINT, which is below `start`.
+        vm.expectRevert(
+            abi.encodeWithSelector(ERC7579SessionKeys.ERC7579SessionKeysInvalidValidity.selector, start, MAX_TIMEPOINT)
+        );
+        _installKey(address(_account), key, start, 0);
+    }
+
+    function testOnInstallRevertsWhenRangeIsInverted(uint256 privateKey, uint48 start, uint48 end) public {
+        privateKey = bound(privateKey, 1, SECP256K1_CURVE_ORDER - 1);
+        start = uint48(bound(start, 2, MAX_TIMEPOINT));
+        end = uint48(bound(end, 1, start - 1));
+
+        bytes memory key = abi.encodePacked(vm.addr(privateKey));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(ERC7579SessionKeys.ERC7579SessionKeysInvalidValidity.selector, start, end)
+        );
+        _installKey(address(_account), key, start, end);
+    }
+
+    function testOnInstallAcceptsSingleTimepointRange(uint256 privateKey, uint48 timepoint) public {
+        privateKey = bound(privateKey, 1, SECP256K1_CURVE_ORDER - 1);
+        timepoint = uint48(bound(timepoint, 1, MAX_TIMEPOINT));
+
+        bytes memory key = abi.encodePacked(vm.addr(privateKey));
+        _installKey(address(_account), key, timepoint, timepoint);
+
+        (uint48 retFrom, uint48 retUntil) = _validator.validity(address(_account), key);
+        assertEq(retFrom, timepoint);
+        assertEq(retUntil, timepoint);
+    }
+
+    function testNoExpiry(uint256 privateKey, bytes32 messageHash) public {
+        privateKey = bound(privateKey, 1, SECP256K1_CURVE_ORDER - 1);
+        bytes memory key = abi.encodePacked(vm.addr(privateKey));
+
+        _account = _deployAccount(key, 0, 0);
+        vm.deal(address(_account), MAX_ETH);
+
+        (, uint48 until) = _validator.validity(address(_account), key);
+        assertEq(until, MAX_TIMEPOINT);
+
+        vm.warp(MAX_TIMEPOINT);
+
+        // ERC-1271 path
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, messageHash);
+        vm.prank(address(_account));
+        assertEq(
+            _validator.isValidSignatureWithSender(
+                address(this),
+                messageHash,
+                abi.encode(key, abi.encodePacked(r, s, v))
+            ),
+            IERC1271.isValidSignature.selector
+        );
+
+        // ERC-4337 path
+        PackedUserOperation memory userOp = _prepareUserOperation(0, 0);
+        _signUserOp(userOp, privateKey, key);
+        (, , uint48 validUntil, ERC4337Utils.ValidationRange range) = ERC4337Utils.parseValidationData(
+            _simulateValidation(userOp)
+        );
+        assertEq(validUntil, MAX_TIMEPOINT);
+        assertEq(uint8(range), uint8(ERC4337Utils.ValidationRange.TIMESTAMP));
+
+        vm.expectEmit(address(_target));
+        emit CallReceiverMock.MockFunctionCalled();
+        _handleOp(userOp);
+    }
+
+    function testHandleOpsAtValidityStart(uint256 privateKey, uint48 delay) public {
+        privateKey = bound(privateKey, 1, SECP256K1_CURVE_ORDER - 1);
+        delay = uint48(bound(delay, 1, 365 days));
+        bytes memory key = abi.encodePacked(vm.addr(privateKey));
+
+        uint48 from = uint48(block.timestamp) + delay;
+        _account = _deployAccount(key, from, 0);
+        vm.deal(address(_account), MAX_ETH);
+
+        PackedUserOperation memory userOp = _prepareUserOperation(0, 0);
+        _signUserOp(userOp, privateKey, key);
+
+        (, uint48 validAfter, , ) = ERC4337Utils.parseValidationData(_simulateValidation(userOp));
+        assertEq(validAfter, from - 1);
+
+        // One timepoint before `from` the EntryPoint rejects the operation.
+        vm.warp(from - 1);
+        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
+        ops[0] = userOp;
+        vm.expectRevert(abi.encodeWithSelector(IEntryPoint.FailedOp.selector, 0, "AA22 expired or not due"));
+        vm.prank(makeAddr("bundler"), makeAddr("bundler"));
+        ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
+
+        // At `from` the key is valid on both paths.
+        vm.warp(from);
+        assertTrue(_validator.isValid(address(_account), key));
+        vm.expectEmit(address(_target));
+        emit CallReceiverMock.MockFunctionCalled();
+        _handleOp(userOp);
+    }
+
+    function _signUserOp(PackedUserOperation memory userOp, uint256 privateKey, bytes memory key) internal view {
+        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, userOpHash);
+        userOp.signature = abi.encode(key, abi.encodePacked(r, s, v));
+    }
+
+    function _simulateValidation(PackedUserOperation memory userOp) internal returns (uint256) {
+        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
+        vm.prank(address(_account));
+        return _validator.validateUserOp(userOp, userOpHash);
+    }
+
+    function _handleOp(PackedUserOperation memory userOp) internal {
+        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
+        ops[0] = userOp;
+        vm.prank(makeAddr("bundler"), makeAddr("bundler"));
+        ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
     }
 
     function _deployAccount(bytes memory key, uint48 start, uint48 end) internal returns (OpenAccount) {

@@ -22,6 +22,9 @@ const encodeSessionKeySig = (key, keySignature) =>
 const encodeInstallData = (keys, starts, ends) =>
   ethers.AbiCoder.defaultAbiCoder().encode(['bytes[]', 'uint48[]', 'uint48[]'], [keys, starts, ends]);
 
+// Largest timepoint that fits in the 47 bits available in ERC-4337 validation data
+const MAX_TIMEPOINT = (1n << 47n) - 1n;
+
 async function fixture() {
   const [other] = await ethers.getSigners();
 
@@ -39,7 +42,7 @@ async function fixture() {
   const otherSessionKey = ethers.Wallet.createRandom();
   const otherKey = ethers.solidityPacked(['address'], [otherSessionKey.address]);
 
-  // starts=0 resolves to clock() at install time; ends=0 resolves to type(uint48).max
+  // starts=0 resolves to clock() at install time; ends=0 resolves to type(uint48).max >> 1
   const installData = encodeInstallData([key], [0], [0]);
 
   // Wrap an ECDSA typed-data signature in the ERC-7913 session key format
@@ -143,10 +146,33 @@ describe('ERC7579SessionKeysValidator', function () {
       expect(from).to.be.within(currentTime - 1n, currentTime);
     });
 
-    it('uses max uint48 as expiry when end is 0', async function () {
+    it('uses type(uint48).max >> 1 as expiry when end is 0', async function () {
       await this.mockFromAccount.onInstall(this.installData);
       const [, until] = await this.mock.validity(this.mockAccount.address, this.key);
-      expect(until).to.equal(BigInt('0xffffffffffff')); // type(uint48).max
+      expect(until).to.equal(MAX_TIMEPOINT);
+    });
+
+    it('reverts when end exceeds 47 bits', async function () {
+      const now = BigInt(await time.latest());
+      const data = encodeInstallData([this.key], [now], [MAX_TIMEPOINT + 1n]);
+      await expect(this.mockFromAccount.onInstall(data))
+        .to.be.revertedWithCustomError(this.mock, 'ERC7579SessionKeysInvalidValidity')
+        .withArgs(now, MAX_TIMEPOINT + 1n);
+    });
+
+    it('reverts when start exceeds 47 bits', async function () {
+      const data = encodeInstallData([this.key], [MAX_TIMEPOINT + 1n], [0n]);
+      await expect(this.mockFromAccount.onInstall(data))
+        .to.be.revertedWithCustomError(this.mock, 'ERC7579SessionKeysInvalidValidity')
+        .withArgs(MAX_TIMEPOINT + 1n, MAX_TIMEPOINT);
+    });
+
+    it('reverts when start is after end', async function () {
+      const now = BigInt(await time.latest());
+      const data = encodeInstallData([this.key], [now + 100n], [now + 99n]);
+      await expect(this.mockFromAccount.onInstall(data))
+        .to.be.revertedWithCustomError(this.mock, 'ERC7579SessionKeysInvalidValidity')
+        .withArgs(now + 100n, now + 99n);
     });
 
     it('emits ERC7579SessionKeysERC7913KeySet for each registered key', async function () {
@@ -414,7 +440,7 @@ describe('ERC7579SessionKeysValidator', function () {
       it('returns packed validation data with success authorizer for a valid signature', async function () {
         const userOp = await this.mockAccount.createUserOp(this.userOp).then(op => this.signUserOp(op));
         const [from, until] = await this.mock.validity(this.mockAccount.address, this.key);
-        const expectedReturn = ethers.toBigInt(packValidationData(from, until, true, ValidationRange.Timestamp));
+        const expectedReturn = ethers.toBigInt(packValidationData(from - 1n, until, true, ValidationRange.Timestamp));
 
         await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
           .to.emit(this.mockFromAccount, 'return$_validateUserOp')
@@ -453,7 +479,7 @@ describe('ERC7579SessionKeysValidator', function () {
         userOp.signature = encodeSessionKeySig(this.key, wrongKeySignature);
 
         const [from, until] = await this.mock.validity(this.mockAccount.address, this.key);
-        const expectedReturn = ethers.toBigInt(packValidationData(from, until, false, ValidationRange.Timestamp));
+        const expectedReturn = ethers.toBigInt(packValidationData(from - 1n, until, false, ValidationRange.Timestamp));
 
         await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
           .to.emit(this.mockFromAccount, 'return$_validateUserOp')
@@ -475,7 +501,7 @@ describe('ERC7579SessionKeysValidator', function () {
         );
         userOp.signature = encodeSessionKeySig(this.otherKey, keySignature);
 
-        const expectedReturn = ethers.toBigInt(packValidationData(from, until, true, ValidationRange.Timestamp));
+        const expectedReturn = ethers.toBigInt(packValidationData(from - 1n, until, true, ValidationRange.Timestamp));
         await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
           .to.emit(this.mockFromAccount, 'return$_validateUserOp')
           .withArgs(expectedReturn);

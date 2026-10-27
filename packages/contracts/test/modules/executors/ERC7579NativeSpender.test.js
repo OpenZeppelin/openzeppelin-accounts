@@ -646,7 +646,7 @@ describe('ERC7579NativeSpender', function () {
     it('packs success with validity range for a valid UserOp', async function () {
       const userOp = await this.buildSpendUserOp({ amount: 1n });
       const [from, until] = await this.mock.validity(this.mockAccount.address, this.key);
-      const expectedReturn = ethers.toBigInt(packValidationData(from, until, true, ValidationRange.Timestamp));
+      const expectedReturn = ethers.toBigInt(packValidationData(from - 1n, until, true, ValidationRange.Timestamp));
 
       await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
         .to.emit(this.mockFromAccount, 'return$_validateUserOp')

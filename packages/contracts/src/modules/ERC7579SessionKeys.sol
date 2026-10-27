@@ -9,6 +9,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {Time} from "@openzeppelin/contracts/utils/types/Time.sol";
 import {Calldata} from "@openzeppelin/contracts/utils/Calldata.sol";
+import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/ERC4337Utils.sol";
 
 /**
  * @dev Abstract base for ERC-7579 session keys.
@@ -41,6 +42,9 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
     /// @dev The provided `key` is not registered.
     error ERC7579SessionKeysNonexistentKey(bytes key);
 
+    /// @dev The resolved validity range `[start, end]` is inverted or exceeds 47 bits.
+    error ERC7579SessionKeysInvalidValidity(uint48 start, uint48 end);
+
     /// @dev Emitted when all session keys are cleared for an account on uninstall.
     event ERC7579SessionKeysCleared(address indexed account);
 
@@ -55,6 +59,9 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      *
      * * `from`: The earliest timepoint at which the key is valid (inclusive).
      * * `until`: The latest timepoint at which the key is valid (inclusive).
+     *
+     * Both bounds fit in 47 bits (see {ERC4337Utils-BLOCK_RANGE_MASK}), since the highest bit of each
+     * ERC-4337 validity field flags block-number ranges.
      */
     struct Validity {
         uint48 from;
@@ -137,7 +144,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      * > Set `starts[i]` to `0` to activate the key immediately at the current timepoint.
      *
      * > [!TIP]
-     * > Set `ends[i]` to `0` to register a key with no expiry.
+     * > Set `ends[i]` to `0` to register a key with no expiry (stored as `type(uint48).max >> 1`).
      */
     function onInstall(bytes calldata initData) public virtual {
         (bytes[] calldata keys_, uint48[] calldata starts, uint48[] calldata ends) = _decodeKeysInitData(initData);
@@ -230,12 +237,14 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      *
      * * All arrays must have equal length. Reverts with {ERC7579SessionKeysMismatchedInitDataLengths} if not.
      * * Each of `keys_` must not be registered. Reverts with {ERC7579SessionKeysAlreadyRegisteredKey} if it is.
+     * * Each resolved range must satisfy `start <= end <= type(uint48).max >> 1`. Reverts with
+     *   {ERC7579SessionKeysInvalidValidity} if not.
      *
      * > [!TIP]
      * > Setting `starts[i]` to `0` resolves to the current timepoint.
      *
      * > [!TIP]
-     * > Setting `ends[i]` to `0` stores `type(uint48).max`, meaning no expiry.
+     * > Setting `ends[i]` to `0` stores `type(uint48).max >> 1`, meaning no expiry.
      *
      * Emits an {ERC7579SessionKeysERC7913KeySet} event for each key.
      */
@@ -256,7 +265,11 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
             bytes32 keyId = _keyId(key);
             Validity storage validity_ = _validities[account][installation_][keyId];
             uint48 start = uint48(Math.ternary(starts[i] == 0, clock(), starts[i])); // Safe cast. Both are uint48.
-            uint48 end = uint48(Math.ternary(ends[i] == 0, type(uint48).max, ends[i])); // Safe cast. Both are uint48.
+            uint48 end = uint48(Math.ternary(ends[i] == 0, ERC4337Utils.BLOCK_RANGE_MASK, ends[i])); // Safe cast. Both are uint48.
+            require(
+                start <= end && end <= ERC4337Utils.BLOCK_RANGE_MASK,
+                ERC7579SessionKeysInvalidValidity(start, end)
+            );
             validity_.from = start;
             validity_.until = end;
             emit ERC7579SessionKeysERC7913KeySet(account, key, start, end);
