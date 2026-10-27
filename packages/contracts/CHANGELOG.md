@@ -1,6 +1,7 @@
 ## 26-10-2026
 
 - `ERC8043Utils`: Decode `bytes[]` element offsets relative to the array, as in the ABI encoding. Malformed lengths and offsets now return an invalid result instead of reverting.
+- `CrossChainSignatureChecker`: `isValidCrossChainSignatureNow` and `isValidCrossChainSignatureNowCalldata` return false instead of reverting when `structIndex` is out of bounds or when `fields` sets bits beyond the ones defined in ERC-5267. `tryParseCrossChainSignature` and `tryParseCrossChainSignatureCalldata` return empty values instead of reverting when an encoded offset or length overflows.
 
 ## 22-10-2026
 
