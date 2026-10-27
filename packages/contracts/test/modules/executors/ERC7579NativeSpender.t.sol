@@ -214,6 +214,40 @@ contract ERC7579NativeSpenderTest is Test {
         _spender.onInstall(configBundle);
     }
 
+    function testReconfigureAfterKeyReorderReverts() public {
+        // `_key` is registered and configured by the two-step install
+        _installSpenderBoth(uint48(block.timestamp), 0, 1 ether, 1 days);
+
+        bytes[] memory configured = new bytes[](1);
+        configured[0] = abi.encodePacked(makeAddr("configured-key"));
+        bytes[] memory unconfigured = new bytes[](1);
+        unconfigured[0] = abi.encodePacked(makeAddr("unconfigured-key"));
+        uint48[] memory starts = new uint48[](1);
+        starts[0] = uint48(block.timestamp);
+        uint48[] memory ends = new uint48[](1);
+        uint160[] memory limits = new uint160[](1);
+        limits[0] = 1 ether;
+        uint48[] memory renewPeriods = new uint48[](1);
+        renewPeriods[0] = 1 days;
+
+        vm.startPrank(address(_account));
+        _spender.addKeysWithConfig(configured, starts, ends, limits, renewPeriods);
+        _spender.addKeys(unconfigured, starts, ends);
+
+        // Removing `_key` moves the unconfigured key to index 0 (swap-and-pop)
+        bytes[] memory removed = new bytes[](1);
+        removed[0] = _key;
+        _spender.removeKeys(removed);
+
+        // A direct `onInstall` must not overwrite the configured key's policy
+        limits[0] = 100 ether;
+        vm.expectRevert(abi.encodeWithSignature("ERC7579NativeSpenderAlreadyInstalled()"));
+        _spender.onInstall(abi.encode(configured, limits, renewPeriods));
+        vm.stopPrank();
+
+        assertEq(_spender.limit(address(_account), configured[0]), 1 ether);
+    }
+
     function testSecondInstallWithEmptyKeysReverts() public {
         // Validator install registers `_key`
         bytes[] memory keysOne = new bytes[](1);
