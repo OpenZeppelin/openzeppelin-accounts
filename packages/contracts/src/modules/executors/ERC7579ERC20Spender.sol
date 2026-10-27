@@ -726,12 +726,16 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         if (CallType.unwrap(callType) != CallType.unwrap(ERC7579Utils.CALLTYPE_SINGLE)) {
             return (false, Calldata.emptyBytes());
         }
-        uint256 execLenPos = 4 + uint256(bytes32(callData[36:68]));
-        if (execLenPos + 32 > callData.length) return (false, Calldata.emptyBytes());
-        uint256 execLen = uint256(bytes32(callData[execLenPos:execLenPos + 32]));
-        uint256 execStart = execLenPos + 32;
-        if (execStart + execLen > callData.length) return (false, Calldata.emptyBytes());
-        return (true, callData[execStart:execStart + execLen]);
+        unchecked {
+            // Safe subtraction given `callData.length >= 100`.
+            uint256 execOffset = uint256(bytes32(callData[36:68]));
+            if (execOffset > callData.length - 36) return (false, Calldata.emptyBytes());
+            uint256 execLenPos = 4 + execOffset; // Cannot overflow given the check above
+            uint256 execStart = execLenPos + 32; // Cannot overflow given the check above
+            uint256 execLen = uint256(bytes32(callData[execLenPos:execStart]));
+            if (execLen > callData.length - execStart) return (false, Calldata.emptyBytes());
+            return (true, callData[execStart:execStart + execLen]);
+        }
     }
 
     /**
@@ -752,13 +756,17 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
             return (false, Calldata.emptyBytes());
         }
 
-        uint256 keyLenPos = 4 + uint256(bytes32(innerData[0x24:0x44]));
-        if (keyLenPos + 32 > innerData.length) return (false, Calldata.emptyBytes());
-        uint256 keyLen = uint256(bytes32(innerData[keyLenPos:keyLenPos + 0x20]));
-        uint256 keyDataStart = keyLenPos + 0x20;
-        if (keyDataStart + keyLen > innerData.length) return (false, Calldata.emptyBytes());
+        unchecked {
+            // Safe subtraction given `innerData.length >= 100`.
+            uint256 keyOffset = uint256(bytes32(innerData[0x24:0x44]));
+            if (keyOffset > innerData.length - 0x24) return (false, Calldata.emptyBytes());
+            uint256 keyLenPos = 4 + keyOffset; // Cannot overflow given the check above
+            uint256 keyDataStart = keyLenPos + 0x20; // Cannot overflow given the check above
+            uint256 keyLen = uint256(bytes32(innerData[keyLenPos:keyDataStart]));
+            if (keyLen > innerData.length - keyDataStart) return (false, Calldata.emptyBytes());
 
-        return (true, innerData[keyDataStart:keyDataStart + keyLen]);
+            return (true, innerData[keyDataStart:keyDataStart + keyLen]);
+        }
     }
 
     function _decodeKeyConfigsInitDataKeys(bytes calldata initData) private pure returns (bytes[] calldata keys) {
