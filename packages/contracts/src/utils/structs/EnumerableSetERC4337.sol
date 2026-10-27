@@ -53,10 +53,17 @@ import {Panic} from "@openzeppelin/contracts/utils/Panic.sol";
  *
  * A `bytes` value would normally keep data of 32 bytes or more at `keccak256(slot) + j`, which is not associated
  * with the account. Instead, `BytesSet` stores each value inline in a window of 128 consecutive slots starting at
- * its associated base slot `X = keccak256(account || keccak256(index || p + 1))`: the length at `X` and the data
- * in 32-byte chunks at `X + 1` to `X + 127`, with the last chunk zero-padded. Windows of different indexes and
- * accounts start at unrelated hashes, so they do not overlap. Slots of a window past the last chunk are zero, and
- * so are the windows at indexes not lower than the length of the set.
+ * its associated base slot `X = keccak256(account || keccak256(index || p + 1))`, with the same short and long
+ * forms as Solidity's `bytes` storage:
+ *
+ * - Values of up to 31 bytes take a single slot: `X` holds the data left-aligned and `length * 2` in its lowest
+ *   byte.
+ * - Longer values store `length * 2 + 1` at `X` and the data in 32-byte chunks at `X + 1` to `X + 127`, with the
+ *   last chunk zero-padded.
+ *
+ * The lowest bit of `X` tells the two forms apart. Windows of different indexes and accounts start at unrelated
+ * hashes, so they do not overlap. Slots of a window past the last chunk are zero, and so are the windows at
+ * indexes not lower than the length of the set.
  *
  * > [!NOTE]
  * > Values are only associated with the `account` they are stored for. Reading or writing another account's set
@@ -118,7 +125,7 @@ library EnumerableSetERC4337 {
             uint256 lastIndex = set._length[account] - 1;
 
             // To delete an element in O(1), we swap the element to delete with the last one, and then remove
-            // the last element (sometimes called as 'swap and pop'). This modifies the order, as noted in {at}.
+            // the last element (sometimes called as 'swap and pop'). This modifies the order, as noted in {pos}.
             if (valueIndex != lastIndex) {
                 bytes32 lastValue = set._values[lastIndex][account];
                 // Move the lastValue to the index where the value to delete is
@@ -170,7 +177,7 @@ library EnumerableSetERC4337 {
      *
      * - `index` must be strictly less than {length}.
      */
-    function _at(Set storage set, address account, uint256 index) private view returns (bytes32) {
+    function _pos(Set storage set, address account, uint256 index) private view returns (bytes32) {
         if (index >= _length(set, account)) Panic.panic(Panic.ARRAY_OUT_OF_BOUNDS);
         return set._values[index][account];
     }
@@ -269,8 +276,8 @@ library EnumerableSetERC4337 {
      *
      * - `index` must be strictly less than {length}.
      */
-    function at(Bytes32Set storage set, address account, uint256 index) internal view returns (bytes32) {
-        return _at(set._inner, account, index);
+    function pos(Bytes32Set storage set, address account, uint256 index) internal view returns (bytes32) {
+        return _pos(set._inner, account, index);
     }
 
     /**
@@ -356,8 +363,8 @@ library EnumerableSetERC4337 {
      *
      * - `index` must be strictly less than {length}.
      */
-    function at(AddressSet storage set, address account, uint256 index) internal view returns (address) {
-        return address(uint160(uint256(_at(set._inner, account, index))));
+    function pos(AddressSet storage set, address account, uint256 index) internal view returns (address) {
+        return address(uint160(uint256(_pos(set._inner, account, index))));
     }
 
     /**
@@ -458,7 +465,7 @@ library EnumerableSetERC4337 {
             // Length of the value stored in the last window, which is removed below
             uint256 lastLength = value.length;
 
-            // Swap and pop, as in {EnumerableSet}. This modifies the order, as noted in {at}.
+            // Swap and pop, as in {EnumerableSet}. This modifies the order, as noted in {pos}.
             if (valueIndex != lastIndex) {
                 bytes memory lastValue = _readWindow(lastWindow);
                 lastLength = lastValue.length;
@@ -513,7 +520,7 @@ library EnumerableSetERC4337 {
      *
      * - `index` must be strictly less than {length}.
      */
-    function at(BytesSet storage set, address account, uint256 index) internal view returns (bytes memory) {
+    function pos(BytesSet storage set, address account, uint256 index) internal view returns (bytes memory) {
         if (index >= length(set, account)) Panic.panic(Panic.ARRAY_OUT_OF_BOUNDS);
         return _readWindow(_window(set, account, index));
     }
@@ -567,38 +574,47 @@ library EnumerableSetERC4337 {
     }
 
     /**
-     * @dev Writes `value` to the window starting at `slot`: its length at `slot` and its data in 32-byte chunks at
-     * `slot + 1` onwards, with the last chunk zero-padded. Chunks of a previous value of `previousLength` bytes
-     * past the new ones are cleared.
+     * @dev Writes `value` to the window starting at `slot`, in the short form if it is shorter than 32 bytes and
+     * in the long form otherwise. Chunks of a previous value of `previousLength` bytes past the new ones are
+     * cleared.
      *
      * The length of `value` must not exceed {MAX_BYTES_LENGTH}, so that every chunk is within the window.
      */
     function _writeWindow(uint256 slot, bytes memory value, uint256 previousLength) private {
+        uint256 previousChunks = _chunks(previousLength);
         assembly ("memory-safe") {
             let len := mload(value)
-            sstore(slot, len)
-
-            // Full chunks
-            let fullChunks := shr(5, len)
-            for {
-                let i := 0
-            } lt(i, fullChunks) {
-                i := add(i, 1)
-            } {
-                sstore(add(slot, add(i, 1)), mload(add(value, shl(5, add(i, 1)))))
+            let chunks := 0
+            switch lt(len, 0x20)
+            case 1 {
+                // Short form: data left-aligned (masked to its first `len` bytes) and `len * 2` in the lowest byte
+                let mask := shl(sub(256, shl(3, len)), not(0))
+                sstore(slot, or(and(mload(add(value, 0x20)), mask), shl(1, len)))
             }
+            default {
+                // Long form: `len * 2 + 1` followed by the data chunks
+                sstore(slot, add(shl(1, len), 1))
 
-            // Last partial chunk, keeping its first `rem` bytes only
-            let chunks := fullChunks
-            let rem := and(len, 0x1f)
-            if rem {
-                chunks := add(chunks, 1)
-                let mask := shl(sub(256, shl(3, rem)), not(0))
-                sstore(add(slot, chunks), and(mload(add(value, shl(5, chunks))), mask))
+                // Full chunks
+                let fullChunks := shr(5, len)
+                for {
+                    let i := 0
+                } lt(i, fullChunks) {
+                    i := add(i, 1)
+                } {
+                    sstore(add(slot, add(i, 1)), mload(add(value, shl(5, add(i, 1)))))
+                }
+
+                // Last partial chunk, keeping its first `rem` bytes only
+                chunks := fullChunks
+                let rem := and(len, 0x1f)
+                if rem {
+                    chunks := add(chunks, 1)
+                    let mask := shl(sub(256, shl(3, rem)), not(0))
+                    sstore(add(slot, chunks), and(mload(add(value, shl(5, chunks))), mask))
+                }
             }
-
             // Trailing chunks of the previous value
-            let previousChunks := shr(5, add(previousLength, 0x1f))
             for {
                 let i := add(chunks, 1)
             } iszero(gt(i, previousChunks)) {
@@ -613,26 +629,42 @@ library EnumerableSetERC4337 {
     function _readWindow(uint256 slot) private view returns (bytes memory value) {
         assembly ("memory-safe") {
             value := mload(0x40)
-            let len := sload(slot)
-            mstore(value, len)
-            let chunks := shr(5, add(len, 0x1f))
-            for {
-                let i := 1
-            } iszero(gt(i, chunks)) {
-                i := add(i, 1)
-            } {
-                mstore(add(value, shl(5, i)), sload(add(slot, i)))
+            let word := sload(slot)
+            switch and(word, 1)
+            case 0 {
+                // Short form. The data bytes past `len` are zero in storage, so the memory past `len` is clean
+                mstore(value, shr(1, and(word, 0xff)))
+                mstore(add(value, 0x20), and(word, not(0xff)))
+                mstore(0x40, add(value, 0x40))
             }
-            // Chunks are zero-padded in storage, so the memory past `len` is clean
-            mstore(0x40, add(value, shl(5, add(chunks, 1))))
+            default {
+                // Long form
+                let len := shr(1, word)
+                mstore(value, len)
+                let chunks := shr(5, add(len, 0x1f))
+                for {
+                    let i := 1
+                } iszero(gt(i, chunks)) {
+                    i := add(i, 1)
+                } {
+                    mstore(add(value, shl(5, i)), sload(add(slot, i)))
+                }
+                // Chunks are zero-padded in storage, so the memory past `len` is clean
+                mstore(0x40, add(value, shl(5, add(chunks, 1))))
+            }
         }
+    }
+
+    /// @dev Number of data chunks after the first slot of a window storing a value of `len` bytes.
+    function _chunks(uint256 len) private pure returns (uint256) {
+        return Math.ternary(len < 0x20, 0, Math.ceilDiv(len, 0x20));
     }
 
     /// @dev Clears the window starting at `slot`, which stores a value of `len` bytes. See {_writeWindow}.
     function _clearWindow(uint256 slot, uint256 len) private {
+        uint256 chunks = _chunks(len);
         assembly ("memory-safe") {
             sstore(slot, 0)
-            let chunks := shr(5, add(len, 0x1f))
             for {
                 let i := 1
             } iszero(gt(i, chunks)) {

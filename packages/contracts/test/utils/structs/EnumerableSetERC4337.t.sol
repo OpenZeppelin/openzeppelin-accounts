@@ -43,7 +43,7 @@ contract EnumerableSetERC4337Holder {
     }
 
     function addressAt(address account, uint256 index) external view returns (address) {
-        return _addressSet.at(account, index);
+        return _addressSet.pos(account, index);
     }
 
     function addresses(address account) external view returns (address[] memory) {
@@ -84,7 +84,7 @@ contract EnumerableSetERC4337Holder {
     }
 
     function bytes32At(address account, uint256 index) external view returns (bytes32) {
-        return _bytes32Set.at(account, index);
+        return _bytes32Set.pos(account, index);
     }
 
     function bytes32s(address account) external view returns (bytes32[] memory) {
@@ -125,7 +125,7 @@ contract EnumerableSetERC4337Holder {
     }
 
     function bytesAt(address account, uint256 installation, uint256 index) external view returns (bytes memory) {
-        return _bytes(installation).at(account, index);
+        return _bytes(installation).pos(account, index);
     }
 
     function bytesValues(address account, uint256 installation) external view returns (bytes[] memory) {
@@ -245,7 +245,7 @@ contract EnumerableSetERC4337Test is Test {
         assertEq(_holder.addresses(ALICE, 0, type(uint256).max).length, 5);
     }
 
-    function testAddressSetAtOutOfBounds() public {
+    function testAddressSetPosOutOfBounds() public {
         _holder.addAddress(ALICE, address(1));
         vm.expectRevert(stdError.indexOOBError);
         _holder.addressAt(ALICE, 1);
@@ -362,6 +362,46 @@ contract EnumerableSetERC4337Test is Test {
         assertEq(_holder.bytesCount(ALICE, 0), 0);
         assertFalse(_holder.containsBytes(ALICE, 0, b));
         assertFalse(_holder.containsBytes(ALICE, 0, c));
+        _assertCleanWindows(ALICE, 0, 3);
+    }
+
+    function testBytesSetStorageForms() public {
+        uint256 p = _holder.bytesSetSlot(0);
+
+        // Values shorter than 32 bytes take a single slot: the data left-aligned and `length * 2` in the lowest byte
+        uint256[4] memory shortLengths = [uint256(0), 1, 20, 31];
+        for (uint256 i = 0; i < shortLengths.length; ++i) {
+            bytes memory value = _filledBytes(shortLengths[i], 0xab);
+            _holder.addBytes(BOB, i, value);
+            uint256 base = _windowSlot(BOB, _holder.bytesSetSlot(i), 0);
+            uint256 expected = (shortLengths[i] == 0 ? 0 : uint256(bytes32(value))) | (shortLengths[i] * 2);
+            assertEq(uint256(vm.load(address(_holder), bytes32(base))), expected);
+            assertEq(vm.load(address(_holder), bytes32(base + 1)), bytes32(0));
+            assertEq(_holder.bytesAt(BOB, i, 0), value);
+        }
+
+        // Longer values store `length * 2 + 1` followed by the zero-padded chunks
+        bytes memory long = _filledBytes(33, 0xcd);
+        _holder.addBytes(ALICE, 0, long);
+        uint256 longBase = _windowSlot(ALICE, p, 0);
+        assertEq(uint256(vm.load(address(_holder), bytes32(longBase))), 33 * 2 + 1);
+        assertEq(vm.load(address(_holder), bytes32(longBase + 1)), bytes32(_filledBytes(32, 0xcd)));
+        assertEq(vm.load(address(_holder), bytes32(longBase + 2)), bytes32(uint256(0xcd) << 248));
+
+        // Moving a short value over a long one clears the long value's chunks
+        bytes memory short = _filledBytes(20, 0xef);
+        _holder.addBytes(ALICE, 0, short);
+        _holder.removeBytes(ALICE, 0, long);
+        assertEq(_holder.bytesAt(ALICE, 0, 0), short);
+        assertEq(vm.load(address(_holder), bytes32(longBase + 1)), bytes32(0));
+        assertEq(vm.load(address(_holder), bytes32(longBase + 2)), bytes32(0));
+        _assertCleanWindows(ALICE, 0, 3);
+
+        // Moving a long value over a short one writes the long form
+        _holder.addBytes(ALICE, 0, long);
+        _holder.removeBytes(ALICE, 0, short);
+        assertEq(_holder.bytesAt(ALICE, 0, 0), long);
+        assertEq(uint256(vm.load(address(_holder), bytes32(longBase))), 33 * 2 + 1);
         _assertCleanWindows(ALICE, 0, 3);
     }
 
@@ -704,12 +744,20 @@ contract EnumerableSetERC4337Test is Test {
         uint256 length = _holder.bytesCount(account, installation);
         for (uint256 index = 0; index < length + 2; ++index) {
             uint256 base = _windowSlot(account, p, index);
-            uint256 len = uint256(vm.load(address(_holder), bytes32(base)));
-            if (index >= length) assertEq(len, 0);
-            for (uint256 n = (len + 31) / 32 + 1; n <= maxChunks; ++n) {
+            uint256 word = uint256(vm.load(address(_holder), bytes32(base)));
+            if (index >= length) assertEq(word, 0);
+            // Short form values have no chunks, long form values have `ceil(len / 32)` chunks after the first slot
+            uint256 chunks = word & 1 == 0 ? 0 : ((word >> 1) + 31) / 32;
+            for (uint256 n = chunks + 1; n <= maxChunks; ++n) {
                 assertEq(vm.load(address(_holder), bytes32(base + n)), bytes32(0));
             }
         }
+    }
+
+    /// @dev Returns `len` bytes all set to `fill`.
+    function _filledBytes(uint256 len, bytes1 fill) private pure returns (bytes memory value) {
+        value = new bytes(len);
+        for (uint256 i = 0; i < len; ++i) value[i] = fill;
     }
 
     /// @dev Truncates a fuzzed sequence of operations to {MAX_OPS}.
