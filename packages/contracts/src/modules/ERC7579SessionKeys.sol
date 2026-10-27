@@ -23,6 +23,10 @@ import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/ERC4337Utils.s
  * The key is encoded in the `signature` field of the user operations and ERC-1271 requests for
  * identification and cryptographic verification. See {_tryDecodeSignature} for the encoding details.
  *
+ * Each key has a generation (see {keyGeneration}) that is bumped when the key is removed. Per-key
+ * state is indexed by {_keyId}, which includes the generation, so removing a key makes all of its
+ * state unreachable in constant gas, and registering it again starts from empty state.
+ *
  * This module provides session key management through the {_validateSessionKey} and
  * {isValid} internal functions. Concrete implementations should attach it to validation flows such as
  * {ERC7579Validator-_rawERC7579Validation}.
@@ -72,6 +76,8 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
     // The account is the innermost key of mappings read or written during validation, so that their slots are
     // associated with the account (ERC-7562).
     mapping(uint256 installation => mapping(bytes32 keyId => mapping(address account => Validity))) private _validities;
+    mapping(uint256 installation => mapping(bytes32 keyHash => mapping(address account => uint256)))
+        private _keyGenerations;
 
     /**
      * @dev Clock used for flagging validity ranges. Defaults to timestamp but can be overridden
@@ -102,7 +108,16 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
 
     /// @dev Returns the validity range `(from, until)` for a `key` on an `account`.
     function validity(address account, bytes calldata key) public view virtual returns (uint48 from, uint48 until) {
-        return _validity(account, installation(account), _keyId(key));
+        uint256 installation_ = installation(account);
+        return _validity(account, installation_, _keyId(account, installation_, key));
+    }
+
+    /**
+     * @dev Returns the generation of `key` for `account`. Starts at `0` and is bumped each time the key is
+     * removed through {removeKeys}. See {_keyId}.
+     */
+    function keyGeneration(address account, bytes calldata key) public view virtual returns (uint256) {
+        return _keyGeneration(account, installation(account), key);
     }
 
     /// @dev Returns whether a `key` is valid for an `account` at the current timepoint.
@@ -207,10 +222,19 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
         return (_validities[installation_][keyId][account].from, _validities[installation_][keyId][account].until);
     }
 
+    /// @dev Internal version of {keyGeneration} that receives an `installation_` nonce.
+    function _keyGeneration(
+        address account,
+        uint256 installation_,
+        bytes memory key
+    ) internal view virtual returns (uint256) {
+        return _keyGenerations[installation_][keccak256(key)][account];
+    }
+
     /// @dev Internal version of {isValid} that receives an `installation_` nonce.
     function _isValid(address account, uint256 installation_, bytes calldata key) internal view virtual returns (bool) {
         uint48 timepoint = clock();
-        (uint48 from, uint48 until) = _validity(account, installation_, _keyId(key));
+        (uint48 from, uint48 until) = _validity(account, installation_, _keyId(account, installation_, key));
         return from <= timepoint && until >= timepoint;
     }
 
@@ -233,7 +257,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      * @dev Internal function to register session keys for an `account`.
      *
      * For each key, stores the ERC-7913 key bytes in the enumerable set and records its
-     * validity range. Keys are identified by `keccak256(key)` in the validity mapping.
+     * validity range. Keys are identified by {_keyId} in the validity mapping.
      *
      * Requirements:
      *
@@ -264,7 +288,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
         for (uint256 i = 0; i < keys_.length; ++i) {
             bytes calldata key = keys_[i];
             require(_sessionKeys[account][installation_].add(key), ERC7579SessionKeysAlreadyRegisteredKey(key));
-            bytes32 keyId = _keyId(key);
+            bytes32 keyId = _keyId(account, installation_, key);
             Validity storage validity_ = _validities[installation_][keyId][account];
             uint48 start = uint48(Math.ternary(starts[i] == 0, clock(), starts[i])); // Safe cast. Both are uint48.
             uint48 end = uint48(Math.ternary(ends[i] == 0, ERC4337Utils.BLOCK_RANGE_MASK, ends[i])); // Safe cast. Both are uint48.
@@ -281,7 +305,13 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
     /**
      * @dev Internal function to remove session keys from an `account`.
      *
-     * Removes the key from the enumerable set and clears its validity range in storage.
+     * Removes the key from the enumerable set and bumps its {keyGeneration}, which changes its
+     * {_keyId}. The key's validity range and any state that derived contracts index by {_keyId}
+     * become unreachable, without iterating over that state.
+     *
+     * > [!NOTE]
+     * > As in {onUninstall}, the previous key data remains in storage but is never accessed again.
+     * > Registering the key again starts with no state under the new generation.
      *
      * Requirements:
      *
@@ -293,10 +323,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
         for (uint256 i = 0; i < keys_.length; ++i) {
             bytes calldata key = keys_[i];
             require(_sessionKeys[account][installation_].remove(key), ERC7579SessionKeysNonexistentKey(key));
-            bytes32 keyId = _keyId(key);
-            Validity storage validity_ = _validities[installation_][keyId][account];
-            validity_.from = 0;
-            validity_.until = 0;
+            ++_keyGenerations[installation_][keccak256(key)][account];
             emit ERC7579SessionKeysERC7913KeyUnset(account, key);
         }
     }
@@ -335,9 +362,15 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
             SignatureChecker.isValidSignatureNow(key, hash, keySignature);
     }
 
-    /// @dev Returns the storage key used to identify a session key in the validity mapping.
-    function _keyId(bytes memory key) internal pure virtual returns (bytes32) {
-        return keccak256(key);
+    /**
+     * @dev Returns the storage key used to identify `key` for `account` under `installation_`, at the key's
+     * current {keyGeneration}. Used for the validity mapping.
+     *
+     * Derived contracts should index any per-key state by this identifier so that removing the key
+     * (see {_removeKeys}) makes that state unreachable.
+     */
+    function _keyId(address account, uint256 installation_, bytes memory key) internal view virtual returns (bytes32) {
+        return keccak256(abi.encode(keccak256(key), _keyGeneration(account, installation_, key)));
     }
 
     /**

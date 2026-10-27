@@ -159,18 +159,20 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
 
     /// @dev Returns the renewal period for `key`'s spending config on `account`.
     function renewPeriod(address account, bytes calldata key) public view virtual returns (uint256) {
-        return _renewPeriod(account, installation(account), _keyId(key));
+        uint256 installation_ = installation(account);
+        return _renewPeriod(account, installation_, _keyId(account, installation_, key));
     }
 
     /// @dev Returns the spending limit per period for `key` on `account`.
     function limit(address account, bytes calldata key) public view virtual returns (uint256) {
-        return _limit(account, installation(account), _keyId(key));
+        uint256 installation_ = installation(account);
+        return _limit(account, installation_, _keyId(account, installation_, key));
     }
 
     /// @dev Returns the amount spent by `key` during `period` on `account`, anchored at the key's `from`.
     function spent(address account, bytes calldata key, uint256 period) public view virtual returns (uint256) {
         uint256 installation_ = installation(account);
-        bytes32 keyId = _keyId(key);
+        bytes32 keyId = _keyId(account, installation_, key);
         (uint48 from, ) = _validity(account, installation_, keyId);
         return _spent(account, installation_, keyId, period, from);
     }
@@ -182,7 +184,8 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         uint256 period,
         uint256 start
     ) public view virtual returns (uint256) {
-        return _spent(account, installation(account), _keyId(key), period, start);
+        uint256 installation_ = installation(account);
+        return _spent(account, installation_, _keyId(account, installation_, key), period, start);
     }
 
     /// @dev Returns `(spending, available)` for `key` at `period` on `account`.
@@ -192,7 +195,7 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         uint256 period
     ) public view virtual returns (uint256 spending, uint256 available) {
         uint256 installation_ = installation(account);
-        bytes32 keyId = _keyId(key);
+        bytes32 keyId = _keyId(account, installation_, key);
         (uint48 from, ) = _validity(account, installation_, keyId);
         return _spendingAt(account, installation_, keyId, period, from);
     }
@@ -210,7 +213,8 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         bytes calldata key,
         uint48 timepoint
     ) public view virtual returns (uint256 start, uint256 period) {
-        return _periodAt(account, installation(account), _keyId(key), timepoint);
+        uint256 installation_ = installation(account);
+        return _periodAt(account, installation_, _keyId(account, installation_, key), timepoint);
     }
 
     /**
@@ -254,8 +258,8 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
             // After the second install, there must be at least one key with non-zero spending config.
             bytes[] memory keys = _keys(msg.sender, installation_, 0, 1);
             require(
-                _limit(msg.sender, installation_, _keyId(keys[0])) == 0,
-                /* && _renewPeriod(msg.sender, installation_, _keyId(keys[0])) == 0 */ ERC7579NativeSpenderAlreadyInstalled()
+                _limit(msg.sender, installation_, _keyId(msg.sender, installation_, keys[0])) == 0,
+                /* && _renewPeriod(msg.sender, installation_, _keyId(msg.sender, installation_, keys[0])) == 0 */ ERC7579NativeSpenderAlreadyInstalled()
             );
 
             (
@@ -424,14 +428,11 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
     }
 
     /**
-     * @dev Removes session keys from the calling account. Also clears the spending configuration
-     * for each key.
+     * @dev Removes session keys from the calling account.
      *
-     * > [!NOTE]
-     * > Spending history (per-period `spent` values) is preserved in storage at the historical
-     * > start timepoint. It is no longer surfaced through {spent-address-bytes-uint256--} (which uses
-     * > the current {validity}'s `from`, now zero) but can still be read via
-     * > {spent-address-bytes-uint256-uint256--} with the historical start.
+     * The spending configuration and spending history of each key are indexed by its {_keyId}, so the
+     * {keyGeneration} bump in the parent makes them unreachable. Registering the key again starts with no
+     * spending configuration and empty spending periods.
      *
      * Emits {ERC7579SessionKeysERC7913KeyUnset} (via the parent) and {ERC7579NativeSpendingConfigUnset}
      * for each key.
@@ -439,9 +440,6 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
     function _removeKeys(address account, uint256 installation_, bytes[] calldata oldKeys) internal virtual override {
         super._removeKeys(account, installation_, oldKeys);
         for (uint256 i = 0; i < oldKeys.length; ++i) {
-            bytes32 kId = _keyId(oldKeys[i]);
-            _config[installation_][kId][account].limit = 0;
-            _config[installation_][kId][account].renewPeriod = 0;
             emit ERC7579NativeSpendingConfigUnset(account, oldKeys[i]);
         }
     }
@@ -537,7 +535,7 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         address to,
         uint256 amount
     ) internal virtual {
-        bytes32 kId = _keyId(key);
+        bytes32 kId = _keyId(account, installation_, key);
         (uint256 start, uint256 period) = _periodAt(account, installation_, kId, clock());
         (, uint256 available) = _spendingAt(account, installation_, kId, period, start);
         require(amount <= available, ERC7579NativeInsufficientAvailable(account, key, amount));
@@ -567,7 +565,7 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         uint256[] calldata amounts
     ) internal virtual {
         require(tos.length == amounts.length, ERC7579NativeSpenderMismatchedBatchLengths(tos.length, amounts.length));
-        bytes32 keyId = _keyId(key);
+        bytes32 keyId = _keyId(account, installation_, key);
         (uint256 start, uint256 period) = _periodAt(account, installation_, keyId, clock());
         (, uint256 available) = _spendingAt(account, installation_, keyId, period, start);
         uint256 totalAmount = 0;
@@ -616,7 +614,7 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         uint160 newLimit,
         uint48 newRenewPeriod
     ) internal virtual {
-        bytes32 keyId = _keyId(key);
+        bytes32 keyId = _keyId(account, installation_, key);
         require(newRenewPeriod > 0, ERC7579NativeSpenderInvalidRenewPeriod(newRenewPeriod));
         require(newLimit > 0, ERC7579NativeSpenderInvalidLimit(newLimit));
         _config[installation_][keyId][account].renewPeriod = newRenewPeriod;
@@ -671,7 +669,7 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         // _tryDecodeSignature's success is checked down in `super._validateUserOp` -> `_rawERC7579Validation`
 
         // validity is checked down in `super._validateUserOp`
-        return _keyId(sigKey) == _keyId(callDataKey); // Only signing keys can call transferFrom or batchTransferFrom on its behalf
+        return keccak256(sigKey) == keccak256(callDataKey); // Only signing keys can call transferFrom or batchTransferFrom on its behalf
     }
 
     /**

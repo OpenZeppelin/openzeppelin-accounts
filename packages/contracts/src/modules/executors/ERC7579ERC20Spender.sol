@@ -72,10 +72,10 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * > repurposed to authorize arbitrary off-chain messages on behalf of the account.
  *
  * > [!NOTE]
- * > Removing a session key via {ERC7579SessionKeys-removeKeys} clears its validity range but
- * > does NOT clear the `(key, token)` spending configs. If the same key bytes are re-registered via
- * > {ERC7579SessionKeys-addKeys} (without `addKeysWithConfig`), the previously-stored configs become
- * > active again. To re-register a key with a fresh policy, call {addKeysWithConfig} instead.
+ * > The `(key, token)` spending configs and spent amounts are indexed by the key's
+ * > {ERC7579SessionKeys-_keyId}, which includes its {ERC7579SessionKeys-keyGeneration}. Removing a key
+ * > via {ERC7579SessionKeys-removeKeys} bumps the generation, so all of its configs become unreachable
+ * > in constant gas regardless of the number of tokens. A key registered again starts with no configs.
  *
  * > [!TIP]
  * > Set `starts[i] == 0` to schedule a key from the current timepoint.
@@ -197,12 +197,14 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
 
     /// @dev Returns the renewal period for the `(key, token)` config on `account`.
     function renewPeriod(address account, bytes calldata key, address token) public view virtual returns (uint256) {
-        return _renewPeriod(account, installation(account), _keyId(key), token);
+        uint256 installation_ = installation(account);
+        return _renewPeriod(account, installation_, _keyId(account, installation_, key), token);
     }
 
     /// @dev Returns the spending limit per period for the `(key, token)` config on `account`.
     function limit(address account, bytes calldata key, address token) public view virtual returns (uint256) {
-        return _limit(account, installation(account), _keyId(key), token);
+        uint256 installation_ = installation(account);
+        return _limit(account, installation_, _keyId(account, installation_, key), token);
     }
 
     /// @dev Returns the amount spent by `key` for `token` during `period`, anchored at the key's `from`.
@@ -213,7 +215,7 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         uint256 period
     ) public view virtual returns (uint256) {
         uint256 installation_ = installation(account);
-        bytes32 keyId = _keyId(key);
+        bytes32 keyId = _keyId(account, installation_, key);
         (uint48 from, ) = _validity(account, installation_, keyId);
         return _spent(account, installation_, keyId, token, period, from);
     }
@@ -226,7 +228,8 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         uint256 period,
         uint256 start
     ) public view virtual returns (uint256) {
-        return _spent(account, installation(account), _keyId(key), token, period, start);
+        uint256 installation_ = installation(account);
+        return _spent(account, installation_, _keyId(account, installation_, key), token, period, start);
     }
 
     /// @dev Returns `(spending, available)` for `(key, token)` at `period`.
@@ -237,7 +240,7 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         uint256 period
     ) public view virtual returns (uint256 spending, uint256 available) {
         uint256 installation_ = installation(account);
-        bytes32 keyId = _keyId(key);
+        bytes32 keyId = _keyId(account, installation_, key);
         (uint48 from, ) = _validity(account, installation_, keyId);
         return _spendingAt(account, installation_, keyId, token, period, from);
     }
@@ -256,7 +259,8 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         address token,
         uint48 timepoint
     ) public view virtual returns (uint256 start, uint256 period) {
-        return _periodAt(account, installation(account), _keyId(key), token, timepoint);
+        uint256 installation_ = installation(account);
+        return _periodAt(account, installation_, _keyId(account, installation_, key), token, timepoint);
     }
 
     /**
@@ -597,7 +601,7 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         address to,
         uint256 amount
     ) internal virtual {
-        bytes32 keyId = _keyId(key);
+        bytes32 keyId = _keyId(account, installation_, key);
         (uint256 start, uint256 period) = _periodAt(account, installation_, keyId, token, clock());
         (, uint256 available) = _spendingAt(account, installation_, keyId, token, period, start);
         require(amount <= available, ERC7579ERC20InsufficientAvailable(account, key, token, amount));
@@ -641,7 +645,7 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
             totalAmount += amounts[i];
         }
 
-        bytes32 keyId = _keyId(key);
+        bytes32 keyId = _keyId(account, installation_, key);
         (uint256 start, uint256 period) = _periodAt(account, installation_, keyId, token, clock());
         {
             // Avoid stack too deep error
@@ -702,7 +706,7 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         uint160 newLimit,
         uint48 newRenewPeriod
     ) internal virtual {
-        bytes32 keyId = _keyId(key);
+        bytes32 keyId = _keyId(account, installation_, key);
         require(newRenewPeriod > 0, ERC7579ERC20SpenderInvalidRenewPeriod(newRenewPeriod));
         require(newLimit > 0, ERC7579ERC20SpenderInvalidLimit(newLimit));
         require(token.code.length > 0, ERC7579ERC20SpenderInvalidToken(token));
@@ -726,7 +730,7 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         // _tryDecodeSignature's success is checked down in `super._validateUserOp` -> `_rawERC7579Validation`
 
         // validity is checked down in `super._validateUserOp`
-        return _keyId(sigKey) == _keyId(callDataKey);
+        return keccak256(sigKey) == keccak256(callDataKey);
     }
 
     /// @dev See {ERC7579NativeSpender-_validateSingleExecutionCalldata}.
