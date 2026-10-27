@@ -406,33 +406,16 @@ bool ok = recovery.isGuardian(account, guardian);
 
 ### ERC7579NativeSpender
 
-Extends `ERC7579Executor` with native token (ETH) spending limits and automatic renewal periods. Authorized spenders can call `transferFrom` to move ETH from an account up to a configurable per-period limit. Limits reset automatically at the end of each period without requiring manual intervention.
+A [session-key](/accounts/contracts/session-keys) policy module for native token (ETH) spending limits. Each session key gets its own `(limit, renewPeriod)` policy: the key can move up to `limit` wei from the account per period, and the allowance renews automatically every `renewPeriod` clock units, starting at the key's `from` timepoint. The module is both a validator and an executor, so it must be installed under both module types. See [Spending Limits](/accounts/contracts/executors/spending-limits) for installation and usage.
+
+A session key spends by submitting a user operation that calls the module's `transferFrom` or `batchTransferFrom`, or by calling them directly when the key is a plain address:
 
 ```solidity
-import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {ERC7579NativeSpender} from "@openzeppelin-accounts/contracts/modules/executors/ERC7579NativeSpender.sol";
-
-ERC7579NativeSpender nativeSpender = new ERC7579NativeSpender();
-
-// initData: abi.encode(spenders, starts, limits, renewPeriods)
-// starts: pass 0 to start immediately; all arrays must be equal length
-bytes memory initData = abi.encode(spenders, starts, limits, renewPeriods);
-account.installModule(MODULE_TYPE_EXECUTOR, address(nativeSpender), initData);
+nativeSpender.transferFrom(account, key, recipient, amount);
+nativeSpender.batchTransferFrom(account, key, recipients, amounts);
 ```
 
-Spenders call `transferFrom` or `batchTransferFrom` to move funds within their limit:
-
-```solidity
-nativeSpender.transferFrom(account, recipient, amount);
-nativeSpender.batchTransferFrom(account, recipients, amounts);
-```
-
-The account can adjust or revoke spending configurations at any time:
-
-```solidity
-nativeSpender.setSpendingConfig(spender, newLimit, newRenewPeriod);
-nativeSpender.unsetSpendingConfig(spender);
-```
+Policies can't be changed once written. The account adds keys with fresh policies through `addKeysWithConfig(keys, starts, ends, limits, renewPeriods)` and revokes them with `removeKeys(keys)`.
 
 <Callout>
   Setting `renewPeriod` to `type(uint48).max` effectively disables automatic renewal (one-time limit).
@@ -440,29 +423,12 @@ nativeSpender.unsetSpendingConfig(spender);
 
 ### ERC7579ERC20Spender
 
-Mirrors `ERC7579NativeSpender` for ERC20 tokens. Spending configurations are tracked per token–spender pair, and the clock follows the token's ERC-6372 implementation when available, falling back to timestamps.
+Mirrors `ERC7579NativeSpender` for ERC-20 tokens. A session key can have one `(limit, renewPeriod)` policy per token, and periods use the module's own clock, the same as the native spender.
 
 ```solidity
-import {MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {ERC7579ERC20Spender} from "@openzeppelin-accounts/contracts/modules/executors/ERC7579ERC20Spender.sol";
-
-ERC7579ERC20Spender erc20Spender = new ERC7579ERC20Spender();
-
-// initData: abi.encode(tokens, spenders, starts, limits, renewPeriods)
-bytes memory initData = abi.encode(tokens, spenders, starts, limits, renewPeriods);
-account.installModule(MODULE_TYPE_EXECUTOR, address(erc20Spender), initData);
+erc20Spender.transferFrom(account, key, token, recipient, amount);
+erc20Spender.batchTransferFrom(account, key, token, recipients, amounts);
 ```
 
-Spenders transfer tokens via `transferFrom` or `batchTransferFrom`:
+The account adds keys with per-token policies through `addKeysWithConfig(keys, starts, ends, tokens, limits, renewPeriods)` and revokes them with `removeKeys(keys)`. See [Spending Limits](/accounts/contracts/executors/spending-limits) for installation and usage.
 
-```solidity
-erc20Spender.transferFrom(account, token, recipient, amount);
-erc20Spender.batchTransferFrom(account, token, recipients, amounts);
-```
-
-The account manages configurations per token–spender pair:
-
-```solidity
-erc20Spender.setSpendingConfig(token, spender, newLimit, newRenewPeriod);
-erc20Spender.unsetSpendingConfig(token, spender);
-```

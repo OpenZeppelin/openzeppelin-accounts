@@ -255,6 +255,8 @@ socialRecovery.startRecovery(
 
 <Callout>See [multisignature format](/accounts/contracts/multisig#signature-format)</Callout>
 
+Sign recoveries with `EXECTYPE_DEFAULT` in `mode`. Under `EXECTYPE_TRY`, a failed inner call still consumes the operation, so it can't be retried.
+
 The operation enters the **Scheduled** state and cannot execute until the delay period elapses.
 
 </Step>

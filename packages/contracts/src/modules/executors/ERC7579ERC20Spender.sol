@@ -57,6 +57,9 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * > Once any `(key, token)` config is written, the module is "installed" and further `onInstall`
  * > calls revert with {ERC7579ERC20SpenderAlreadyInstalled}. To change the spending policy, the
  * > account must uninstall and reinstall (which bumps the installation nonce and resets state).
+ * >
+ * > Install and uninstall both module types together. Uninstalling either one resets the whole
+ * > installation (session keys and spending policies) for both roles.
  *
  * > [!IMPORTANT]
  * > This module deliberately disables ERC-1271 signing

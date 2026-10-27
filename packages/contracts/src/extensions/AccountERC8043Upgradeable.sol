@@ -40,6 +40,16 @@ abstract contract AccountERC8043Upgradeable is Initializable, Account, EIP712, A
      * 3. Installs the modules if validation succeeds
      * 4. Continues with normal user operation validation using the forwarded `signature`
      * Otherwise, falls back to `super._validateUserOp`.
+     *
+     * > [!IMPORTANT]
+     * > The `installationSignature` is checked through {isValidSignature}, so any installed validator
+     * > that can produce ERC-1271 signatures for the account can authorize init-mode installations.
+     * > Validators that restrict the user operation scope should restrict ERC-1271 signing too, or the
+     * > account can override this function to require a specific validator.
+     *
+     * > [!NOTE]
+     * > Modules are installed during validation, so they persist even if the user operation's execution
+     * > reverts. For temporary authority, use modules with their own expiry (e.g. session keys with an `until`).
      */
     function _validateUserOp(
         PackedUserOperation calldata userOp,

@@ -28,6 +28,11 @@ import {ERC7579MultisigWeighted} from "../ERC7579MultisigWeighted.sol";
  * > [!NOTE]
  * > This module does not restrict execution by default once the social recovery operation
  * > is ready. Anyone can call {executeRecovery} once the delay period has elapsed.
+ *
+ * > [!IMPORTANT]
+ * > Recovery signatures are EIP-712 typed data under the account's own ERC-5267 domain, and the
+ * > typed struct does not include the account. They are bound to the account only through that
+ * > domain, so accounts must report a domain unique to themselves (e.g. `verifyingContract` set to the account).
  */
 contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579MultisigWeighted {
     using MessageHashUtils for *;
@@ -126,6 +131,10 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
      * * The signature must be encoded properly. See {ERC7579MultisigWeighted-_validateMultisig}.
      * * See {ERC7579DelayedExecutor-_schedule} for scheduling requirements.
      * * The `account` must implement {IERC5267}.
+     *
+     * > [!NOTE]
+     * > Under `EXECTYPE_TRY`, a failed or under-gassed inner call during {executeRecovery} still
+     * > consumes the operation. Recoveries should be signed with `EXECTYPE_DEFAULT` in `mode`.
      */
     function startRecovery(
         address account,
@@ -159,6 +168,10 @@ contract ERC7579SocialRecoveryExecutor is ERC7579DelayedExecutor, ERC7579Multisi
      * Requirements:
      *
      * * See {ERC7579DelayedExecutor-_execute} for execution requirements.
+     *
+     * > [!NOTE]
+     * > Under `EXECTYPE_TRY`, a failed or under-gassed inner call does not revert, and the operation
+     * > is still marked as executed. Recoveries should be signed with `EXECTYPE_DEFAULT` in `mode`.
      */
     function executeRecovery(address account, bytes32 salt, bytes32 mode, bytes calldata recoveryData) public virtual {
         _execute(account, salt, mode, recoveryData);

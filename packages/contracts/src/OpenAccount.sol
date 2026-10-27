@@ -13,6 +13,14 @@ import {Mode} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol
 
 /**
  * @dev A modular smart account implementation.
+ *
+ * > [!IMPORTANT]
+ * > ERC-1271 signatures are validated by the installed validators against the raw hash and are not
+ * > bound to the account address (no ERC-7739). Signers that control more than one account with the
+ * > same keys should only sign messages that bind the intended account (e.g. EIP-712 messages naming it).
+ * > Otherwise, a message that includes a chain id (e.g. a Permit2 permit) can be replayed on their other
+ * > accounts on the same chain, and one without a chain id on any chain. Controlling several accounts on
+ * > the same chain with the same set of keys is not recommended and is outside this account's security model.
  */
 abstract contract OpenAccount is
     Initializable,
@@ -36,6 +44,11 @@ abstract contract OpenAccount is
      * that are used to execute the account, these can be used to configure the account.
      *
      * Set the `configCalldata` to `bytes("")` to skip the configuration call.
+     *
+     * > [!NOTE]
+     * > The `configCalldata` runs once, during deployment, triggered by whoever deploys the account.
+     * > Use `EXECTYPE_DEFAULT` for mandatory bootstrap actions, since failures under `EXECTYPE_TRY`
+     * > are not retried.
      */
     function initialize(
         uint256[] calldata moduleTypeIds,
