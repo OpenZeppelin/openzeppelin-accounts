@@ -188,7 +188,7 @@ describe('CrossChainSignatureChecker', function () {
       });
 
       it('should revert when the main domain includes a chain-specific field', async function () {
-        const fields = '0x0b'; // name, version and verifyingContract, which CHAIN_FIELDS binds per chain
+        const fields = 0x0b; // name, version and verifyingContract, which CHAIN_FIELDS binds per chain
         const value = 42n;
 
         const domain = await getDomain(this.apps[0]);
@@ -219,7 +219,7 @@ describe('CrossChainSignatureChecker', function () {
       });
 
       it('should revert with invalid magic prefix', async function () {
-        const fields = '0x03';
+        const fields = 0x03;
         const value = 42n;
         const domain = await getDomain(this.apps[0]); // All apps share the same name and version
         const crossChainDomain = Object.fromEntries(Object.entries(domain).filter((_, i) => fields & (1 << i)));
