@@ -69,7 +69,9 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
     }
 
     mapping(address account => mapping(uint256 installation => EnumerableSet.BytesSet)) private _sessionKeys;
-    mapping(address account => mapping(uint256 installation => mapping(bytes32 keyId => Validity))) private _validities;
+    // The account is the innermost key of mappings read or written during validation, so that their slots are
+    // associated with the account (ERC-7562).
+    mapping(uint256 installation => mapping(bytes32 keyId => mapping(address account => Validity))) private _validities;
 
     /**
      * @dev Clock used for flagging validity ranges. Defaults to timestamp but can be overridden
@@ -202,7 +204,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
         uint256 installation_,
         bytes32 keyId
     ) internal view virtual returns (uint48 from, uint48 until) {
-        return (_validities[account][installation_][keyId].from, _validities[account][installation_][keyId].until);
+        return (_validities[installation_][keyId][account].from, _validities[installation_][keyId][account].until);
     }
 
     /// @dev Internal version of {isValid} that receives an `installation_` nonce.
@@ -263,7 +265,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
             bytes calldata key = keys_[i];
             require(_sessionKeys[account][installation_].add(key), ERC7579SessionKeysAlreadyRegisteredKey(key));
             bytes32 keyId = _keyId(key);
-            Validity storage validity_ = _validities[account][installation_][keyId];
+            Validity storage validity_ = _validities[installation_][keyId][account];
             uint48 start = uint48(Math.ternary(starts[i] == 0, clock(), starts[i])); // Safe cast. Both are uint48.
             uint48 end = uint48(Math.ternary(ends[i] == 0, ERC4337Utils.BLOCK_RANGE_MASK, ends[i])); // Safe cast. Both are uint48.
             require(
@@ -292,7 +294,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
             bytes calldata key = keys_[i];
             require(_sessionKeys[account][installation_].remove(key), ERC7579SessionKeysNonexistentKey(key));
             bytes32 keyId = _keyId(key);
-            Validity storage validity_ = _validities[account][installation_][keyId];
+            Validity storage validity_ = _validities[installation_][keyId][account];
             validity_.from = 0;
             validity_.until = 0;
             emit ERC7579SessionKeysERC7913KeyUnset(account, key);

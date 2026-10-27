@@ -128,9 +128,11 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
 
     mapping(address account => EnumerableSet.Bytes32Set) private _signersSetByAccount;
     mapping(address account => euint32) private _thresholdByAccount;
-    mapping(address relayer => mapping(address account => mapping(uint256 nonce => mapping(bytes32 hash => ebool))))
+    // The account is the innermost key of mappings read or written during validation, so that their slots are
+    // associated with the account (ERC-7562).
+    mapping(address relayer => mapping(uint256 nonce => mapping(bytes32 hash => mapping(address account => ebool))))
         private _requestedDisclosure;
-    mapping(address account => mapping(uint256 nonce => mapping(bytes32 hash => bool))) private _disclosed;
+    mapping(uint256 nonce => mapping(bytes32 hash => mapping(address account => bool))) private _disclosed;
 
     /**
      * @dev Sets up the module's initial configuration when installed by an account.
@@ -229,7 +231,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
      * > Returns an uninitialized handle if the configuration has changed since the disclosure was requested.
      */
     function requestedDisclosure(address relayer, address account, bytes32 hash) public view virtual returns (ebool) {
-        return _requestedDisclosure[relayer][account][nonces(account)][hash];
+        return _requestedDisclosure[relayer][nonces(account)][hash][account];
     }
 
     /**
@@ -240,7 +242,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
      * > Returns false if the configuration has changed since the operation was disclosed.
      */
     function disclosed(address account, bytes32 hash) public view virtual returns (bool) {
-        return _disclosed[account][nonces(account)][hash];
+        return _disclosed[nonces(account)][hash][account];
     }
 
     /**
@@ -451,7 +453,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
     /// @dev Requests disclosure of the multisignature validation result for an operation (hash).
     function _requestDiscloseOperation(address relayer, address account, bytes32 hash, ebool valid) internal virtual {
         FHE.makePubliclyDecryptable(valid);
-        _requestedDisclosure[relayer][account][nonces(account)][hash] = valid;
+        _requestedDisclosure[relayer][nonces(account)][hash][account] = valid;
         emit ERC7579MultisigOperationDiscloseRequested(relayer, account, hash, valid);
     }
 
@@ -463,7 +465,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
         bytes calldata decryptionProof
     ) internal virtual {
         uint256 currentNonce = nonces(account);
-        ebool valid = _requestedDisclosure[relayer][account][currentNonce][hash];
+        ebool valid = _requestedDisclosure[relayer][currentNonce][hash][account];
         require(FHE.isInitialized(valid), ERC7579MultisigUnknownDisclosure(hash));
 
         bytes32[] memory handles = new bytes32[](1);
@@ -471,8 +473,8 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
         bytes memory cleartextMemory = abi.encode(true); // Must be true by design
         FHE.checkSignatures(handles, cleartextMemory, decryptionProof);
 
-        _requestedDisclosure[relayer][account][currentNonce][hash] = ebool.wrap(0);
-        _disclosed[account][currentNonce][hash] = true;
+        _requestedDisclosure[relayer][currentNonce][hash][account] = ebool.wrap(0);
+        _disclosed[currentNonce][hash][account] = true;
         emit ERC7579MultisigOperationDisclosed(account, hash, valid);
     }
 
