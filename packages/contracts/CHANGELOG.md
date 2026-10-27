@@ -5,6 +5,8 @@
 - `ERC7579SessionKeys`: Reject validity ranges whose bounds exceed 47 bits or whose start is after their end with `ERC7579SessionKeysInvalidValidity`. A zero end now maps to `type(uint48).max >> 1` instead of `type(uint48).max`.
 - `ERC7579SessionKeysValidator`: Pack a key's inclusive start as ERC-4337 `validAfter` minus one.
 - `ERC7579SessionKeys`, `ERC7579NativeSpender`, `ERC7579ERC20Spender`: Return an invalid result instead of reverting when signature or call data offsets and lengths overflow.
+- `ERC7579MultisigConfidential`: Make `_discloseOperation` `internal virtual`.
+- `ERC7579MultisigConfidentialValidator`: Check for an existing disclosure before verifying an inline decryption proof.
 
 ## 22-10-2026
 
