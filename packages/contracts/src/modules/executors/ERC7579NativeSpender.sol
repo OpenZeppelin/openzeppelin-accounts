@@ -133,7 +133,9 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         uint160 limit; // Up to 1.4615016373e30 with 18 decimals (2**160 / 1e18)
     }
 
-    mapping(address account => mapping(uint256 installation => mapping(bytes32 keyId => SpendingConfig)))
+    // The account is the innermost key of mappings read or written during validation, so that their slots are
+    // associated with the account (ERC-7562).
+    mapping(uint256 installation => mapping(bytes32 keyId => mapping(address account => SpendingConfig)))
         private _config;
     mapping(address account => mapping(uint256 installation => mapping(bytes32 keyId => mapping(uint256 start => mapping(uint256 period => uint256)))))
         private _spentFor;
@@ -429,8 +431,8 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         super._removeKeys(account, installation_, oldKeys);
         for (uint256 i = 0; i < oldKeys.length; ++i) {
             bytes32 kId = _keyId(oldKeys[i]);
-            _config[account][installation_][kId].limit = 0;
-            _config[account][installation_][kId].renewPeriod = 0;
+            _config[installation_][kId][account].limit = 0;
+            _config[installation_][kId][account].renewPeriod = 0;
             emit ERC7579NativeSpendingConfigUnset(account, oldKeys[i]);
         }
     }
@@ -446,12 +448,12 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         uint256 installation_,
         bytes32 keyId
     ) internal view virtual returns (uint256) {
-        return _config[account][installation_][keyId].renewPeriod;
+        return _config[installation_][keyId][account].renewPeriod;
     }
 
     /// @dev Internal version of {limit}.
     function _limit(address account, uint256 installation_, bytes32 keyId) internal view virtual returns (uint256) {
-        return _config[account][installation_][keyId].limit;
+        return _config[installation_][keyId][account].limit;
     }
 
     /// @dev Internal version of {spent} with explicit `start`.
@@ -608,8 +610,8 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         bytes32 keyId = _keyId(key);
         require(newRenewPeriod > 0, ERC7579NativeSpenderInvalidRenewPeriod(newRenewPeriod));
         require(newLimit > 0, ERC7579NativeSpenderInvalidLimit(newLimit));
-        _config[account][installation_][keyId].renewPeriod = newRenewPeriod;
-        _config[account][installation_][keyId].limit = newLimit;
+        _config[installation_][keyId][account].renewPeriod = newRenewPeriod;
+        _config[installation_][keyId][account].limit = newLimit;
         emit ERC7579NativeSpendingConfigSet(account, key, newLimit, newRenewPeriod);
     }
 

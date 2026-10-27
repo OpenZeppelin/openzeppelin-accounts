@@ -76,6 +76,25 @@ Modules in ERC-7579 are not limited to use within the ERC-4337 flow.
 
 </Callout>
 
+### Validation Rules (ERC-7562)
+
+[ERC-7562](https://eips.ethereum.org/EIPS/eip-7562) restricts what the validation phase may access so that bundlers can safely share a mempool. For an unstaked account, a module may only use storage slots associated with the account, meaning slots of the form `keccak256(account || x) + n`. The modules in this library key their per-account mappings with the account as the innermost key, so those slots are associated with the account.
+
+A few behaviors fall outside these rules:
+
+- **Enumerable sets.** `ERC7579Multisig`, `ERC7579MultisigWeighted`, `ERC7579SessionKeys`, the spenders and the confidential multisigs keep their signers or session keys in OpenZeppelin's `EnumerableSet`, whose membership checks read slots that are not associated with the account.
+- **Confidential multisigs.** Validating an FHE decryption proof reads FHEVM coprocessor and KMS state.
+- **ERC-8043 init mode.** Installing session keys, spenders or the delayed executor during validation reads the block timestamp.
+
+A bundler that enforces ERC-7562 strictly rejects user operations from unstaked accounts that depend on these behaviors. In practice, ERC-4337 bundlers are mostly operated by the account and infrastructure providers, which run their own mempools and can allowlist known factories, modules and accounts:
+
+- ERC-7562 itself lets bundlers opt into [alternative mempools](https://eips.ethereum.org/EIPS/eip-7562#alt-mempools-rules) with different rules.
+- Alchemy's [Rundler](https://github.com/alchemyplatform/rundler/blob/main/docs/cli.md) and Etherspot's [Skandha](https://github.com/etherspot/skandha) support entity allowlists and modes that skip simulation rules.
+- As of September 2024, ERC-4337 deployments were reported to be [operating in a private mode](https://ethresear.ch/t/embedded-fee-markets-and-erc-4337-part-2/20384). The shared mempool [launched](https://etherspot.io/blog/erc-4337-shared-mempool-official-launch-on-ethereum-mainnet-arbitrum-and-optimism/) on Ethereum, Arbitrum and Optimism in November 2024, and we are not aware of public data showing significant traffic on it.
+- Newer account abstraction designs such as [EIP-8141](https://eips.ethereum.org/EIPS/eip-8141) frame transactions use mempool rules inspired by ERC-7562 without its staking and reputation requirements.
+
+An `EnumerableSet` variant that keeps all of its slots associated with the account is tracked for a future release.
+
 ## Core Concepts
 
 ### Smart Accounts

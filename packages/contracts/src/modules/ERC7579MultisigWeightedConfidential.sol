@@ -48,7 +48,8 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
     // Given _addSigners caps signers to 65335, the max uint32 must never be reached
     // as long as weights are encrypted uint16
     mapping(address account => euint32) private _totalExtraWeight;
-    mapping(address account => mapping(euint256 signer => euint16)) private _extraWeights;
+    // The account is the innermost key so that the slot is associated with the account (ERC-7562).
+    mapping(euint256 signer => mapping(address account => euint16)) private _extraWeights;
 
     /// @dev Emitted when an encrypted signer's weight is changed.
     event ERC7579MultisigWeightChanged(address indexed account, euint256 signer, euint16 weight);
@@ -111,7 +112,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
     function onUninstall(bytes calldata data) public virtual override {
         euint256[] memory allSigners = getSigners(msg.sender, 0, type(uint32).max);
         for (uint256 i = 0; i < allSigners.length; ++i) {
-            _extraWeights[msg.sender][allSigners[i]] = euint16.wrap(0);
+            _extraWeights[allSigners[i]][msg.sender] = euint16.wrap(0);
         }
         _totalExtraWeight[msg.sender] = euint32.wrap(0);
         super.onUninstall(data);
@@ -119,7 +120,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
 
     /// @dev Returns the encrypted extra weight of an encrypted signer for the specified account.
     function extraWeight(address account, euint256 signer) public view virtual returns (euint16) {
-        return _extraWeights[account][signer];
+        return _extraWeights[signer][account];
     }
 
     /// @dev Returns the encrypted total extra weight of all signers for the specified account.
@@ -317,7 +318,7 @@ abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfiden
 
     /// @dev Sets the extra weight for a signer for the specified account.
     function _setExtraWeight(address account, euint256 signer, euint16 newExtraWeight) internal virtual {
-        _extraWeights[account][signer] = newExtraWeight;
+        _extraWeights[signer][account] = newExtraWeight;
         FHE.allowThis(newExtraWeight);
         FHE.allow(newExtraWeight, account);
     }

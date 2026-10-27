@@ -154,7 +154,9 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         uint160 limit; // Up to 1.4615016373e30 with 18 decimals (2**160 / 1e18)
     }
 
-    mapping(address account => mapping(uint256 installation => mapping(bytes32 keyId => mapping(address token => SpendingConfig))))
+    // The account is the innermost key of mappings read or written during validation, so that their slots are
+    // associated with the account (ERC-7562).
+    mapping(uint256 installation => mapping(bytes32 keyId => mapping(address token => mapping(address account => SpendingConfig))))
         private _config;
     mapping(address account => mapping(uint256 installation => mapping(bytes32 keyId => mapping(address token => mapping(uint256 start => mapping(uint256 period => uint256))))))
         private _spentFor;
@@ -497,7 +499,7 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         bytes32 keyId,
         address token
     ) internal view virtual returns (uint256) {
-        return _config[account][installation_][keyId][token].renewPeriod;
+        return _config[installation_][keyId][token][account].renewPeriod;
     }
 
     /// @dev Internal version of {limit}.
@@ -507,7 +509,7 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         bytes32 keyId,
         address token
     ) internal view virtual returns (uint256) {
-        return _config[account][installation_][keyId][token].limit;
+        return _config[installation_][keyId][token][account].limit;
     }
 
     /// @dev Internal version of {spent} with explicit `start`.
@@ -695,8 +697,8 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         require(newRenewPeriod > 0, ERC7579ERC20SpenderInvalidRenewPeriod(newRenewPeriod));
         require(newLimit > 0, ERC7579ERC20SpenderInvalidLimit(newLimit));
         require(token.code.length > 0, ERC7579ERC20SpenderInvalidToken(token));
-        _config[account][installation_][keyId][token].renewPeriod = newRenewPeriod;
-        _config[account][installation_][keyId][token].limit = newLimit;
+        _config[installation_][keyId][token][account].renewPeriod = newRenewPeriod;
+        _config[installation_][keyId][token][account].limit = newLimit;
         _tokens[account][installation_].add(token);
         emit ERC7579ERC20SpendingConfigSet(account, key, token, newLimit, newRenewPeriod);
     }

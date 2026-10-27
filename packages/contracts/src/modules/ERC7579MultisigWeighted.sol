@@ -31,8 +31,9 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
     // Sum of all the extra weights of all signers. Each signer has a base weight of 1.
     mapping(address account => uint64 totalExtraWeight) private _totalExtraWeight;
 
-    // Mapping from account => signer => extraWeight (in addition to all authorized signers having weight 1)
-    mapping(address account => mapping(bytes signer => uint64)) private _extraWeights;
+    // Mapping from signer => account => extraWeight (in addition to all authorized signers having weight 1). The
+    // account is the innermost key so that the slot is associated with the account (ERC-7562).
+    mapping(bytes signer => mapping(address account => uint64)) private _extraWeights;
 
     /**
      * @dev Emitted when a signer's weight is changed.
@@ -95,7 +96,7 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
         bytes[] memory allSigners = getSigners(account, 0, type(uint64).max);
         uint256 allSignersLength = allSigners.length;
         for (uint256 i = 0; i < allSignersLength; ++i) {
-            delete _extraWeights[account][allSigners[i]];
+            delete _extraWeights[allSigners[i]][account];
         }
         delete _totalExtraWeight[account];
 
@@ -107,7 +108,7 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
     function signerWeight(address account, bytes calldata signer) public view virtual returns (uint64) {
         unchecked {
             // Safe cast, _setSignerWeights guarantees 1+_extraWeights is a uint64
-            return uint64(isSigner(account, signer).toUint() * (1 + _extraWeights[account][signer]));
+            return uint64(isSigner(account, signer).toUint() * (1 + _extraWeights[signer][account]));
         }
     }
 
@@ -189,13 +190,13 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
             require(weight > 0, ERC7579MultisigInvalidWeight(signer, weight));
 
             unchecked {
-                uint64 oldExtraWeight = _extraWeights[account][signer];
+                uint64 oldExtraWeight = _extraWeights[signer][account];
                 uint64 newExtraWeight = weight - 1;
 
                 if (oldExtraWeight != newExtraWeight) {
                     // Overflow impossible: weight values are bounded by uint64 and economic constraints
                     extraWeightRemoved += oldExtraWeight;
-                    extraWeightAdded += _extraWeights[account][signer] = newExtraWeight;
+                    extraWeightAdded += _extraWeights[signer][account] = newExtraWeight;
                     emit ERC7579MultisigWeightChanged(account, signer, weight);
                 }
             }
@@ -241,8 +242,8 @@ abstract contract ERC7579MultisigWeighted is ERC7579Multisig {
             for (uint256 i = 0; i < oldSigners.length; ++i) {
                 bytes calldata signer = oldSigners[i];
 
-                extraWeightRemoved += _extraWeights[account][signer];
-                delete _extraWeights[account][signer];
+                extraWeightRemoved += _extraWeights[signer][account];
+                delete _extraWeights[signer][account];
             }
             _totalExtraWeight[account] -= extraWeightRemoved;
         }
