@@ -7,7 +7,7 @@
 - `ERC7579SessionKeys`, `ERC7579NativeSpender`, `ERC7579ERC20Spender`: Return an invalid result instead of reverting when signature or call data offsets and lengths overflow.
 - `ERC7579MultisigConfidential`: Make `_discloseOperation` `internal virtual`.
 - `ERC7579MultisigConfidentialValidator`: Check for an existing disclosure before verifying an inline decryption proof.
-- `CrossChainSignatureChecker`: Removed the `fields` byte from the ERC-7964 signature header and extended `ERC7964_MAGIC` to 10 bytes (`0x79647964796479647964`). `isValidCrossChainSignatureNow` and `isValidCrossChainSignatureNowCalldata` take a `bytes1 chainFields` argument with the EIP-712 domain fields bound in each chain-specific struct, and build the main domain from the `application` fields not in `chainFields`. `tryParseCrossChainSignature` and `tryParseCrossChainSignatureCalldata` no longer return `fields`. **Breaking change** to the signature encoding and function signatures.
+- `CrossChainSignatureChecker`: Removed the `fields` byte from the ERC-7964 signature header and extended `ERC7964_MAGIC` to 10 bytes (`0x79647964796479647964`). `isValidCrossChainSignatureNow` and `isValidCrossChainSignatureNowCalldata` take a `bytes1 chainFields` argument with the EIP-712 domain fields bound in each chain-specific struct, and build the main domain from the `application` fields not in `chainFields`. `tryParseCrossChainSignature` and `tryParseCrossChainSignatureCalldata` return a leading `bool success` instead of `fields`, and an empty `crossChainSignature` is now forwarded to the signer instead of failing verification. **Breaking change** to the signature encoding and function signatures.
 
 ## 22-10-2026
 

@@ -34,6 +34,7 @@ contract CrossChainSignatureCheckerTest is Test {
         external
         pure
         returns (
+            bool success,
             uint16 structIndex,
             address application,
             bytes32[] memory structsArray,
@@ -50,6 +51,7 @@ contract CrossChainSignatureCheckerTest is Test {
         external
         pure
         returns (
+            bool success,
             uint16 structIndex,
             address application,
             bytes32[] memory structsArray,
@@ -59,22 +61,6 @@ contract CrossChainSignatureCheckerTest is Test {
         return CrossChainSignatureChecker.tryParseCrossChainSignatureCalldata(erc7964Signature);
     }
 
-    /// @dev External function to decode the crosschain signature data in memory with try-catch.
-    function decodeCrossChainSignature(
-        bytes memory erc7964Signature
-    )
-        external
-        pure
-        returns (
-            uint16 structIndex,
-            address application,
-            bytes32[] memory structsArray,
-            bytes memory crossChainSignature
-        )
-    {
-        return abi.decode(erc7964Signature, (uint16, address, bytes32[], bytes));
-    }
-
     function testParseCrossChainSignature(
         uint16 structIndex,
         address application,
@@ -82,6 +68,7 @@ contract CrossChainSignatureCheckerTest is Test {
         bytes memory crossChainSignature
     ) public view {
         (
+            bool success,
             uint16 decodedStructIndex,
             address decodedApplication,
             bytes32[] memory decodedStructsArray,
@@ -93,34 +80,40 @@ contract CrossChainSignatureCheckerTest is Test {
                     crossChainSignature
                 )
             );
+        assertTrue(success);
         assertEq(structIndex, decodedStructIndex);
         assertEq(application, decodedApplication);
         assertEq(structsArray, decodedStructsArray);
         assertEq(crossChainSignature, decodedCrossChainSignature);
     }
 
+    /// @dev Parsing never reverts, the memory and calldata variants agree, and a failed parse returns empty values.
     function testParseCrossChainSignatureArbitraryData(bytes memory data) public view {
         (
+            bool success,
             uint16 structIndex,
             address application,
             bytes32[] memory structsArray,
             bytes memory crossChainSignature
         ) = this.tryParseCrossChainSignature(data);
-        try this.decodeCrossChainSignature(data) returns (
-            uint16 decodedStructIndex,
-            address decodedApplication,
-            bytes32[] memory decodedStructsArray,
-            bytes memory decodedCrossChainSignature
-        ) {
-            assertEq(structIndex, decodedStructIndex);
-            assertEq(application, decodedApplication);
-            assertEq(structsArray, decodedStructsArray);
-            assertEq(crossChainSignature, decodedCrossChainSignature);
-        } catch {
+        (
+            bool successCalldata,
+            uint16 structIndexCalldata,
+            address applicationCalldata,
+            bytes32[] memory structsArrayCalldata,
+            bytes memory crossChainSignatureCalldata
+        ) = this.tryParseCrossChainSignatureCalldata(data);
+        assertEq(success, successCalldata);
+        assertEq(structIndex, structIndexCalldata);
+        assertEq(application, applicationCalldata);
+        assertEq(structsArray, structsArrayCalldata);
+        assertEq(crossChainSignature, crossChainSignatureCalldata);
+
+        if (!success) {
             assertEq(structIndex, 0);
             assertEq(application, address(0));
             assertEq(structsArray.length, 0);
-            assertEq(crossChainSignature, bytes(""));
+            assertEq(crossChainSignature.length, 0);
         }
     }
 
@@ -239,16 +232,30 @@ contract CrossChainSignatureCheckerTest is Test {
             crossChainSignatureInBounds &&
             crossChainSignatureLength <= signature.length - crossChainSignatureOffset - 0x20;
 
-        (, address application, bytes32[] memory structsArray, bytes memory crossChainSignature) = this
+        (bool success, , address application, bytes32[] memory structsArray, bytes memory crossChainSignature) = this
             .tryParseCrossChainSignature(signature);
+        assertEq(success, expected);
         assertEq(application, expected ? address(this) : address(0));
         assertEq(structsArray.length, expected ? structsArrayLength : 0);
         assertEq(crossChainSignature.length, expected ? crossChainSignatureLength : 0);
 
-        (, application, structsArray, crossChainSignature) = this.tryParseCrossChainSignatureCalldata(signature);
+        (success, , application, structsArray, crossChainSignature) = this.tryParseCrossChainSignatureCalldata(
+            signature
+        );
+        assertEq(success, expected);
         assertEq(application, expected ? address(this) : address(0));
         assertEq(structsArray.length, expected ? structsArrayLength : 0);
         assertEq(crossChainSignature.length, expected ? crossChainSignatureLength : 0);
+
+        // A successful parse matches `abi.decode`
+        if (expected) {
+            (, bytes32[] memory decodedStructsArray, bytes memory decodedCrossChainSignature) = abi.decode(
+                signature,
+                (bytes32, bytes32[], bytes)
+            );
+            assertEq(structsArray, decodedStructsArray);
+            assertEq(crossChainSignature, decodedCrossChainSignature);
+        }
     }
 
     function testSetValueWithOutOfBoundsStructIndex(

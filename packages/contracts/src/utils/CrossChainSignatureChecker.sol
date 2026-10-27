@@ -69,15 +69,21 @@ library CrossChainSignatureChecker {
         bytes1 chainFields,
         function(bytes32) internal view returns (bytes32) structHash
     ) internal view returns (bool) {
-        (
-            address application,
-            bytes memory crossChainSignature,
-            bytes32 structHash_
-        ) = _tryParseCrosschainSignatureForValidation(hash, erc7964Signature, structHash);
-        bytes32 typedHash = structHash_ == bytes32(0)
-            ? bytes32(0)
-            : _tryToTypedDataHash(application, chainFields, structHash_);
-        return typedHash != bytes32(0) && signer.isValidSignatureNow(typedHash, crossChainSignature);
+        bool success;
+        bytes memory crossChainSignature;
+        bytes32 typedHash;
+        {
+            address application;
+            bytes32 structHash_;
+            (success, application, crossChainSignature, structHash_) = _tryParseCrosschainSignatureForValidation(
+                hash,
+                erc7964Signature,
+                structHash
+            );
+            if (!success) return false;
+            (success, typedHash) = _tryToTypedDataHash(application, chainFields, structHash_);
+        }
+        return success && signer.isValidSignatureNow(typedHash, crossChainSignature);
     }
 
     /// @dev Variant of {isValidCrossChainSignatureNow} that takes the signature in calldata.
@@ -88,26 +94,37 @@ library CrossChainSignatureChecker {
         bytes1 chainFields,
         function(bytes32) internal view returns (bytes32) structHash
     ) internal view returns (bool) {
-        (
-            address application,
-            bytes calldata crossChainSignature,
-            bytes32 structHash_
-        ) = _tryParseCrosschainSignatureForValidationCalldata(hash, erc7964Signature, structHash);
-        bytes32 typedHash = structHash_ == bytes32(0)
-            ? bytes32(0)
-            : _tryToTypedDataHash(application, chainFields, structHash_);
-        return typedHash != bytes32(0) && signer.isValidSignatureNowCalldata(typedHash, crossChainSignature);
+        bool success;
+        bytes calldata crossChainSignature;
+        bytes32 typedHash;
+        {
+            address application;
+            bytes32 structHash_;
+            (
+                success,
+                application,
+                crossChainSignature,
+                structHash_
+            ) = _tryParseCrosschainSignatureForValidationCalldata(hash, erc7964Signature, structHash);
+            if (!success) return false;
+            (success, typedHash) = _tryToTypedDataHash(application, chainFields, structHash_);
+        }
+        return success && signer.isValidSignatureNowCalldata(typedHash, crossChainSignature);
     }
 
     /**
      * @dev Parses an ERC-7964 encoded crosschain signature into its components:
      *
+     * * `success` Whether the signature was parsed successfully
      * * `structIndex` The index of the current chain's operation in the array
      * * `application` The address of the contract providing EIP-712 domain info
      * * `structsArray` The array of struct hashes for all chains
      * * `crossChainSignature` The actual signature bytes
      *
-     * If the magic value is incorrect or the signature is malformed, all the return values are empty.
+     * Parsing fails if `erc7964Signature` is shorter than 160 bytes, doesn't start with {ERC7964_MAGIC}, or if
+     * `structsArray` doesn't start after the head, `crossChainSignature` doesn't start after the end of `structsArray`,
+     * or either is not fully contained in `erc7964Signature`. In that case, `success` is false and all the other return
+     * values are empty.
      */
     function tryParseCrossChainSignature(
         bytes memory erc7964Signature
@@ -115,6 +132,7 @@ library CrossChainSignatureChecker {
         internal
         pure
         returns (
+            bool success,
             uint16 structIndex,
             address application,
             bytes32[] memory structsArray,
@@ -125,7 +143,7 @@ library CrossChainSignatureChecker {
         // magic (10 bytes) + structIndex (2 bytes) + application (20 bytes) + structsArrayOffset (32 bytes) +
         // structsArrayLength (32 bytes) + crossChainSignatureOffset (32 bytes) + crossChainSignatureLength (32 bytes)
         if (erc7964Signature.length < 0xa0 || bytes10(erc7964SignatureSlice.load(0)) != ERC7964_MAGIC) {
-            return (0, address(0), new bytes32[](0), new bytes(0));
+            return (false, 0, address(0), new bytes32[](0), new bytes(0));
         }
         structIndex = uint16(bytes2(erc7964SignatureSlice.load(10)));
         application = address(bytes20(erc7964SignatureSlice.load(12)));
@@ -133,24 +151,24 @@ library CrossChainSignatureChecker {
         // Offsets and lengths are arbitrary values, so each bound is checked before it is used to avoid overflows
         uint256 structsArrayOffset = uint256(bytes32(erc7964SignatureSlice.load(0x20)));
         if (structsArrayOffset < 0x60 || structsArrayOffset > erc7964Signature.length - 32) {
-            return (0, address(0), new bytes32[](0), new bytes(0));
+            return (false, 0, address(0), new bytes32[](0), new bytes(0));
         }
         uint256 structsArrayDataOffset = structsArrayOffset + 32;
         uint256 structsArrayLength = uint256(erc7964SignatureSlice.slice(structsArrayOffset).load(0));
         if (structsArrayLength > (erc7964Signature.length - structsArrayDataOffset) / 32) {
-            return (0, address(0), new bytes32[](0), new bytes(0));
+            return (false, 0, address(0), new bytes32[](0), new bytes(0));
         }
         uint256 crossChainSignatureOffset = uint256(bytes32(erc7964SignatureSlice.load(0x40)));
         if (
             crossChainSignatureOffset < structsArrayDataOffset + structsArrayLength * 32 ||
             crossChainSignatureOffset > erc7964Signature.length - 32
         ) {
-            return (0, address(0), new bytes32[](0), new bytes(0));
+            return (false, 0, address(0), new bytes32[](0), new bytes(0));
         }
         uint256 crossChainSignatureDataOffset = crossChainSignatureOffset + 32;
         uint256 crossChainSignatureLength = uint256(erc7964SignatureSlice.slice(crossChainSignatureOffset).load(0));
         if (crossChainSignatureLength > erc7964Signature.length - crossChainSignatureDataOffset) {
-            return (0, address(0), new bytes32[](0), new bytes(0));
+            return (false, 0, address(0), new bytes32[](0), new bytes(0));
         }
 
         assembly ("memory-safe") {
@@ -158,7 +176,7 @@ library CrossChainSignatureChecker {
             crossChainSignature := add(erc7964Signature, crossChainSignatureDataOffset)
         }
 
-        return (structIndex, application, structsArray, crossChainSignature);
+        return (true, structIndex, application, structsArray, crossChainSignature);
     }
 
     /// @dev Variant of {tryParseCrossChainSignature} that takes the signature in calldata.
@@ -168,6 +186,7 @@ library CrossChainSignatureChecker {
         internal
         pure
         returns (
+            bool success,
             uint16 structIndex,
             address application,
             bytes32[] calldata structsArray,
@@ -177,7 +196,7 @@ library CrossChainSignatureChecker {
         // magic (10 bytes) + structIndex (2 bytes) + application (20 bytes) + structsArrayOffset (32 bytes) +
         // structsArrayLength (32 bytes) + crossChainSignatureOffset (32 bytes) + crossChainSignatureLength (32 bytes)
         if (erc7964Signature.length < 0xa0 || bytes10(erc7964Signature[0:10]) != ERC7964_MAGIC) {
-            return (0, address(0), _empty32BytesArrayCalldata(), Calldata.emptyBytes());
+            return (false, 0, address(0), _empty32BytesArrayCalldata(), Calldata.emptyBytes());
         }
         structIndex = uint16(bytes2(erc7964Signature[10:]));
         application = address(bytes20(erc7964Signature[12:]));
@@ -185,24 +204,24 @@ library CrossChainSignatureChecker {
         // Offsets and lengths are arbitrary values, so each bound is checked before it is used to avoid overflows
         uint256 structsArrayOffset = uint256(bytes32(erc7964Signature[0x20:]));
         if (structsArrayOffset < 0x60 || structsArrayOffset > erc7964Signature.length - 32) {
-            return (0, address(0), _empty32BytesArrayCalldata(), Calldata.emptyBytes());
+            return (false, 0, address(0), _empty32BytesArrayCalldata(), Calldata.emptyBytes());
         }
         uint256 structsArrayDataOffset = structsArrayOffset + 32;
         uint256 structsArrayLength = uint256(bytes32(erc7964Signature[structsArrayOffset:]));
         if (structsArrayLength > (erc7964Signature.length - structsArrayDataOffset) / 32) {
-            return (0, address(0), _empty32BytesArrayCalldata(), Calldata.emptyBytes());
+            return (false, 0, address(0), _empty32BytesArrayCalldata(), Calldata.emptyBytes());
         }
         uint256 crossChainSignatureOffset = uint256(bytes32(erc7964Signature[0x40:]));
         if (
             crossChainSignatureOffset < structsArrayDataOffset + structsArrayLength * 32 ||
             crossChainSignatureOffset > erc7964Signature.length - 32
         ) {
-            return (0, address(0), _empty32BytesArrayCalldata(), Calldata.emptyBytes());
+            return (false, 0, address(0), _empty32BytesArrayCalldata(), Calldata.emptyBytes());
         }
         uint256 crossChainSignatureDataOffset = crossChainSignatureOffset + 32;
         uint256 crossChainSignatureLength = uint256(bytes32(erc7964Signature[crossChainSignatureOffset:]));
         if (crossChainSignatureLength > erc7964Signature.length - crossChainSignatureDataOffset) {
-            return (0, address(0), _empty32BytesArrayCalldata(), Calldata.emptyBytes());
+            return (false, 0, address(0), _empty32BytesArrayCalldata(), Calldata.emptyBytes());
         }
 
         assembly ("memory-safe") {
@@ -212,19 +231,21 @@ library CrossChainSignatureChecker {
         crossChainSignature = erc7964Signature[
             crossChainSignatureDataOffset:crossChainSignatureDataOffset + crossChainSignatureLength
         ];
-        return (structIndex, application, structsArray, crossChainSignature);
+        return (true, structIndex, application, structsArray, crossChainSignature);
     }
 
     function _tryParseCrosschainSignatureForValidation(
         bytes32 hash,
         bytes memory erc7964Signature,
         function(bytes32) internal view returns (bytes32) structHash
-    ) private view returns (address application, bytes memory crossChainSignature, bytes32 structHash_) {
+    ) private view returns (bool success, address application, bytes memory crossChainSignature, bytes32 structHash_) {
         uint16 structIndex;
         bytes32[] memory structsArray;
-        (structIndex, application, structsArray, crossChainSignature) = tryParseCrossChainSignature(erc7964Signature);
-        if (crossChainSignature.length == 0 || structIndex >= structsArray.length || structsArray[structIndex] != hash)
-            return (address(0), new bytes(0), 0);
+        (success, structIndex, application, structsArray, crossChainSignature) = tryParseCrossChainSignature(
+            erc7964Signature
+        );
+        if (!success || structIndex >= structsArray.length || structsArray[structIndex] != hash)
+            return (false, address(0), new bytes(0), 0);
         structHash_ = structHash(keccak256(abi.encodePacked(structsArray)));
     }
 
@@ -232,23 +253,30 @@ library CrossChainSignatureChecker {
         bytes32 hash,
         bytes calldata erc7964Signature,
         function(bytes32) internal view returns (bytes32) structHash
-    ) private view returns (address application, bytes calldata crossChainSignature, bytes32 structHash_) {
+    )
+        private
+        view
+        returns (bool success, address application, bytes calldata crossChainSignature, bytes32 structHash_)
+    {
         uint16 structIndex;
         bytes32[] calldata structsArray;
-        (structIndex, application, structsArray, crossChainSignature) = tryParseCrossChainSignatureCalldata(
+        (success, structIndex, application, structsArray, crossChainSignature) = tryParseCrossChainSignatureCalldata(
             erc7964Signature
         );
-        if (crossChainSignature.length == 0 || structIndex >= structsArray.length || structsArray[structIndex] != hash)
-            return (address(0), Calldata.emptyBytes(), 0);
+        if (!success || structIndex >= structsArray.length || structsArray[structIndex] != hash)
+            return (false, address(0), Calldata.emptyBytes(), 0);
         structHash_ = structHash(keccak256(abi.encodePacked(structsArray)));
     }
 
-    /// @dev Returns the typed data hash of `structHash_` under the main domain, or 0 if the main domain fields are unsupported.
+    /**
+     * @dev Returns the typed data hash of `structHash_` under the main domain. `success` is false if the main domain
+     * fields set any bit beyond the ones defined in ERC-5267.
+     */
     function _tryToTypedDataHash(
         address application,
         bytes1 chainFields,
         bytes32 structHash_
-    ) private view returns (bytes32) {
+    ) private view returns (bool success, bytes32 typedHash) {
         (
             bytes1 applicationFields,
             string memory name,
@@ -259,11 +287,11 @@ library CrossChainSignatureChecker {
 
         ) = IERC5267(application).eip712Domain();
         bytes1 fields = applicationFields & ~chainFields;
-        if (uint8(fields) > 0x1f) return bytes32(0);
-        return
-            fields.toDomainSeparator(name, version, chainId, verifyingContract, domainSalt).toTypedDataHash(
-                structHash_
-            );
+        if (uint8(fields) > 0x1f) return (false, bytes32(0));
+        return (
+            true,
+            fields.toDomainSeparator(name, version, chainId, verifyingContract, domainSalt).toTypedDataHash(structHash_)
+        );
     }
 
     function _empty32BytesArrayCalldata() private pure returns (bytes32[] calldata result) {
