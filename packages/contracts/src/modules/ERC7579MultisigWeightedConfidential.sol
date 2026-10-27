@@ -11,7 +11,6 @@ import {
     externalEuint32,
     externalEuint256
 } from "@fhevm/solidity/lib/FHE.sol";
-import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 /**
  * @dev Extension of {ERC7579MultisigConfidential} that supports weighted signatures.
@@ -42,8 +41,6 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
  * > arbitrary execution.
  */
 abstract contract ERC7579MultisigWeightedConfidential is ERC7579MultisigConfidential {
-    using EnumerableSet for EnumerableSet.Bytes32Set;
-
     // There is space for up to 65337 signers using the max weight (i.e. (2**32-1)/(2**16-1))
     // Given _addSigners caps signers to 65335, the max uint32 must never be reached
     // as long as weights are encrypted uint16
