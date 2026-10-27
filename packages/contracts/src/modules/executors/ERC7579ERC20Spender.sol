@@ -19,9 +19,9 @@ import {
 } from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Calldata} from "@openzeppelin/contracts/utils/Calldata.sol";
-import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC7579SessionKeys} from "../ERC7579SessionKeys.sol";
+import {EnumerableSetERC4337} from "../../utils/structs/EnumerableSetERC4337.sol";
 import {ERC7579Validator} from "../validators/ERC7579Validator.sol";
 import {ERC7579SessionKeysValidator} from "../validators/ERC7579SessionKeysValidator.sol";
 import {ERC7579Executor} from "./ERC7579Executor.sol";
@@ -89,7 +89,7 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * > Set `renewPeriod == type(uint48).max` to effectively disable the renewal period.
  */
 contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
-    using EnumerableSet for EnumerableSet.AddressSet;
+    using EnumerableSetERC4337 for EnumerableSetERC4337.AddressSet;
 
     /// @dev The account already has a spending configuration installed.
     error ERC7579ERC20SpenderAlreadyInstalled();
@@ -168,9 +168,9 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
     // associated with the account (ERC-7562).
     mapping(uint256 installation => mapping(bytes32 keyId => mapping(address token => mapping(address account => SpendingConfig))))
         private _config;
+    mapping(uint256 installation => EnumerableSetERC4337.AddressSet) private _tokens;
     mapping(address account => mapping(uint256 installation => mapping(bytes32 keyId => mapping(address token => mapping(uint256 start => mapping(uint256 period => uint256))))))
         private _spentFor;
-    mapping(address account => mapping(uint256 installation => EnumerableSet.AddressSet)) private _tokens;
 
     /// @inheritdoc IERC7579Module
     function isModuleType(
@@ -197,7 +197,7 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
      * > data to memory. Designed for view accessors queried without gas fees.
      */
     function tokens(address account, uint256 startIdx, uint256 endIdx) public view virtual returns (address[] memory) {
-        return _tokens[account][installation(account)].values(startIdx, endIdx);
+        return _tokens[installation(account)].values(account, startIdx, endIdx);
     }
 
     /// @dev Returns the renewal period for the `(key, token)` config on `account`.
@@ -507,7 +507,7 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
 
     /// @dev Internal version of {tokensCount}.
     function _tokensCount(address account, uint256 installation_) internal view virtual returns (uint256) {
-        return _tokens[account][installation_].length();
+        return _tokens[installation_].length(account);
     }
 
     /// @dev Internal version of {renewPeriod}.
@@ -717,7 +717,7 @@ contract ERC7579ERC20Spender is ERC7579SessionKeysValidator, ERC7579Executor {
         require(token.code.length > 0, ERC7579ERC20SpenderInvalidToken(token));
         _config[installation_][keyId][token][account].renewPeriod = newRenewPeriod;
         _config[installation_][keyId][token][account].limit = newLimit;
-        _tokens[account][installation_].add(token);
+        _tokens[installation_].add(account, token);
         emit ERC7579ERC20SpendingConfigSet(account, key, token, newLimit, newRenewPeriod);
     }
 

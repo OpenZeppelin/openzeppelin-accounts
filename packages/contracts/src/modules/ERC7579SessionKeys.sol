@@ -2,7 +2,6 @@
 pragma solidity ^0.8.27;
 
 import {IERC7579Module} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
-import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {Nonces} from "@openzeppelin/contracts/utils/Nonces.sol";
 import {IERC6372} from "@openzeppelin/contracts/interfaces/IERC6372.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -10,6 +9,7 @@ import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/Signa
 import {Time} from "@openzeppelin/contracts/utils/types/Time.sol";
 import {Calldata} from "@openzeppelin/contracts/utils/Calldata.sol";
 import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/ERC4337Utils.sol";
+import {EnumerableSetERC4337} from "../utils/structs/EnumerableSetERC4337.sol";
 
 /**
  * @dev Abstract base for ERC-7579 session keys.
@@ -32,7 +32,7 @@ import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/ERC4337Utils.s
  * {ERC7579Validator-_rawERC7579Validation}.
  */
 abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
-    using EnumerableSet for EnumerableSet.BytesSet;
+    using EnumerableSetERC4337 for EnumerableSetERC4337.BytesSet;
 
     /// @dev The `keys`, `starts`, and `ends` arrays passed to {onInstall} have different lengths.
     error ERC7579SessionKeysMismatchedInitDataLengths();
@@ -72,9 +72,9 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
         uint48 until;
     }
 
-    mapping(address account => mapping(uint256 installation => EnumerableSet.BytesSet)) private _sessionKeys;
     // The account is the innermost key of mappings read or written during validation, so that their slots are
-    // associated with the account (ERC-7562).
+    // associated with the account (ERC-7562). The set of keys is only enumerated outside of validation.
+    mapping(uint256 installation => EnumerableSetERC4337.BytesSet) private _sessionKeys;
     mapping(uint256 installation => mapping(bytes32 keyId => mapping(address account => Validity))) private _validities;
     mapping(uint256 installation => mapping(bytes32 keyHash => mapping(address account => uint256)))
         private _keyGenerations;
@@ -208,9 +208,14 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
         _removeKeys(msg.sender, installation(msg.sender), oldKeys);
     }
 
-    /// @dev Internal version of {isKey} that receives an `installation_` nonce.
+    /**
+     * @dev Internal version of {isKey} that receives an `installation_` nonce.
+     *
+     * A key is registered if its validity range under its current {_keyId} is set, since every registered key has
+     * a nonzero `until` and removing it moves its {_keyId} to an unset range.
+     */
     function _isKey(address account, uint256 installation_, bytes calldata key) internal view virtual returns (bool) {
-        return _sessionKeys[account][installation_].contains(key);
+        return _validities[installation_][_keyId(account, installation_, key)][account].until != 0;
     }
 
     /// @dev Internal version of {validity} that receives an `installation_` nonce.
@@ -245,12 +250,12 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
         uint256 startIdx,
         uint256 endIdx
     ) internal view virtual returns (bytes[] memory) {
-        return _sessionKeys[account][installation_].values(startIdx, endIdx);
+        return _sessionKeys[installation_].values(account, startIdx, endIdx);
     }
 
     /// @dev Internal version of {keyCount} that receives an `installation_` nonce.
     function _keyCount(address account, uint256 installation_) internal view virtual returns (uint256) {
-        return _sessionKeys[account][installation_].length();
+        return _sessionKeys[installation_].length(account);
     }
 
     /**
@@ -263,6 +268,8 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
      *
      * * All arrays must have equal length. Reverts with {ERC7579SessionKeysMismatchedInitDataLengths} if not.
      * * Each of `keys_` must not be registered. Reverts with {ERC7579SessionKeysAlreadyRegisteredKey} if it is.
+     * * Each of `keys_` must be at most {EnumerableSetERC4337-MAX_BYTES_LENGTH} bytes long. Reverts with
+     *   {EnumerableSetERC4337-EnumerableSetERC4337ValueTooLong} if not.
      * * Each resolved range must satisfy `start <= end <= type(uint48).max >> 1`. Reverts with
      *   {ERC7579SessionKeysInvalidValidity} if not.
      *
@@ -287,7 +294,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
         );
         for (uint256 i = 0; i < keys_.length; ++i) {
             bytes calldata key = keys_[i];
-            require(_sessionKeys[account][installation_].add(key), ERC7579SessionKeysAlreadyRegisteredKey(key));
+            require(_sessionKeys[installation_].add(account, key), ERC7579SessionKeysAlreadyRegisteredKey(key));
             bytes32 keyId = _keyId(account, installation_, key);
             Validity storage validity_ = _validities[installation_][keyId][account];
             uint48 start = uint48(Math.ternary(starts[i] == 0, clock(), starts[i])); // Safe cast. Both are uint48.
@@ -322,7 +329,7 @@ abstract contract ERC7579SessionKeys is IERC7579Module, Nonces, IERC6372 {
     function _removeKeys(address account, uint256 installation_, bytes[] calldata keys_) internal virtual {
         for (uint256 i = 0; i < keys_.length; ++i) {
             bytes calldata key = keys_[i];
-            require(_sessionKeys[account][installation_].remove(key), ERC7579SessionKeysNonexistentKey(key));
+            require(_sessionKeys[installation_].remove(account, key), ERC7579SessionKeysNonexistentKey(key));
             ++_keyGenerations[installation_][keccak256(key)][account];
             emit ERC7579SessionKeysERC7913KeyUnset(account, key);
         }
