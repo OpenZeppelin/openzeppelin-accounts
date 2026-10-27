@@ -4,20 +4,41 @@ pragma solidity ^0.8.27;
 import {Test} from "forge-std/Test.sol";
 import {ERC20Mock} from "../../../../../lib/@openzeppelin-contracts/contracts/mocks/token/ERC20Mock.sol";
 import {ERC7579ERC20Spender} from "../../../src/modules/executors/ERC7579ERC20Spender.sol";
-import {ERC7579Utils, Mode} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
+import {
+    ERC7579Utils,
+    Mode,
+    ModeSelector,
+    ModePayload
+} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {MODULE_TYPE_VALIDATOR, MODULE_TYPE_EXECUTOR} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {OpenAccount} from "../../../src/OpenAccount.sol";
+import {IERC7579Execution} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
+import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/IERC4337.sol";
+import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/ERC4337Utils.sol";
+import {BytesDecoderReference} from "../../helpers/BytesDecoderReference.sol";
 
 contract OpenAccountMock is OpenAccount {
     constructor() EIP712("TestAccount", "1") {}
+}
+
+contract ERC7579ERC20SpenderHarness is ERC7579ERC20Spender {
+    function validateSingleExecutionCalldata(
+        bytes calldata callData
+    ) external pure returns (bool isSingleAndValid, bytes calldata exec) {
+        return _validateSingleExecutionCalldata(callData);
+    }
+
+    function validateTransferKey(bytes calldata exec) external view returns (bool success, bytes calldata callDataKey) {
+        return _validateTransferKey(exec);
+    }
 }
 
 contract ERC7579ERC20SpenderTest is Test {
     uint256 private constant MAX_TOKENS = type(uint128).max;
     uint48 private constant MAX_TIMEPOINT = type(uint48).max >> 1;
 
-    ERC7579ERC20Spender private _spender;
+    ERC7579ERC20SpenderHarness private _spender;
     OpenAccount private _account;
     ERC20Mock private _token1;
     ERC20Mock private _token2;
@@ -28,7 +49,7 @@ contract ERC7579ERC20SpenderTest is Test {
     address private _recipient;
 
     function setUp() public {
-        _spender = new ERC7579ERC20Spender();
+        _spender = new ERC7579ERC20SpenderHarness();
         _account = new OpenAccountMock();
         _token1 = new ERC20Mock();
         _token2 = new ERC20Mock();
@@ -307,6 +328,208 @@ contract ERC7579ERC20SpenderTest is Test {
         assertTrue(_spender.isKey(address(_account), _key));
         // Previous config is still in place.
         assertEq(_spender.limit(address(_account), _key, address(_token1)), 1 ether);
+    }
+
+    // ----- CallData shape decoding -----
+
+    function testValidateSingleExecutionCalldata(bytes memory exec) public view {
+        (bool success, bytes memory decoded) = _spender.validateSingleExecutionCalldata(
+            abi.encodeCall(IERC7579Execution.execute, (_singleMode(), exec))
+        );
+        assertTrue(success);
+        assertEq(decoded, exec);
+    }
+
+    function testValidateSingleExecutionCalldataArbitraryWords(
+        uint256 execOffset,
+        uint256 execLength,
+        bytes memory tail
+    ) public view {
+        _assertValidateSingleExecutionCalldataMatchesReference(_executeCalldata(execOffset, execLength, tail));
+    }
+
+    function testValidateSingleExecutionCalldataArbitraryLength(uint256 execLength, bytes memory tail) public view {
+        _assertValidateSingleExecutionCalldataMatchesReference(_executeCalldata(0x40, execLength, tail));
+    }
+
+    function testValidateSingleExecutionCalldataOverflowingOffsetsAndLengths() public view {
+        bytes[] memory callDatas = _overflowingExecuteCalldatas();
+        for (uint256 i = 0; i < callDatas.length; ++i) {
+            (bool success, bytes memory exec) = _spender.validateSingleExecutionCalldata(callDatas[i]);
+            assertFalse(success);
+            assertEq(exec.length, 0);
+            _assertValidateSingleExecutionCalldataMatchesReference(callDatas[i]);
+        }
+    }
+
+    function testValidateTransferKey(
+        address account,
+        bytes memory key,
+        address token,
+        address to,
+        uint256 amount
+    ) public view {
+        (bool success, bytes memory decoded) = _spender.validateTransferKey(
+            _encodeSingle(abi.encodeCall(_spender.transferFrom, (account, key, token, to, amount)))
+        );
+        assertTrue(success);
+        assertEq(decoded, key);
+
+        (success, decoded) = _spender.validateTransferKey(
+            _encodeSingle(
+                abi.encodeCall(_spender.batchTransferFrom, (account, key, token, new address[](0), new uint256[](0)))
+            )
+        );
+        assertTrue(success);
+        assertEq(decoded, key);
+    }
+
+    function testValidateTransferKeyArbitraryWords(
+        uint256 keyOffset,
+        uint256 keyLength,
+        bytes memory tail
+    ) public view {
+        _assertValidateTransferKeyMatchesReference(_transferFromCalldata(keyOffset, keyLength, tail));
+    }
+
+    function testValidateTransferKeyArbitraryLength(uint256 keyLength, bytes memory tail) public view {
+        _assertValidateTransferKeyMatchesReference(_transferFromCalldata(0x40, keyLength, tail));
+    }
+
+    function testValidateTransferKeyOverflowingOffsetsAndLengths() public view {
+        bytes[] memory innerDatas = _overflowingTransferFromCalldatas();
+        for (uint256 i = 0; i < innerDatas.length; ++i) {
+            (bool success, bytes memory key) = _spender.validateTransferKey(_encodeSingle(innerDatas[i]));
+            assertFalse(success);
+            assertEq(key.length, 0);
+            _assertValidateTransferKeyMatchesReference(innerDatas[i]);
+        }
+    }
+
+    function testValidateUserOpOverflowingCalldata() public {
+        _installSpender(uint48(block.timestamp), address(_token1), 1 ether, 1 days);
+
+        PackedUserOperation memory userOp;
+        userOp.sender = address(_account);
+        userOp.signature = abi.encode(_key, "");
+
+        bytes[] memory callDatas = _overflowingExecuteCalldatas();
+        for (uint256 i = 0; i < callDatas.length; ++i) {
+            userOp.callData = callDatas[i];
+            vm.prank(address(_account));
+            assertEq(_spender.validateUserOp(userOp, bytes32(0)), ERC4337Utils.SIG_VALIDATION_FAILED);
+        }
+
+        bytes[] memory innerDatas = _overflowingTransferFromCalldatas();
+        for (uint256 i = 0; i < innerDatas.length; ++i) {
+            userOp.callData = abi.encodeCall(IERC7579Execution.execute, (_singleMode(), _encodeSingle(innerDatas[i])));
+            vm.prank(address(_account));
+            assertEq(_spender.validateUserOp(userOp, bytes32(0)), ERC4337Utils.SIG_VALIDATION_FAILED);
+        }
+    }
+
+    function testValidateUserOpOverflowingSignature() public {
+        _installSpender(uint48(block.timestamp), address(_token1), 1 ether, 1 days);
+
+        PackedUserOperation memory userOp;
+        userOp.sender = address(_account);
+        userOp.callData = abi.encodeCall(
+            IERC7579Execution.execute,
+            (
+                _singleMode(),
+                _encodeSingle(
+                    abi.encodeCall(_spender.transferFrom, (address(_account), _key, address(_token1), _recipient, 1))
+                )
+            )
+        );
+
+        uint256 max = type(uint256).max;
+        bytes[] memory signatures = new bytes[](4);
+        signatures[0] = abi.encode(max, 0x60, 0, 0); // keyOffset + 0x20 overflows
+        signatures[1] = abi.encode(0x40, max - 0x1f, 0, 0); // signatureOffset + 0x20 wraps to 0
+        signatures[2] = abi.encode(0x40, 0x60, max, 0); // keyDataOffset + keyLength overflows
+        signatures[3] = abi.encode(0x40, 0x60, 0, max - 0x7f); // signatureDataOffset + signatureLength wraps to 0
+        for (uint256 i = 0; i < signatures.length; ++i) {
+            userOp.signature = signatures[i];
+            vm.prank(address(_account));
+            assertEq(_spender.validateUserOp(userOp, bytes32(0)), ERC4337Utils.SIG_VALIDATION_FAILED);
+        }
+    }
+
+    function _assertValidateSingleExecutionCalldataMatchesReference(bytes memory callData) private view {
+        (bool success, bytes memory exec) = _spender.validateSingleExecutionCalldata(callData);
+        (bool expectedSuccess, bytes memory expectedExec) = BytesDecoderReference.tryDecode(callData, 36, 4);
+        assertEq(success, expectedSuccess);
+        assertEq(exec, expectedExec);
+    }
+
+    function _assertValidateTransferKeyMatchesReference(bytes memory innerData) private view {
+        (bool success, bytes memory key) = _spender.validateTransferKey(_encodeSingle(innerData));
+        (bool expectedSuccess, bytes memory expectedKey) = BytesDecoderReference.tryDecode(innerData, 0x24, 4);
+        assertEq(success, expectedSuccess);
+        assertEq(key, expectedKey);
+    }
+
+    function _singleMode() private pure returns (bytes32) {
+        return
+            Mode.unwrap(
+                ERC7579Utils.encodeMode(
+                    ERC7579Utils.CALLTYPE_SINGLE,
+                    ERC7579Utils.EXECTYPE_DEFAULT,
+                    ModeSelector.wrap(0x00000000),
+                    ModePayload.wrap(0x00000000)
+                )
+            );
+    }
+
+    /// @dev Encodes a single execution targeting the spender with zero value.
+    function _encodeSingle(bytes memory innerData) private view returns (bytes memory) {
+        return abi.encodePacked(address(_spender), uint256(0), innerData);
+    }
+
+    function _executeCalldata(
+        uint256 execOffset,
+        uint256 execLength,
+        bytes memory tail
+    ) private pure returns (bytes memory) {
+        return abi.encodePacked(IERC7579Execution.execute.selector, _singleMode(), execOffset, execLength, tail);
+    }
+
+    function _transferFromCalldata(
+        uint256 keyOffset,
+        uint256 keyLength,
+        bytes memory tail
+    ) private view returns (bytes memory) {
+        return
+            abi.encodePacked(
+                _spender.transferFrom.selector,
+                uint256(uint160(address(_account))),
+                keyOffset,
+                keyLength,
+                tail
+            );
+    }
+
+    /// @dev `execute` calldata where the offset or length words make the bounds arithmetic overflow.
+    function _overflowingExecuteCalldatas() private pure returns (bytes[] memory callDatas) {
+        uint256 max = type(uint256).max;
+        callDatas = new bytes[](5);
+        callDatas[0] = _executeCalldata(max, 0, ""); // 4 + execOffset overflows
+        callDatas[1] = _executeCalldata(max - 3, 0, ""); // 4 + execOffset wraps to 0
+        callDatas[2] = _executeCalldata(max - 0x23, 0, ""); // execLenPos + 32 wraps to 0
+        callDatas[3] = _executeCalldata(0x40, max, ""); // execStart + execLen overflows
+        callDatas[4] = _executeCalldata(0x40, max - 0x63, ""); // execStart + execLen wraps to 0
+    }
+
+    /// @dev `transferFrom` calldata where the offset or length words make the bounds arithmetic overflow.
+    function _overflowingTransferFromCalldatas() private view returns (bytes[] memory innerDatas) {
+        uint256 max = type(uint256).max;
+        innerDatas = new bytes[](5);
+        innerDatas[0] = _transferFromCalldata(max, 0, ""); // 4 + keyOffset overflows
+        innerDatas[1] = _transferFromCalldata(max - 3, 0, ""); // 4 + keyOffset wraps to 0
+        innerDatas[2] = _transferFromCalldata(max - 0x23, 0, ""); // keyLenPos + 0x20 wraps to 0
+        innerDatas[3] = _transferFromCalldata(0x40, max, ""); // keyDataStart + keyLen overflows
+        innerDatas[4] = _transferFromCalldata(0x40, max - 0x63, ""); // keyDataStart + keyLen wraps to 0
     }
 
     // ----- Helpers -----

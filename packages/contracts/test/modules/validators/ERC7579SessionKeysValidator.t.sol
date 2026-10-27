@@ -19,8 +19,15 @@ import {MODULE_TYPE_VALIDATOR} from "@openzeppelin/contracts/interfaces/draft-IE
 import {OpenAccount} from "../../../src/OpenAccount.sol";
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import {OpenAccountFactory} from "../../../src/OpenAccountFactory.sol";
+import {BytesDecoderReference} from "../../helpers/BytesDecoderReference.sol";
 
-contract ERC7579SessionKeysValidatorMock is ERC7579SessionKeysValidator {}
+contract ERC7579SessionKeysValidatorMock is ERC7579SessionKeysValidator {
+    function tryDecodeSignature(
+        bytes calldata signature
+    ) external pure returns (bool success, bytes calldata key, bytes calldata keySignature) {
+        return _tryDecodeSignature(signature);
+    }
+}
 
 contract ERC7579SessionKeysValidatorTest is Test {
     using ERC7579Utils for *;
@@ -436,6 +443,113 @@ contract ERC7579SessionKeysValidatorTest is Test {
         ops[0] = userOp;
         vm.prank(makeAddr("bundler"), makeAddr("bundler"));
         ERC4337Utils.ENTRYPOINT_V09.handleOps(ops, payable(makeAddr("beneficiary")));
+    }
+
+    function testTryDecodeSignature(bytes memory key, bytes memory keySignature) public view {
+        (bool success, bytes memory decodedKey, bytes memory decodedKeySignature) = _validator.tryDecodeSignature(
+            abi.encode(key, keySignature)
+        );
+        assertTrue(success);
+        assertEq(decodedKey, key);
+        assertEq(decodedKeySignature, keySignature);
+    }
+
+    function testTryDecodeSignatureArbitraryData(bytes memory signature) public view {
+        _assertTryDecodeSignatureMatchesReference(signature);
+    }
+
+    function testTryDecodeSignatureArbitraryWords(
+        uint256 keyOffset,
+        uint256 signatureOffset,
+        uint256 word2,
+        uint256 word3,
+        bytes memory tail
+    ) public view {
+        _assertTryDecodeSignatureMatchesReference(abi.encodePacked(keyOffset, signatureOffset, word2, word3, tail));
+    }
+
+    function testTryDecodeSignatureArbitraryLengths(
+        uint256 keyLength,
+        uint256 signatureLength,
+        bytes memory tail
+    ) public view {
+        _assertTryDecodeSignatureMatchesReference(
+            abi.encodePacked(uint256(0x40), uint256(0x60), keyLength, signatureLength, tail)
+        );
+    }
+
+    function testTryDecodeSignatureOverflowingOffsetsAndLengths() public view {
+        bytes[] memory signatures = _overflowingSignatures();
+        for (uint256 i = 0; i < signatures.length; ++i) {
+            (bool success, bytes memory key, bytes memory keySignature) = _validator.tryDecodeSignature(signatures[i]);
+            assertFalse(success);
+            assertEq(key.length, 0);
+            assertEq(keySignature.length, 0);
+            _assertTryDecodeSignatureMatchesReference(signatures[i]);
+        }
+    }
+
+    function testValidateUserOpOverflowingSignature(uint256 privateKey) public {
+        privateKey = bound(privateKey, 1, SECP256K1_CURVE_ORDER - 1);
+        _account = _deployAccount(abi.encodePacked(vm.addr(privateKey)), 0, 0);
+
+        PackedUserOperation memory userOp = _prepareUserOperation(0, 0);
+        bytes32 userOpHash = IEntryPointExtra(address(ERC4337Utils.ENTRYPOINT_V09)).getUserOpHash(userOp);
+
+        bytes[] memory signatures = _overflowingSignatures();
+        for (uint256 i = 0; i < signatures.length; ++i) {
+            userOp.signature = signatures[i];
+            vm.prank(address(_account));
+            assertEq(_validator.validateUserOp(userOp, userOpHash), ERC4337Utils.SIG_VALIDATION_FAILED);
+        }
+    }
+
+    function testIsValidSignatureWithSenderOverflowingSignature(bytes32 messageHash, uint256 privateKey) public {
+        privateKey = bound(privateKey, 1, SECP256K1_CURVE_ORDER - 1);
+        _installKey(address(_account), abi.encodePacked(vm.addr(privateKey)), 0, 0);
+
+        bytes[] memory signatures = _overflowingSignatures();
+        for (uint256 i = 0; i < signatures.length; ++i) {
+            vm.prank(address(_account));
+            assertEq(
+                _validator.isValidSignatureWithSender(address(this), messageHash, signatures[i]),
+                bytes4(0xffffffff)
+            );
+        }
+    }
+
+    function _assertTryDecodeSignatureMatchesReference(bytes memory signature) private view {
+        (bool success, bytes memory key, bytes memory keySignature) = _validator.tryDecodeSignature(signature);
+
+        (bool keySuccess, bytes memory expectedKey) = BytesDecoderReference.tryDecode(signature, 0x00, 0);
+        (bool keySignatureSuccess, bytes memory expectedKeySignature) = BytesDecoderReference.tryDecode(
+            signature,
+            0x20,
+            0
+        );
+        if (signature.length >= 0x80 && keySuccess && keySignatureSuccess) {
+            assertTrue(success);
+            assertEq(key, expectedKey);
+            assertEq(keySignature, expectedKeySignature);
+        } else {
+            assertFalse(success);
+            assertEq(key.length, 0);
+            assertEq(keySignature.length, 0);
+        }
+    }
+
+    /// @dev Encodings where the offset or length words make the bounds arithmetic overflow.
+    function _overflowingSignatures() private pure returns (bytes[] memory signatures) {
+        uint256 max = type(uint256).max;
+        signatures = new bytes[](8);
+        signatures[0] = abi.encode(max, 0x60, 0, 0); // keyOffset + 0x20 overflows
+        signatures[1] = abi.encode(0x40, max, 0, 0); // signatureOffset + 0x20 overflows
+        signatures[2] = abi.encode(max - 0x1f, 0x60, 0, 0); // keyOffset + 0x20 wraps to 0
+        signatures[3] = abi.encode(0x40, max - 0x1f, 0, 0); // signatureOffset + 0x20 wraps to 0
+        signatures[4] = abi.encode(0x40, 0x60, max, 0); // keyDataOffset + keyLength overflows
+        signatures[5] = abi.encode(0x40, 0x60, 0, max); // signatureDataOffset + signatureLength overflows
+        signatures[6] = abi.encode(0x40, 0x60, max - 0x5f, 0); // keyDataOffset + keyLength wraps to 0
+        signatures[7] = abi.encode(0x40, 0x60, 0, max - 0x7f); // signatureDataOffset + signatureLength wraps to 0
     }
 
     function _deployAccount(bytes memory key, uint48 start, uint48 end) internal returns (OpenAccount) {
