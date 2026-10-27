@@ -2,10 +2,10 @@
 pragma solidity ^0.8.27;
 
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
-import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {Nonces} from "@openzeppelin/contracts/utils/Nonces.sol";
 import {FHE, ebool, euint16, euint32, euint256, externalEuint32, externalEuint256} from "@fhevm/solidity/lib/FHE.sol";
 import {IERC7579Module} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
+import {EnumerableSetERC4337} from "../utils/structs/EnumerableSetERC4337.sol";
 
 /**
  * @dev Implementation of an {IERC7579Module} that provides confidential multisignature
@@ -75,7 +75,7 @@ import {IERC7579Module} from "@openzeppelin/contracts/interfaces/draft-IERC7579.
  * > to new ones.
  */
 abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
-    using EnumerableSet for EnumerableSet.Bytes32Set;
+    using EnumerableSetERC4337 for EnumerableSetERC4337.Bytes32Set;
     using SignatureChecker for bytes;
 
     /// @dev The `initData` is invalid or improperly formatted.
@@ -126,7 +126,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
     /// @dev Emitted when an operation is disclosed with its decryption proof verified.
     event ERC7579MultisigOperationDisclosed(address indexed account, bytes32 indexed hash, ebool valid);
 
-    mapping(address account => EnumerableSet.Bytes32Set) private _signersSetByAccount;
+    EnumerableSetERC4337.Bytes32Set private _signers;
     mapping(address account => euint32) private _thresholdByAccount;
     // The account is the innermost key of mappings read or written during validation, so that their slots are
     // associated with the account (ERC-7562).
@@ -178,10 +178,10 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
      *
      * > [!WARNING]
      * > This function has unbounded gas costs and may become uncallable if the set grows too large.
-     * > See {EnumerableSet-clear}.
+     * > See {EnumerableSetERC4337-clear}.
      */
     function onUninstall(bytes calldata /* data */) public virtual {
-        _signersSetByAccount[msg.sender].clear();
+        _signers.clear(msg.sender);
         _thresholdByAccount[msg.sender] = euint32.wrap(0);
     }
 
@@ -197,7 +197,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
      * > functions may become uncallable if the slice grows too large.
      */
     function getSigners(address account, uint32 start, uint32 end) public view virtual returns (euint256[] memory) {
-        bytes32[] memory signerHandles = _signersSetByAccount[account].values(start, end);
+        bytes32[] memory signerHandles = _signers.values(account, start, end);
         euint256[] memory signerIds;
         assembly ("memory-safe") {
             signerIds := signerHandles
@@ -207,12 +207,12 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
 
     /// @dev Returns the number of authorized encrypted signers for the specified account.
     function getSignerCount(address account) public view virtual returns (uint256) {
-        return _signersSetByAccount[account].length();
+        return _signers.length(account);
     }
 
     /// @dev Returns whether the encrypted `signerId` is an authorized signer for the specified account.
     function isSigner(address account, euint256 signerId) public view virtual returns (bool) {
-        return _signersSetByAccount[account].contains(FHE.toBytes32(signerId));
+        return _signers.contains(account, FHE.toBytes32(signerId));
     }
 
     /**
@@ -383,7 +383,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
             euint256 encryptedSignerId = newSignerIds[i];
             // We only check that the handle is not duplicate, though, it doesn't guarantee that the signer is not a duplicate.
             require(
-                _signersSetByAccount[account].add(FHE.toBytes32(encryptedSignerId)),
+                _signers.add(account, FHE.toBytes32(encryptedSignerId)),
                 ERC7579MultisigDuplicateHandle(encryptedSignerId)
             );
             emit ERC7579MultisigSignerAdded(account, encryptedSignerId);
@@ -414,7 +414,7 @@ abstract contract ERC7579MultisigConfidential is IERC7579Module, Nonces {
         for (uint256 i = 0; i < oldSignerIds.length; ++i) {
             euint256 encryptedSignerId = oldSignerIds[i];
             require(
-                _signersSetByAccount[account].remove(FHE.toBytes32(encryptedSignerId)),
+                _signers.remove(account, FHE.toBytes32(encryptedSignerId)),
                 ERC7579MultisigNonexistentSigner(encryptedSignerId)
             );
             emit ERC7579MultisigSignerRemoved(account, encryptedSignerId);
