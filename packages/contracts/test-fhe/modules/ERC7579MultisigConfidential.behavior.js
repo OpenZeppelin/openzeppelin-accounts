@@ -102,7 +102,7 @@ function shouldBehaveLikeERC7579MultisigConfidential() {
         this.mockAccount.address,
         this.signers[0],
       );
-      expect(ethers.getAddress(ethers.hexlify(ethers.toBeHex(decryptedId), 20))).to.eq(this.nonSigners[0].address);
+      expect(ethers.getAddress(ethers.toBeHex(decryptedId, 20))).to.eq(this.nonSigners[0].address);
     });
 
     it('can add ERC-7913 signers', async function () {
@@ -173,7 +173,7 @@ function shouldBehaveLikeERC7579MultisigConfidential() {
         this.mockAccount.address,
         this.signers[0],
       );
-      expect(ethers.getAddress(ethers.hexlify(ethers.toBeHex(decryptedId), 20))).to.eq(this.signers[0].address);
+      expect(ethers.getAddress(ethers.toBeHex(decryptedId, 20))).to.eq(this.signers[0].address);
     });
 
     it('can remove ERC-7913 signers', async function () {
@@ -589,7 +589,7 @@ function shouldBehaveLikeERC7579MultisigConfidentialWeighted() {
         this.mockAccount.address,
         this.signers[0],
       );
-      expect(ethers.getAddress(ethers.hexlify(ethers.toBeHex(decryptedId), 20))).to.eq(this.nonSigners[0].address);
+      expect(ethers.getAddress(ethers.toBeHex(decryptedId, 20))).to.eq(this.nonSigners[0].address);
 
       const receipt = await this.mockFromAccount
         .$_signerWeight(this.mockAccount.address, newSigner)
