@@ -348,6 +348,18 @@ describe('ERC7579SessionKeysValidator', function () {
       expect(until).to.equal(0n);
     });
 
+    it('bumps the key generation on removal', async function () {
+      await expect(this.mock.keyGeneration(this.mockAccount.address, this.key)).to.eventually.equal(0n);
+      await this.mockFromAccount.removeKeys([this.key]);
+      await expect(this.mock.keyGeneration(this.mockAccount.address, this.key)).to.eventually.equal(1n);
+
+      // Registering the key again keeps the generation and starts from fresh values.
+      await this.mockFromAccount.addKeys([this.key], [0n], [0n]);
+      await expect(this.mock.keyGeneration(this.mockAccount.address, this.key)).to.eventually.equal(1n);
+      await expect(this.mock.isValid(this.mockAccount.address, this.key)).to.eventually.be.true;
+      await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(0n);
+    });
+
     it('reverts when removing a nonexistent key', async function () {
       await expect(this.mockFromAccount.removeKeys([this.otherKey]))
         .to.be.revertedWithCustomError(this.mock, 'ERC7579SessionKeysNonexistentKey')
@@ -793,21 +805,43 @@ describe('ERC7579SessionKeysValidator', function () {
       });
 
       it('clears the budget when the key is removed', async function () {
-        await expect(this.mockFromAccount.removeKeys([this.key]))
-          .to.emit(this.mock, 'ERC7579SessionKeysValidatorGasBudgetSet')
-          .withArgs(this.mockAccount.address, this.key, 0n);
+        await this.mockFromAccount.removeKeys([this.key]);
         await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(0n);
       });
 
       it('starts without a budget when a removed key is added again', async function () {
         await this.mockFromAccount.removeKeys([this.key]);
         await this.mockFromAccount.addKeys([this.key], [0n], [0n]);
+        await expect(this.mock.keyGeneration(this.mockAccount.address, this.key)).to.eventually.equal(1n);
         await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(0n);
 
         const userOp = await signedUserOp.call(this);
         await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
           .to.emit(this.mockFromAccount, 'return$_validateUserOp')
           .withArgs(SIG_VALIDATION_FAILURE);
+      });
+
+      it('does not revive the budget of a previous generation', async function () {
+        const userOp = await signedUserOp.call(this);
+        const cost = maxGasCost(userOp);
+        await this.mockFromAccount.setGasBudget(this.key, cost * 2n);
+
+        await this.mockFromAccount.removeKeys([this.key]);
+        await this.mockFromAccount.addKeys([this.key], [0n], [0n]);
+
+        // Only the budget set on the new generation is readable and spendable.
+        await this.mockFromAccount.setGasBudget(this.key, cost - 1n);
+        await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(cost - 1n);
+        await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+          .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+          .withArgs(SIG_VALIDATION_FAILURE);
+        await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(cost - 1n);
+
+        // Removing and adding the key again does not bring back either budget.
+        await this.mockFromAccount.removeKeys([this.key]);
+        await this.mockFromAccount.addKeys([this.key], [0n], [0n]);
+        await expect(this.mock.keyGeneration(this.mockAccount.address, this.key)).to.eventually.equal(2n);
+        await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(0n);
       });
 
       it('starts with the new budgets after reinstalling', async function () {

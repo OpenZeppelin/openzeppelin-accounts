@@ -157,6 +157,42 @@ contract ERC7579SessionKeysValidatorTest is Test {
         assertFalse(_validator.isKey(address(_account), key));
     }
 
+    function testKeyGeneration(uint256 privateKey, uint256 gasBudget) public {
+        privateKey = bound(privateKey, 1, SECP256K1_CURVE_ORDER - 1);
+        bytes memory key = abi.encodePacked(vm.addr(privateKey));
+        bytes[] memory keys = new bytes[](1);
+        keys[0] = key;
+
+        assertEq(_validator.keyGeneration(address(_account), key), 0);
+        _installKey(address(_account), key, 0, 0, gasBudget);
+        assertEq(_validator.keyGeneration(address(_account), key), 0);
+
+        // Removing the key bumps its generation and makes its validity and gas budget unreachable.
+        vm.prank(address(_account));
+        _validator.removeKeys(keys);
+        assertEq(_validator.keyGeneration(address(_account), key), 1);
+        (uint48 from, uint48 until) = _validator.validity(address(_account), key);
+        assertEq(from, 0);
+        assertEq(until, 0);
+        assertEq(_validator.gasBudget(address(_account), key), 0);
+
+        // Registering the key again keeps the generation and starts from empty state.
+        vm.prank(address(_account));
+        _validator.addKeys(keys, new uint48[](1), new uint48[](1));
+        assertEq(_validator.keyGeneration(address(_account), key), 1);
+        assertTrue(_validator.isValid(address(_account), key));
+        assertEq(_validator.gasBudget(address(_account), key), 0);
+
+        vm.prank(address(_account));
+        _validator.removeKeys(keys);
+        assertEq(_validator.keyGeneration(address(_account), key), 2);
+
+        // Generations are scoped to the installation.
+        vm.prank(address(_account));
+        _validator.onUninstall("");
+        assertEq(_validator.keyGeneration(address(_account), key), 0);
+    }
+
     function testIsKey(uint256 privateKey) public {
         privateKey = bound(privateKey, 1, SECP256K1_CURVE_ORDER - 1);
         bytes memory key = abi.encodePacked(vm.addr(privateKey));
@@ -515,14 +551,58 @@ contract ERC7579SessionKeysValidatorTest is Test {
         bytes[] memory keys = new bytes[](1);
         keys[0] = key;
         vm.prank(address(_account));
-        vm.expectEmit(address(_validator));
-        emit ERC7579SessionKeysValidator.ERC7579SessionKeysValidatorGasBudgetSet(address(_account), key, 0);
         _validator.removeKeys(keys);
         assertEq(_validator.gasBudget(address(_account), key), 0);
 
-        // Re-adding the key starts without a budget.
+        // Re-adding the key starts without a budget under a new generation.
         vm.prank(address(_account));
         _validator.addKeys(keys, new uint48[](1), new uint48[](1));
+        assertEq(_validator.keyGeneration(address(_account), key), 1);
+        assertEq(_validator.gasBudget(address(_account), key), 0);
+    }
+
+    function testReAddedKeyGasBudgetDoesNotReviveOldBudget(
+        uint256 privateKey,
+        uint256 oldGasBudget,
+        uint256 newGasBudget
+    ) public {
+        privateKey = bound(privateKey, 1, SECP256K1_CURVE_ORDER - 1);
+        oldGasBudget = bound(oldGasBudget, USER_OP_COST, type(uint256).max);
+        newGasBudget = bound(newGasBudget, 0, USER_OP_COST - 1);
+        bytes memory key = abi.encodePacked(vm.addr(privateKey));
+        _installKey(address(_account), key, 0, 0, oldGasBudget);
+
+        bytes[] memory keys = new bytes[](1);
+        keys[0] = key;
+        vm.prank(address(_account));
+        _validator.removeKeys(keys);
+        vm.prank(address(_account));
+        _validator.addKeys(keys, new uint48[](1), new uint48[](1));
+
+        // The budget set on the new generation is the only one readable.
+        vm.prank(address(_account));
+        _validator.setGasBudget(key, newGasBudget);
+        assertEq(_validator.gasBudget(address(_account), key), newGasBudget);
+
+        // The old budget does not cover an operation that the new one cannot pay for.
+        PackedUserOperation memory userOp = _prepareUserOperation(0, 0);
+        _signUserOp(userOp, privateKey, key);
+        assertEq(_simulateValidation(userOp), ERC4337Utils.SIG_VALIDATION_FAILED);
+        assertEq(_validator.gasBudget(address(_account), key), newGasBudget);
+
+        // The same operation validates once the new generation's budget covers it.
+        vm.prank(address(_account));
+        _validator.setGasBudget(key, USER_OP_COST);
+        (address authorizer, , , ) = ERC4337Utils.parseValidationData(_simulateValidation(userOp));
+        assertEq(authorizer, address(0));
+        assertEq(_validator.gasBudget(address(_account), key), 0);
+
+        // Removing and re-adding again does not bring back either budget.
+        vm.prank(address(_account));
+        _validator.removeKeys(keys);
+        vm.prank(address(_account));
+        _validator.addKeys(keys, new uint48[](1), new uint48[](1));
+        assertEq(_validator.keyGeneration(address(_account), key), 2);
         assertEq(_validator.gasBudget(address(_account), key), 0);
     }
 

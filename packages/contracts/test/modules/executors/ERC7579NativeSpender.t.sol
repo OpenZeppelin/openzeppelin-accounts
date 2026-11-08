@@ -310,23 +310,105 @@ contract ERC7579NativeSpenderTest is Test {
         assertEq(_spender.renewPeriod(address(_account), _key), 0);
     }
 
-    function testRemoveKeysPreservesHistoryAtHistoricalStart() public {
+    function testRemoveKeysResetsSpending(uint160 spentAmount) public {
+        spentAmount = uint160(bound(spentAmount, 1, 1 ether));
         uint48 from = uint48(block.timestamp);
         _installSpenderBoth(from, 0, 1 ether, 1 days);
 
         vm.prank(_eoa);
-        _spender.transferFrom(address(_account), _key, _recipient, 0.5 ether);
-        assertEq(_spender.spent(address(_account), _key, 0, from), 0.5 ether);
+        _spender.transferFrom(address(_account), _key, _recipient, spentAmount);
+        assertEq(_spender.spent(address(_account), _key, 0, from), spentAmount);
 
         bytes[] memory keys = new bytes[](1);
         keys[0] = _key;
         vm.prank(address(_account));
         _spender.removeKeys(keys);
 
-        // Convenience accessor reads from validity().from which is now 0
+        // Spending history of the previous generation is unreachable, even at the historical start.
+        assertEq(_spender.keyGeneration(address(_account), _key), 1);
         assertEq(_spender.spent(address(_account), _key, 0), 0);
-        // Explicit-start overload still returns the history
-        assertEq(_spender.spent(address(_account), _key, 0, from), 0.5 ether);
+        assertEq(_spender.spent(address(_account), _key, 0, from), 0);
+
+        // Re-registering the key with the same policy and start timepoint starts from an empty period.
+        uint160[] memory limits = new uint160[](1);
+        limits[0] = 1 ether;
+        uint48[] memory renewPeriods = new uint48[](1);
+        renewPeriods[0] = 1 days;
+        vm.prank(address(_account));
+        _spender.addKeysWithConfig(keys, new uint48[](1), new uint48[](1), limits, renewPeriods);
+
+        assertEq(_spender.spent(address(_account), _key, 0), 0);
+        vm.prank(_eoa);
+        _spender.transferFrom(address(_account), _key, _recipient, 1 ether);
+        assertEq(_spender.spent(address(_account), _key, 0), 1 ether);
+    }
+
+    function testReAddKeyWithAddKeysStartsWithoutConfig() public {
+        _installSpenderBoth(uint48(block.timestamp), 0, 1 ether, 1 days);
+
+        bytes[] memory keys = new bytes[](1);
+        keys[0] = _key;
+        vm.prank(address(_account));
+        _spender.removeKeys(keys);
+
+        vm.prank(address(_account));
+        _spender.addKeys(keys, new uint48[](1), new uint48[](1));
+        assertEq(_spender.keyGeneration(address(_account), _key), 1);
+        // The previous generation's config and gas budget are unreachable.
+        assertEq(_spender.limit(address(_account), _key), 0);
+        assertEq(_spender.gasBudget(address(_account), _key), 0);
+
+        bytes32 currentKeyId = _currentKeyId();
+
+        vm.prank(_eoa);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ERC7579NativeSpender.ERC7579NativeSpendingConfigNotSet.selector,
+                address(_account),
+                currentKeyId
+            )
+        );
+        _spender.transferFrom(address(_account), _key, _recipient, 1);
+    }
+
+    function testRemovedKeyValidatedOperationCannotExecute() public {
+        _installSpenderBoth(uint48(block.timestamp), 0, 1 ether, 1 days);
+
+        // A user operation of the key is validated before the key is removed.
+        PackedUserOperation memory userOp;
+        userOp.sender = address(_account);
+        userOp.callData = abi.encodeCall(
+            IERC7579Execution.execute,
+            (
+                _singleMode(),
+                _encodeSingle(abi.encodeCall(_spender.transferFrom, (address(_account), _key, _recipient, 1)))
+            )
+        );
+        bytes32 userOpHash = keccak256("userOpHash");
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(_eoaKey, userOpHash);
+        userOp.signature = abi.encode(_key, abi.encodePacked(r, s, v));
+        vm.prank(address(_account));
+        (address authorizer, , , ) = ERC4337Utils.parseValidationData(_spender.validateUserOp(userOp, userOpHash));
+        assertEq(authorizer, address(0));
+
+        // An earlier operation in the same bundle removes the key.
+        bytes[] memory keys = new bytes[](1);
+        keys[0] = _key;
+        vm.prank(address(_account));
+        _spender.removeKeys(keys);
+
+        // The validated operation then executes and finds no policy.
+        bytes32 currentKeyId = _currentKeyId();
+        vm.prank(address(ERC4337Utils.ENTRYPOINT_V09));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ERC7579NativeSpender.ERC7579NativeSpendingConfigNotSet.selector,
+                address(_account),
+                currentKeyId
+            )
+        );
+        (bool success, ) = address(_account).call(userOp.callData);
+        success; // The revert is asserted by `expectRevert`.
     }
 
     function testMultipleKeysIndependence(uint160 limit, uint160 amount1, uint160 amount2) public {
@@ -776,5 +858,10 @@ contract ERC7579NativeSpenderTest is Test {
         initDatas[0] = abi.encode(keys, starts, ends, _gasBudgets(keys.length, gasBudget));
         initDatas[1] = abi.encode(keys, limits, renewPeriods);
         _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+    }
+
+    /// @dev Generation-scoped identifier of `_key` on `_account`. See {ERC7579SessionKeys-_keyId}.
+    function _currentKeyId() private view returns (bytes32) {
+        return keccak256(abi.encode(keccak256(_key), _spender.keyGeneration(address(_account), _key)));
     }
 }

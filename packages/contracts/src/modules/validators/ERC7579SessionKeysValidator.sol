@@ -64,7 +64,8 @@ abstract contract ERC7579SessionKeysValidator is ERC7579SessionKeys, ERC7579Vali
 
     /// @dev Returns the remaining gas budget, in wei, of a `key` on an `account`.
     function gasBudget(address account, bytes calldata key) public view virtual returns (uint256) {
-        return _gasBudget(account, installation(account), _keyId(key));
+        uint256 installation_ = installation(account);
+        return _gasBudget(account, installation_, _keyId(account, installation_, key));
     }
 
     /**
@@ -167,7 +168,7 @@ abstract contract ERC7579SessionKeysValidator is ERC7579SessionKeys, ERC7579Vali
         bytes calldata key;
         (, key, ) = _tryDecodeSignature(userOp.signature); // `success` is checked further down in `super._validateUserOp` -> `_rawERC7579Validation`
         uint256 installation_ = installation(userOp.sender);
-        bytes32 keyId = _keyId(key);
+        bytes32 keyId = _keyId(userOp.sender, installation_, key);
         // We know from the resolution order that `super._validateUserOp` calls `ERC7579Validator._rawERC7579Validation`
         // which only returns SIG_VALIDATION_FAILED or SIG_VALIDATION_SUCCESS.
         uint256 sigResult = super._validateUserOp(userOp, userOpHash);
@@ -191,18 +192,6 @@ abstract contract ERC7579SessionKeysValidator is ERC7579SessionKeys, ERC7579Vali
             );
     }
 
-    /**
-     * @dev Override of {ERC7579SessionKeys-_removeKeys} that also clears the gas budget of each key.
-     *
-     * Emits an {ERC7579SessionKeysValidatorGasBudgetSet} event for each key.
-     */
-    function _removeKeys(address account, uint256 installation_, bytes[] calldata keys_) internal virtual override {
-        super._removeKeys(account, installation_, keys_);
-        for (uint256 i = 0; i < keys_.length; ++i) {
-            _setGasBudget(account, installation_, keys_[i], 0);
-        }
-    }
-
     /// @dev Internal version of {gasBudget} that receives an `installation_` nonce.
     function _gasBudget(address account, uint256 installation_, bytes32 keyId) internal view virtual returns (uint256) {
         return _gasBudgets[installation_][keyId][account];
@@ -220,7 +209,7 @@ abstract contract ERC7579SessionKeysValidator is ERC7579SessionKeys, ERC7579Vali
         bytes calldata key,
         uint256 newGasBudget
     ) internal virtual {
-        _gasBudgets[installation_][_keyId(key)][account] = newGasBudget;
+        _gasBudgets[installation_][_keyId(account, installation_, key)][account] = newGasBudget;
         emit ERC7579SessionKeysValidatorGasBudgetSet(account, key, newGasBudget);
     }
 

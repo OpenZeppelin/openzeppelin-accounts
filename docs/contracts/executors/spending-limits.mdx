@@ -134,7 +134,7 @@ This path still requires the module to be installed as `MODULE_TYPE_EXECUTOR`, s
 
 ### Removing keys
 
-`removeKeys` clears both the validity range and the per-key spending config. Spending history at the historical `from` timepoint is preserved in storage and can still be read via `spent(account, key, period, historicalStart)`:
+`removeKeys` bumps the key's generation (`keyGeneration(account, key)`). The validity range, the spending config and the spending history are all indexed by an id that includes the generation, so they become unreachable at once. A user operation validated before the removal (e.g. earlier in the same bundle) finds no policy when it executes and reverts. Registering the key again starts with no policy and empty spending periods:
 
 ```solidity
 bytes[] memory oldKeys = new bytes[](1);
@@ -201,19 +201,17 @@ erc20Spender.batchTransferFrom(address(account), key, DAI, [r1, r2], [100e18, 20
 
 The validator gate is identical: outer `execute(SINGLE, ...)` into the module, inner selector must be one of `transferFrom`/`batchTransferFrom`, key consistency between signature and inner call.
 
-### Removing keys (different from native)
+### Removing keys
 
-`removeKeys` on the ERC20 module clears the validity range but **does not** clear the `(key, token)` spending configs. If the same key bytes are re-registered later via plain `addKeys`, the previously-stored configs become active again. To re-register with a fresh policy, use `addKeysWithConfig`:
+Same as the native module: `removeKeys` bumps the key's generation, which makes all of its `(key, token)` spending configs and spent amounts unreachable in constant gas, regardless of how many tokens the key had policies for. Registering the key again starts with no policies:
 
 ```solidity
-// Inherits the old configs:
+// No policies after re-registering:
 erc20Spender.addKeys([key], [0], [0]);
 
-// Overrides the old config for (key, USDC):
+// Only the (key, USDC) policy exists:
 erc20Spender.addKeysWithConfig([key], [0], [0], [USDC], [200e6], [30 days]);
 ```
-
-The rationale is that multi-token configs would otherwise require unbounded gas to clear on `removeKeys` (one config per `(key, token)` pair). Document this for your operational runbook if you uninstall keys at scale.
 
 ## Common security properties
 

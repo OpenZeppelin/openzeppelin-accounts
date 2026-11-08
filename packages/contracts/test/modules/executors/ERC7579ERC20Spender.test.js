@@ -418,37 +418,39 @@ describe('ERC7579ERC20Spender', function () {
       );
     });
 
-    it('clears validity but leaves spending configs intact', async function () {
+    it('clears validity and all spending configs', async function () {
       await expect(this.mockFromAccount.removeKeys([this.key]))
         .to.emit(this.mock, 'ERC7579SessionKeysERC7913KeyUnset')
         .withArgs(this.mockAccount.address, this.key);
 
       await expect(this.mock.isKey(this.mockAccount.address, this.key)).to.eventually.be.false;
-      // Configs are deliberately NOT cleared on remove (documented in NatSpec).
-      await expect(this.mock.limit(this.mockAccount.address, this.key, this.token1.target)).to.eventually.equal(
-        this.limit,
-      );
-      await expect(this.mock.limit(this.mockAccount.address, this.key, this.token2.target)).to.eventually.equal(
-        this.limit,
-      );
+      await expect(this.mock.keyGeneration(this.mockAccount.address, this.key)).to.eventually.equal(1n);
+      await expect(this.mock.limit(this.mockAccount.address, this.key, this.token1.target)).to.eventually.equal(0n);
+      await expect(this.mock.limit(this.mockAccount.address, this.key, this.token2.target)).to.eventually.equal(0n);
     });
 
-    it('re-registering with addKeys (no addKeysWithConfig) inherits previous configs', async function () {
+    it('re-registering with addKeys (no addKeysWithConfig) starts without configs', async function () {
       await this.mockFromAccount.removeKeys([this.key]);
 
       // Re-register via parent's addKeys; no config writes.
       await this.mockFromAccount.addKeys([this.key], [0n], [0n]);
 
       await expect(this.mock.isKey(this.mockAccount.address, this.key)).to.eventually.be.true;
-      await expect(this.mock.limit(this.mockAccount.address, this.key, this.token1.target)).to.eventually.equal(
-        this.limit,
-      );
-      await expect(this.mock.limit(this.mockAccount.address, this.key, this.token2.target)).to.eventually.equal(
-        this.limit,
-      );
+      await expect(this.mock.limit(this.mockAccount.address, this.key, this.token1.target)).to.eventually.equal(0n);
+      await expect(this.mock.limit(this.mockAccount.address, this.key, this.token2.target)).to.eventually.equal(0n);
+      await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(0n);
+      await expect(
+        this.mock
+          .connect(this.sessionKey)
+          .transferFrom(this.mockAccount.address, this.key, this.token1.target, this.recipient1.address, 1n),
+      ).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpendingConfigNotSet');
     });
 
-    it('re-registering with addKeysWithConfig overwrites the previous config for that (key, token)', async function () {
+    it('re-registering with addKeysWithConfig only keeps the new (key, token) configs', async function () {
+      const amount = ethers.parseEther('3');
+      await this.mock
+        .connect(this.sessionKey)
+        .transferFrom(this.mockAccount.address, this.key, this.token1.target, this.recipient1.address, amount);
       await this.mockFromAccount.removeKeys([this.key]);
 
       const newLimit = ethers.parseEther('25');
@@ -464,10 +466,24 @@ describe('ERC7579ERC20Spender', function () {
       await expect(this.mock.limit(this.mockAccount.address, this.key, this.token1.target)).to.eventually.equal(
         newLimit,
       );
-      // The other token's previously-set config is still there.
-      await expect(this.mock.limit(this.mockAccount.address, this.key, this.token2.target)).to.eventually.equal(
-        this.limit,
-      );
+      // The spending period of the new generation starts empty.
+      await expect(this.mock.spent(this.mockAccount.address, this.key, this.token1.target, 0)).to.eventually.equal(0n);
+      // The other token's previously-set config is unreachable.
+      await expect(this.mock.limit(this.mockAccount.address, this.key, this.token2.target)).to.eventually.equal(0n);
+    });
+
+    it('prevents a UserOp validated before the removal from executing', async function () {
+      const userOp = await this.buildSpendUserOp({ amount: 1n });
+      const [from, until] = await this.mock.validity(this.mockAccount.address, this.key);
+      await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+        .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+        .withArgs(ethers.toBigInt(packValidationData(from - 1n, until, true, ValidationRange.Timestamp)));
+
+      // An earlier UserOp in the same bundle removes the key, then the validated UserOp executes.
+      await this.mockFromAccount.removeKeys([this.key]);
+      await expect(
+        this.mockAccountFromEntrypoint.runner.sendTransaction({ to: this.mockAccount.target, data: userOp.callData }),
+      ).to.be.revertedWithCustomError(this.mock, 'ERC7579ERC20SpendingConfigNotSet');
     });
   });
 
@@ -668,9 +684,25 @@ describe('ERC7579ERC20Spender', function () {
 
     it('clears the budget when the key is removed', async function () {
       await this.installBoth();
-      await expect(this.mockFromAccount.removeKeys([this.key]))
-        .to.emit(this.mock, 'ERC7579SessionKeysValidatorGasBudgetSet')
-        .withArgs(this.mockAccount.address, this.key, 0n);
+      await this.mockFromAccount.removeKeys([this.key]);
+      await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(0n);
+
+      // Adding the key again starts a new generation without a budget.
+      await this.mockFromAccount.addKeys([this.key], [0n], [0n]);
+      await expect(this.mock.keyGeneration(this.mockAccount.address, this.key)).to.eventually.equal(1n);
+      await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(0n);
+    });
+
+    it('does not revive the budget of a previous generation', async function () {
+      await this.installBoth();
+      await this.mockFromAccount.removeKeys([this.key]);
+      await this.mockFromAccount.addKeys([this.key], [0n], [0n]);
+      await this.mockFromAccount.setGasBudget(this.key, 1n);
+      await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(1n);
+
+      await this.mockFromAccount.removeKeys([this.key]);
+      await this.mockFromAccount.addKeys([this.key], [0n], [0n]);
+      await expect(this.mock.keyGeneration(this.mockAccount.address, this.key)).to.eventually.equal(2n);
       await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(0n);
     });
 

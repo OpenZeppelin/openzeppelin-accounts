@@ -38,6 +38,7 @@ Key properties:
 - **ERC-7913 keys**: any `(verifier, key)` pair is accepted: EOA addresses, P256 hardware keys, WebAuthn credentials, ZKEmail addresses, etc.
 - **Validity ranges**: each key has a `from` and an `until` timepoint. Passing `0` for `from` resolves to the current timestamp; passing `0` for `until` stores `type(uint48).max` (no expiry).
 - **ERC-6372 clock**: defaults to `block.timestamp`. Override `clock()` and `CLOCK_MODE()` to use block numbers instead.
+- **Cheap removal**: removing a key bumps its generation (`keyGeneration(account, key)`). The validity range and any per-key state of derived modules are indexed by `_keyId(account, installation, key)`, which includes the generation, so removal makes them unreachable in constant gas and a key registered again starts from empty state.
 - **Cheap uninstall**: rather than iterating over all registered keys on uninstall, the module increments an installation nonce. All previous key data becomes unreachable instantly. Storage from old installations remains but is never accessed again.
 
 ```solidity

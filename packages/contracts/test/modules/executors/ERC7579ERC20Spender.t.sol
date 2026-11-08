@@ -297,42 +297,164 @@ contract ERC7579ERC20SpenderTest is Test {
         assertEq(_spender.spent(address(_account), _key, address(_token2), 0), 1.5 ether);
     }
 
-    function testRemoveKeysLeavesConfigsIntact() public {
+    function testRemoveKeysClearsConfigs() public {
         _installSpender(uint48(block.timestamp), address(_token1), 1 ether, 1 days);
 
-        bytes[] memory rm = new bytes[](1);
-        rm[0] = _key;
         vm.prank(address(_account));
-        _spender.removeKeys(rm);
+        _spender.removeKeys(_singleKey());
 
         assertFalse(_spender.isKey(address(_account), _key));
-        // Configs are deliberately NOT cleared on removeKeys (documented in NatSpec).
-        assertEq(_spender.limit(address(_account), _key, address(_token1)), 1 ether);
+        assertEq(_spender.keyGeneration(address(_account), _key), 1);
+        assertEq(_spender.limit(address(_account), _key, address(_token1)), 0);
+        assertEq(_spender.renewPeriod(address(_account), _key, address(_token1)), 0);
     }
 
-    function testReAddKeyWithAddKeysInheritsConfig() public {
+    function testReAddKeyWithAddKeysStartsWithoutConfig() public {
         _installSpender(uint48(block.timestamp), address(_token1), 1 ether, 1 days);
 
-        bytes[] memory rm = new bytes[](1);
-        rm[0] = _key;
         vm.prank(address(_account));
-        _spender.removeKeys(rm);
+        _spender.removeKeys(_singleKey());
 
         // Re-register via parent's addKeys (no config writes).
-        bytes[] memory keys = new bytes[](1);
-        keys[0] = _key;
-        uint48[] memory starts = new uint48[](1);
-        starts[0] = 0;
-        uint48[] memory ends = new uint48[](1);
-        ends[0] = 0;
         vm.prank(address(_account));
-        _spender.addKeys(keys, starts, ends);
+        _spender.addKeys(_singleKey(), new uint48[](1), new uint48[](1));
 
         assertTrue(_spender.isKey(address(_account), _key));
-        // Previous config is still in place.
-        assertEq(_spender.limit(address(_account), _key, address(_token1)), 1 ether);
-        // The gas budget is not.
+        assertEq(_spender.keyGeneration(address(_account), _key), 1);
+        // The previous generation's gas budget is unreachable.
         assertEq(_spender.gasBudget(address(_account), _key), 0);
+        // The previous generation's config is unreachable.
+        assertEq(_spender.limit(address(_account), _key, address(_token1)), 0);
+
+        bytes32 currentKeyId = _currentKeyId();
+
+        vm.prank(_eoa);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ERC7579ERC20Spender.ERC7579ERC20SpendingConfigNotSet.selector,
+                address(_account),
+                currentKeyId,
+                address(_token1)
+            )
+        );
+        _spender.transferFrom(address(_account), _key, address(_token1), _recipient, 1);
+    }
+
+    function testReAddKeyWithConfigOnlyHasNewPolicies(uint160 spentAmount) public {
+        spentAmount = uint160(bound(spentAmount, 1, 1 ether));
+        _installSpender(uint48(block.timestamp), address(_token1), 1 ether, 1 days);
+
+        vm.prank(_eoa);
+        _spender.transferFrom(address(_account), _key, address(_token1), _recipient, spentAmount);
+        assertEq(_spender.spent(address(_account), _key, address(_token1), 0), spentAmount);
+
+        vm.prank(address(_account));
+        _spender.removeKeys(_singleKey());
+
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(_token2);
+        uint160[] memory limits = new uint160[](1);
+        limits[0] = 2 ether;
+        uint48[] memory renewPeriods = new uint48[](1);
+        renewPeriods[0] = 1 days;
+        vm.prank(address(_account));
+        _spender.addKeysWithConfig(_singleKey(), new uint48[](1), new uint48[](1), tokens, limits, renewPeriods);
+
+        // Only the new (key, token2) policy exists, with an empty spending period.
+        assertEq(_spender.limit(address(_account), _key, address(_token1)), 0);
+        assertEq(_spender.limit(address(_account), _key, address(_token2)), 2 ether);
+        assertEq(_spender.spent(address(_account), _key, address(_token2), 0), 0);
+        (, uint256 available) = _spender.spendingAt(address(_account), _key, address(_token2), 0);
+        assertEq(available, 2 ether);
+
+        bytes32 currentKeyId = _currentKeyId();
+
+        vm.prank(_eoa);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ERC7579ERC20Spender.ERC7579ERC20SpendingConfigNotSet.selector,
+                address(_account),
+                currentKeyId,
+                address(_token1)
+            )
+        );
+        _spender.transferFrom(address(_account), _key, address(_token1), _recipient, 1);
+    }
+
+    function testReAddKeyResetsSpentAmount(uint160 spentAmount) public {
+        spentAmount = uint160(bound(spentAmount, 1, 1 ether));
+        uint48 from = uint48(block.timestamp);
+        _installSpender(from, address(_token1), 1 ether, 1 days);
+
+        vm.prank(_eoa);
+        _spender.transferFrom(address(_account), _key, address(_token1), _recipient, spentAmount);
+
+        vm.prank(address(_account));
+        _spender.removeKeys(_singleKey());
+        // Spent amounts of the previous generation are unreachable, even at the historical start.
+        assertEq(_spender.spent(address(_account), _key, address(_token1), 0, from), 0);
+
+        // Same key, token, limit and start timepoint as the removed registration.
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(_token1);
+        uint160[] memory limits = new uint160[](1);
+        limits[0] = 1 ether;
+        uint48[] memory renewPeriods = new uint48[](1);
+        renewPeriods[0] = 1 days;
+        vm.prank(address(_account));
+        _spender.addKeysWithConfig(_singleKey(), new uint48[](1), new uint48[](1), tokens, limits, renewPeriods);
+
+        assertEq(_spender.spent(address(_account), _key, address(_token1), 0), 0);
+        vm.prank(_eoa);
+        _spender.transferFrom(address(_account), _key, address(_token1), _recipient, 1 ether);
+        assertEq(_spender.spent(address(_account), _key, address(_token1), 0), 1 ether);
+    }
+
+    function testRemovedKeyValidatedOperationCannotExecute() public {
+        _installSpender(uint48(block.timestamp), address(_token1), 1 ether, 1 days);
+
+        // A user operation of the key is validated before the key is removed.
+        PackedUserOperation memory userOp;
+        userOp.sender = address(_account);
+        userOp.callData = abi.encodeCall(
+            IERC7579Execution.execute,
+            (
+                _singleMode(),
+                _encodeSingle(
+                    abi.encodeCall(_spender.transferFrom, (address(_account), _key, address(_token1), _recipient, 1))
+                )
+            )
+        );
+        bytes32 userOpHash = keccak256("userOpHash");
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(_eoaKey, userOpHash);
+        userOp.signature = abi.encode(_key, abi.encodePacked(r, s, v));
+        vm.prank(address(_account));
+        (address authorizer, , , ) = ERC4337Utils.parseValidationData(_spender.validateUserOp(userOp, userOpHash));
+        assertEq(authorizer, address(0));
+
+        // An earlier operation in the same bundle removes the key.
+        vm.prank(address(_account));
+        _spender.removeKeys(_singleKey());
+
+        // The validated operation then executes and finds no policy.
+        bytes32 currentKeyId = _currentKeyId();
+        vm.prank(address(ERC4337Utils.ENTRYPOINT_V09));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ERC7579ERC20Spender.ERC7579ERC20SpendingConfigNotSet.selector,
+                address(_account),
+                currentKeyId,
+                address(_token1)
+            )
+        );
+        (bool success, ) = address(_account).call(userOp.callData);
+        success; // The revert is asserted by `expectRevert`.
+    }
+
+    function testRemoveKeysGasIndependentOfTokenCount() public {
+        uint256 gasOneToken = _removeKeyGas(1);
+        uint256 gasManyTokens = _removeKeyGas(50);
+        assertEq(gasOneToken, gasManyTokens);
     }
 
     // ----- Gas budget -----
@@ -712,5 +834,49 @@ contract ERC7579ERC20SpenderTest is Test {
         initDatas[0] = abi.encode(keys, starts, ends, _gasBudgets(keys.length, gasBudget));
         initDatas[1] = abi.encode(configKeys, configTokens, configLimits, configRenewPeriods);
         _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+    }
+
+    function _singleKey() private view returns (bytes[] memory keys) {
+        keys = new bytes[](1);
+        keys[0] = _key;
+    }
+
+    /// @dev Installs `_key` with `tokenCount` token policies on a fresh account and returns the gas used to remove it.
+    function _removeKeyGas(uint256 tokenCount) private returns (uint256) {
+        _account = new OpenAccountMock();
+
+        bytes[] memory configKeys = new bytes[](tokenCount);
+        address[] memory configTokens = new address[](tokenCount);
+        uint160[] memory configLimits = new uint160[](tokenCount);
+        uint48[] memory configRenewPeriods = new uint48[](tokenCount);
+        for (uint256 i = 0; i < tokenCount; ++i) {
+            configKeys[i] = _key;
+            configTokens[i] = address(new ERC20Mock());
+            configLimits[i] = 1 ether;
+            configRenewPeriods[i] = 1 days;
+        }
+
+        uint256[] memory moduleTypeIds = new uint256[](2);
+        moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
+        moduleTypeIds[1] = MODULE_TYPE_EXECUTOR;
+        address[] memory modules = new address[](2);
+        modules[0] = address(_spender);
+        modules[1] = address(_spender);
+        bytes[] memory initDatas = new bytes[](2);
+        initDatas[0] = abi.encode(_singleKey(), new uint48[](1), new uint48[](1), _gasBudgets(1, GAS_BUDGET));
+        initDatas[1] = abi.encode(configKeys, configTokens, configLimits, configRenewPeriods);
+        _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
+        assertEq(_spender.tokensCount(address(_account)), tokenCount);
+
+        bytes[] memory keys = _singleKey();
+        vm.prank(address(_account));
+        uint256 gasBefore = gasleft();
+        _spender.removeKeys(keys);
+        return gasBefore - gasleft();
+    }
+
+    /// @dev Generation-scoped identifier of `_key` on `_account`. See {ERC7579SessionKeys-_keyId}.
+    function _currentKeyId() private view returns (bytes32) {
+        return keccak256(abi.encode(keccak256(_key), _spender.keyGeneration(address(_account), _key)));
     }
 }
