@@ -18,12 +18,27 @@ const { shouldBehaveLikeERC7579Module } = require('../ERC7579Module.behavior');
 const encodeSessionKeySig = (key, keySignature) =>
   ethers.AbiCoder.defaultAbiCoder().encode(['bytes', 'bytes'], [key, keySignature]);
 
-// Encode the install data: abi.encode(bytes[] keys, uint48[] starts, uint48[] ends)
-const encodeInstallData = (keys, starts, ends) =>
-  ethers.AbiCoder.defaultAbiCoder().encode(['bytes[]', 'uint48[]', 'uint48[]'], [keys, starts, ends]);
+// Default gas budget, in wei, of each session key
+const GAS_BUDGET = ethers.parseEther('1');
+
+// Encode the install data: abi.encode(bytes[] keys, uint48[] starts, uint48[] ends, uint256[] gasBudgets)
+const encodeInstallData = (keys, starts, ends, gasBudgets = keys.map(() => GAS_BUDGET)) =>
+  ethers.AbiCoder.defaultAbiCoder().encode(
+    ['bytes[]', 'uint48[]', 'uint48[]', 'uint256[]'],
+    [keys, starts, ends, gasBudgets],
+  );
 
 // Largest timepoint that fits in the 47 bits available in ERC-4337 validation data
 const MAX_TIMEPOINT = (1n << 47n) - 1n;
+
+// Maximum gas cost of a UserOp, as prefunded to the EntryPoint
+const maxGasCost = userOp =>
+  (userOp.preVerificationGas +
+    userOp.verificationGas +
+    userOp.callGas +
+    userOp.paymasterVerificationGasLimit +
+    userOp.paymasterPostOpGasLimit) *
+  userOp.maxFeePerGas;
 
 async function fixture() {
   const [other] = await ethers.getSigners();
@@ -196,15 +211,52 @@ describe('ERC7579SessionKeysValidator', function () {
       );
     });
 
-    it('reverts when array lengths do not match', async function () {
+    it('reverts when init data is too short for the gas budgets', async function () {
+      const shortData = '0x' + '00'.repeat(0xff); // 255 bytes, 1 below the 256-byte minimum
+      await expect(this.mockFromAccount.onInstall(shortData)).to.be.revertedWithCustomError(
+        this.mock,
+        'ERC7579SessionKeysInvalidInitData',
+      );
+    });
+
+    it('reverts when init data has no gas budgets', async function () {
       const data = ethers.AbiCoder.defaultAbiCoder().encode(
         ['bytes[]', 'uint48[]', 'uint48[]'],
-        [[this.key], [0n, 100n], [0n]], // starts has 2 elements, keys and ends have 1
+        [[this.key], [0n], [0n]],
       );
+      await expect(this.mockFromAccount.onInstall(data)).to.be.revertedWithCustomError(
+        this.mock,
+        'ERC7579SessionKeysInvalidInitData',
+      );
+    });
+
+    it('reverts when array lengths do not match', async function () {
+      const data = encodeInstallData([this.key], [0n, 100n], [0n]); // starts has 2 elements, keys and ends have 1
       await expect(this.mockFromAccount.onInstall(data)).to.be.revertedWithCustomError(
         this.mock,
         'ERC7579SessionKeysMismatchedInitDataLengths',
       );
+    });
+
+    it('reverts when gas budgets length does not match', async function () {
+      const data = encodeInstallData([this.key], [0n], [0n], [GAS_BUDGET, GAS_BUDGET]);
+      await expect(this.mockFromAccount.onInstall(data))
+        .to.be.revertedWithCustomError(this.mock, 'ERC7579SessionKeysValidatorMismatchedGasBudgetsLength')
+        .withArgs(1n, 2n);
+    });
+
+    it('sets the gas budget of each key', async function () {
+      const gasBudgets = [ethers.parseEther('0.01'), ethers.parseEther('0.02')];
+      const data = encodeInstallData([this.key, this.otherKey], [0n, 0n], [0n, 0n], gasBudgets);
+
+      await expect(this.mockFromAccount.onInstall(data))
+        .to.emit(this.mock, 'ERC7579SessionKeysValidatorGasBudgetSet')
+        .withArgs(this.mockAccount.address, this.key, gasBudgets[0])
+        .and.to.emit(this.mock, 'ERC7579SessionKeysValidatorGasBudgetSet')
+        .withArgs(this.mockAccount.address, this.otherKey, gasBudgets[1]);
+
+      await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(gasBudgets[0]);
+      await expect(this.mock.gasBudget(this.mockAccount.address, this.otherKey)).to.eventually.equal(gasBudgets[1]);
     });
 
     it('reverts when registering a duplicate key', async function () {
@@ -491,6 +543,7 @@ describe('ERC7579SessionKeysValidator', function () {
         const from = now;
         const until = now + 100n;
         await this.mockFromAccount.addKeys([this.otherKey], [from], [until]);
+        await this.mockFromAccount.setGasBudget(this.otherKey, GAS_BUDGET);
         await time.increaseTo(until + 1n);
 
         const userOp = await this.mockAccount.createUserOp(this.userOp);
@@ -578,6 +631,192 @@ describe('ERC7579SessionKeysValidator', function () {
         await expect(
           this.mockFromAccount.isValidSignatureWithSender(this.other.address, hash, signature),
         ).to.eventually.equal('0xffffffff');
+      });
+    });
+  });
+
+  describe('gas budget', function () {
+    const installWithGasBudget = function (gasBudget) {
+      return this.mockFromAccount.onInstall(encodeInstallData([this.key], [0n], [0n], [gasBudget]));
+    };
+
+    const signedUserOp = function (params = {}) {
+      return this.mockAccount.createUserOp(params).then(op => this.signUserOp(op));
+    };
+
+    const expectSuccess = async function (tx) {
+      const [from, until] = await this.mock.validity(this.mockAccount.address, this.key);
+      await expect(tx)
+        .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+        .withArgs(ethers.toBigInt(packValidationData(from - 1n, until, true, ValidationRange.Timestamp)));
+    };
+
+    it('returns 0 for an unregistered key', async function () {
+      await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(0n);
+    });
+
+    describe('_validateUserOp', function () {
+      it('accepts a UserOp at the budget and exhausts it', async function () {
+        const userOp = await signedUserOp.call(this);
+        await installWithGasBudget.call(this, maxGasCost(userOp));
+
+        await expectSuccess.call(this, this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()));
+        await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(0n);
+      });
+
+      it('rejects a UserOp one wei above the budget', async function () {
+        const userOp = await signedUserOp.call(this);
+        const gasBudget = maxGasCost(userOp) - 1n;
+        await installWithGasBudget.call(this, gasBudget);
+
+        await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+          .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+          .withArgs(SIG_VALIDATION_FAILURE);
+        await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(gasBudget);
+      });
+
+      it('deducts the cost of each UserOp until the budget is exhausted', async function () {
+        const userOp = await signedUserOp.call(this);
+        const cost = maxGasCost(userOp);
+        await installWithGasBudget.call(this, 2n * cost + 1n);
+
+        await expectSuccess.call(this, this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()));
+        await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(cost + 1n);
+
+        await expectSuccess.call(this, this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()));
+        await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(1n);
+
+        await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+          .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+          .withArgs(SIG_VALIDATION_FAILURE);
+        await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(1n);
+      });
+
+      it('charges UserOps with a paymaster, including the paymaster gas limits', async function () {
+        const userOp = await signedUserOp.call(this, { paymaster: this.other });
+        const cost = maxGasCost(userOp);
+        expect(cost).to.be.gt(
+          maxGasCost({ ...userOp, paymasterVerificationGasLimit: 0n, paymasterPostOpGasLimit: 0n }),
+        );
+
+        await installWithGasBudget.call(this, cost - 1n);
+        await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+          .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+          .withArgs(SIG_VALIDATION_FAILURE);
+
+        await this.mockFromAccount.setGasBudget(this.key, cost);
+        await expectSuccess.call(this, this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()));
+        await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(0n);
+      });
+
+      it('does not deduct for an invalid signature', async function () {
+        await installWithGasBudget.call(this, GAS_BUDGET);
+        const userOp = await this.mockAccount.createUserOp({});
+        const wrongKeySignature = await this.otherSessionKey.signTypedData(
+          this.entrypointDomain,
+          { PackedUserOperation },
+          userOp.packed,
+        );
+        userOp.signature = encodeSessionKeySig(this.key, wrongKeySignature);
+
+        const [from, until] = await this.mock.validity(this.mockAccount.address, this.key);
+        await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+          .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+          .withArgs(ethers.toBigInt(packValidationData(from - 1n, until, false, ValidationRange.Timestamp)));
+        await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(GAS_BUDGET);
+      });
+
+      it('does not deduct when called by a third party', async function () {
+        await installWithGasBudget.call(this, GAS_BUDGET);
+        const userOp = await signedUserOp.call(this);
+
+        await expect(this.mock.connect(this.other).$_validateUserOp(userOp.packed, userOp.hash()))
+          .to.emit(this.mock, 'return$_validateUserOp')
+          .withArgs(SIG_VALIDATION_FAILURE);
+        await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(GAS_BUDGET);
+      });
+
+      it('rejects a UserOp with an inflated preVerificationGas', async function () {
+        await installWithGasBudget.call(this, ethers.parseEther('0.01'));
+        const userOp = await signedUserOp.call(this, {
+          preVerificationGas: 100_000_000n,
+          maxFeePerGas: 1_000_000_000_000n,
+        });
+
+        await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+          .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+          .withArgs(SIG_VALIDATION_FAILURE);
+        await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(
+          ethers.parseEther('0.01'),
+        );
+      });
+    });
+
+    describe('setGasBudget', function () {
+      beforeEach(async function () {
+        await this.mockFromAccount.onInstall(this.installData);
+      });
+
+      it('raises and lowers the remaining budget', async function () {
+        for (const gasBudget of [GAS_BUDGET * 2n, 1n, 0n]) {
+          await expect(this.mockFromAccount.setGasBudget(this.key, gasBudget))
+            .to.emit(this.mock, 'ERC7579SessionKeysValidatorGasBudgetSet')
+            .withArgs(this.mockAccount.address, this.key, gasBudget);
+          await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(gasBudget);
+        }
+      });
+
+      it('only affects the calling account', async function () {
+        await this.mock.connect(this.other).onInstall(this.installData);
+        await this.mockFromAccount.setGasBudget(this.key, 1n);
+
+        await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(1n);
+        await expect(this.mock.gasBudget(this.other.address, this.key)).to.eventually.equal(GAS_BUDGET);
+      });
+
+      it('reverts for an unregistered key', async function () {
+        await expect(this.mockFromAccount.setGasBudget(this.otherKey, GAS_BUDGET))
+          .to.be.revertedWithCustomError(this.mock, 'ERC7579SessionKeysNonexistentKey')
+          .withArgs(this.otherKey);
+      });
+
+      it('reverts for a key registered on another account', async function () {
+        await expect(this.mock.connect(this.other).setGasBudget(this.key, GAS_BUDGET))
+          .to.be.revertedWithCustomError(this.mock, 'ERC7579SessionKeysNonexistentKey')
+          .withArgs(this.key);
+      });
+    });
+
+    describe('key removal and reinstallation', function () {
+      beforeEach(async function () {
+        await this.mockFromAccount.onInstall(this.installData);
+      });
+
+      it('clears the budget when the key is removed', async function () {
+        await expect(this.mockFromAccount.removeKeys([this.key]))
+          .to.emit(this.mock, 'ERC7579SessionKeysValidatorGasBudgetSet')
+          .withArgs(this.mockAccount.address, this.key, 0n);
+        await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(0n);
+      });
+
+      it('starts without a budget when a removed key is added again', async function () {
+        await this.mockFromAccount.removeKeys([this.key]);
+        await this.mockFromAccount.addKeys([this.key], [0n], [0n]);
+        await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(0n);
+
+        const userOp = await signedUserOp.call(this);
+        await expect(this.mockFromAccount.$_validateUserOp(userOp.packed, userOp.hash()))
+          .to.emit(this.mockFromAccount, 'return$_validateUserOp')
+          .withArgs(SIG_VALIDATION_FAILURE);
+      });
+
+      it('starts with the new budgets after reinstalling', async function () {
+        await this.mockFromAccount.setGasBudget(this.key, GAS_BUDGET * 2n);
+        await this.mockFromAccount.onUninstall('0x');
+        await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(0n);
+
+        await installWithGasBudget.call(this, 1n);
+        await expect(this.mock.gasBudget(this.mockAccount.address, this.key)).to.eventually.equal(1n);
       });
     });
   });

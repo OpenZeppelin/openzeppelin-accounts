@@ -45,6 +45,7 @@ Key properties:
 bool registered  = module.isKey(account, key);          // is the key in the registry?
 bool active      = module.isValid(account, key);         // registered AND within validity range?
 (uint48 from, uint48 until) = module.validity(account, key);
+uint256 budget   = validator.gasBudget(account, key);    // remaining gas budget in wei (ERC7579SessionKeysValidator)
 bytes[] memory allKeys = module.keys(account, 0, type(uint256).max);
 
 // Lifecycle (called by the account)
@@ -59,6 +60,7 @@ module.removeKeys(oldKeys);
 Key behaviors:
 
 - **User-operation validation**: decodes the session key from `userOp.signature`, reads its `(from, until)` range, and packs both the signature validity bit and the time range into a single `validationData` word using `ERC4337Utils.packValidationData`. The EntryPoint enforces the time range natively without requiring an explicit on-chain timestamp check.
+- **Gas budget**: a session key signs the gas fields of its user operations, so without a bound a key holder that bundles its own operation could name itself beneficiary and collect the account's balance as fees. Each key has a gas budget in wei, set at install time (`abi.encode(keys, starts, ends, gasBudgets)`) or with `setGasBudget(key, budget)`. Validating a user operation deducts its maximum cost, `(preVerificationGas + verificationGasLimit + callGasLimit + paymasterVerificationGasLimit + paymasterPostOpGasLimit) * maxFeePerGas`, and fails when the budget is insufficient. Operations with a paymaster are charged too, and unused gas is not credited back. Keys added with `addKeys` start with no budget.
 - **ERC-1271 validation**: the EntryPoint is not involved in off-chain message signing, so validity is checked manually: if the clock is outside `[from, until]`, the function returns `0xffffffff` immediately.
 
 ## Implementing Custom Policies
@@ -136,10 +138,12 @@ keys[0] = abi.encodePacked(sessionKeyAddress); // EOA session key
 
 uint48[] memory starts = new uint48[](1);
 uint48[] memory ends   = new uint48[](1);
-starts[0] = 0;            // 0 → current timestamp
-ends[0]   = uint48(block.timestamp + 7 days);
+uint256[] memory gasBudgets = new uint256[](1);
+starts[0]     = 0;            // 0 → current timestamp
+ends[0]       = uint48(block.timestamp + 7 days);
+gasBudgets[0] = 0.05 ether;   // total gas the key can make the account pay
 
-bytes memory initData = abi.encode(keys, starts, ends);
+bytes memory initData = abi.encode(keys, starts, ends, gasBudgets);
 
 uint256[] memory moduleTypeIds = new uint256[](1);
 moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
@@ -221,6 +225,8 @@ starts[1] = uint48(block.timestamp + 1 hours); // delayed activation
 ends[1]   = 0;                        // no expiry
 
 sessionKeyValidator.addKeys(newKeys, starts, ends);
+sessionKeyValidator.setGasBudget(newKeys[0], 0.05 ether); // new keys start with no gas budget
+sessionKeyValidator.setGasBudget(newKeys[1], 0.05 ether);
 
 // Remove keys
 bytes[] memory oldKeys = new bytes[](1);

@@ -7,6 +7,7 @@
 - `ERC7579SessionKeys`, `ERC7579NativeSpender`, `ERC7579ERC20Spender`: Return an invalid result instead of reverting when signature or call data offsets and lengths overflow.
 - `ERC7579MultisigConfidential`: Make `_discloseOperation` `internal virtual`.
 - `ERC7579MultisigConfidentialValidator`: Check for an existing disclosure before verifying an inline decryption proof.
+- `ERC7579SessionKeysValidator`: Add a per-key gas budget, readable through `gasBudget(account, key)` and set through `setGasBudget(key, budget)`. Validating a user operation deducts its maximum gas cost from the budget and fails when the budget is insufficient. `onInstall` takes `abi.encode(keys, starts, ends, gasBudgets)`, which also applies to the validator role of `ERC7579NativeSpender` and `ERC7579ERC20Spender`. **Breaking change**.
 
 ## 22-10-2026
 

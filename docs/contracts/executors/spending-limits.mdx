@@ -54,6 +54,10 @@ ends[0]   = uint48(block.timestamp + 7 days);  // expires in 7 days
 starts[1] = 0;
 ends[1]   = 0;                                 // 0 → type(uint48).max (no expiry)
 
+uint256[] memory gasBudgets = new uint256[](2);
+gasBudgets[0] = 0.05 ether;                    // total gas each key can make the account pay
+gasBudgets[1] = 0.05 ether;
+
 uint160[] memory limits = new uint160[](2);
 limits[0] = 1 ether;
 limits[1] = 0.5 ether;
@@ -66,7 +70,7 @@ renewPeriods[1] = 30 days;
 account.installModule(
     MODULE_TYPE_VALIDATOR,
     address(nativeSpender),
-    abi.encode(keys, starts, ends)
+    abi.encode(keys, starts, ends, gasBudgets)
 );
 
 // Second install: executor role - writes the spending policies
@@ -154,13 +158,15 @@ bytes[] memory keys = new bytes[](1);
 keys[0] = abi.encodePacked(sessionKey);
 uint48[] memory starts = new uint48[](1);
 uint48[] memory ends   = new uint48[](1);
-starts[0] = 0;
-ends[0]   = uint48(block.timestamp + 30 days);
+uint256[] memory gasBudgets = new uint256[](1);
+starts[0]     = 0;
+ends[0]       = uint48(block.timestamp + 30 days);
+gasBudgets[0] = 0.05 ether;
 
 account.installModule(
     MODULE_TYPE_VALIDATOR,
     address(erc20Spender),
-    abi.encode(keys, starts, ends)
+    abi.encode(keys, starts, ends, gasBudgets)
 );
 
 // Configure the same key for TWO tokens by repeating it across rows
@@ -211,6 +217,7 @@ The rationale is that multi-token configs would otherwise require unbounded gas 
 
 ## Common security properties
 
+- **Gas charged to a budget.** Gas fees are not counted against the spending limits. Each key has a gas budget in wei (see [Session Keys](/accounts/contracts/session-keys)), and validating a user operation deducts its maximum cost from it, including operations with a paymaster. A key holder that bundles its own user operation therefore cannot collect more than the budget as fees. Keys added through `addKeys` or `addKeysWithConfig` start with no budget; set it with `setGasBudget(key, budget)`.
 - **ERC-1271 disabled.** Both modules deliberately make `isValidSignatureWithSender` return `0xffffffff`. A spending session key cannot be repurposed to sign EIP-2612 permits or other arbitrary off-chain digests on the account's behalf.
 - **Past starts banned.** Both modules override `_addKeys` to reject any `start` timepoint older than `clock()`. This prevents a removed-then-re-registered key from inheriting stale `_spentFor` storage slots written under a previous validity range. Pass `starts[i] == 0` to resolve to the current timepoint.
 - **Reconfiguration banned.** Once a policy is written, neither it nor any sibling policy can be reconfigured under the current installation. Change requires uninstall + reinstall, which bumps the installation nonce and resets state.

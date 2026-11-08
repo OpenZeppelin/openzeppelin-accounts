@@ -417,6 +417,8 @@ contract AccountERC8043UpgradeableTest is Test {
         assertEq(from, block.timestamp);
         assertEq(recipient.balance, 1 ether);
         assertEq(spender.spent(address(_account), key, 0), 1 ether);
+        // The budget set at install is charged within the same validation.
+        assertEq(spender.gasBudget(address(_account), key), 1 ether - (100000 + 2_000_000 + 500_000) * 1000000);
     }
 
     function _buildMultisigAndValidatorInitCode(
@@ -447,6 +449,8 @@ contract AccountERC8043UpgradeableTest is Test {
         keys[0] = key;
         uint48[] memory starts = new uint48[](1); // 0 resolves to the current timepoint
         uint48[] memory ends = new uint48[](1); // 0 means no expiry
+        uint256[] memory gasBudgets = new uint256[](1);
+        gasBudgets[0] = 1 ether;
         uint160[] memory limits = new uint160[](1);
         limits[0] = 1 ether;
         uint48[] memory renewPeriods = new uint48[](1);
@@ -459,7 +463,7 @@ contract AccountERC8043UpgradeableTest is Test {
         modules[0] = spender;
         modules[1] = spender;
         bytes[] memory initDatas = new bytes[](2);
-        initDatas[0] = abi.encode(keys, starts, ends);
+        initDatas[0] = abi.encode(keys, starts, ends, gasBudgets);
         initDatas[1] = abi.encode(keys, limits, renewPeriods);
 
         return _buildInitModeInitCode(nonce, moduleTypeIds, modules, initDatas, _initialValidatorPrivateKey);

@@ -4,6 +4,7 @@ pragma solidity ^0.8.27;
 import {Test} from "forge-std/Test.sol";
 import {ERC20Mock} from "../../../../../lib/@openzeppelin-contracts/contracts/mocks/token/ERC20Mock.sol";
 import {ERC7579ERC20Spender} from "../../../src/modules/executors/ERC7579ERC20Spender.sol";
+import {ERC7579SessionKeysValidator} from "../../../src/modules/validators/ERC7579SessionKeysValidator.sol";
 import {
     ERC7579Utils,
     Mode,
@@ -37,6 +38,7 @@ contract ERC7579ERC20SpenderHarness is ERC7579ERC20Spender {
 contract ERC7579ERC20SpenderTest is Test {
     uint256 private constant MAX_TOKENS = type(uint128).max;
     uint48 private constant MAX_TIMEPOINT = type(uint48).max >> 1;
+    uint256 private constant GAS_BUDGET = 1 ether;
 
     ERC7579ERC20SpenderHarness private _spender;
     OpenAccount private _account;
@@ -44,6 +46,7 @@ contract ERC7579ERC20SpenderTest is Test {
     ERC20Mock private _token2;
 
     address private _eoa;
+    uint256 private _eoaKey;
     bytes private _key;
 
     address private _recipient;
@@ -57,7 +60,7 @@ contract ERC7579ERC20SpenderTest is Test {
         _token1.mint(address(_account), MAX_TOKENS);
         _token2.mint(address(_account), MAX_TOKENS);
 
-        (_eoa, ) = makeAddrAndKey("session-key-eoa");
+        (_eoa, _eoaKey) = makeAddrAndKey("session-key-eoa");
         _key = abi.encodePacked(_eoa);
         _recipient = makeAddr("recipient");
     }
@@ -205,7 +208,7 @@ contract ERC7579ERC20SpenderTest is Test {
         address[] memory modules = new address[](1);
         modules[0] = address(_spender);
         bytes[] memory initDatas = new bytes[](1);
-        initDatas[0] = abi.encode(keysOne, startsOne, endsOne);
+        initDatas[0] = abi.encode(keysOne, startsOne, endsOne, _gasBudgets(keysOne.length, GAS_BUDGET));
         _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
         bytes[] memory emptyKeys = new bytes[](0);
@@ -276,7 +279,7 @@ contract ERC7579ERC20SpenderTest is Test {
         modules[0] = address(_spender);
         modules[1] = address(_spender);
         bytes[] memory initDatas = new bytes[](2);
-        initDatas[0] = abi.encode(keys, starts, ends);
+        initDatas[0] = abi.encode(keys, starts, ends, _gasBudgets(keys.length, GAS_BUDGET));
         initDatas[1] = abi.encode(configKeys, configTokens, configLimits, configRenewPeriods);
         _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
 
@@ -328,6 +331,117 @@ contract ERC7579ERC20SpenderTest is Test {
         assertTrue(_spender.isKey(address(_account), _key));
         // Previous config is still in place.
         assertEq(_spender.limit(address(_account), _key, address(_token1)), 1 ether);
+        // The gas budget is not.
+        assertEq(_spender.gasBudget(address(_account), _key), 0);
+    }
+
+    // ----- Gas budget -----
+
+    function testInstallSetsGasBudget(uint256 gasBudget) public {
+        vm.expectEmit(address(_spender));
+        emit ERC7579SessionKeysValidator.ERC7579SessionKeysValidatorGasBudgetSet(address(_account), _key, gasBudget);
+        _installSpender(uint48(block.timestamp), address(_token1), 1 ether, 1 days, gasBudget);
+        assertEq(_spender.gasBudget(address(_account), _key), gasBudget);
+    }
+
+    function testValidatorInstallRevertsOnMismatchedGasBudgets(uint8 numGasBudgets) public {
+        vm.assume(numGasBudgets != 1);
+        bytes[] memory keys = new bytes[](1);
+        keys[0] = _key;
+
+        vm.prank(address(_account));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ERC7579SessionKeysValidator.ERC7579SessionKeysValidatorMismatchedGasBudgetsLength.selector,
+                1,
+                numGasBudgets
+            )
+        );
+        _spender.onInstall(abi.encode(keys, new uint48[](1), new uint48[](1), new uint256[](numGasBudgets)));
+    }
+
+    function testValidateUserOpGasBudget(
+        uint256 gasBudget,
+        uint64 preVerificationGas,
+        uint64 maxFeePerGas,
+        bool withPaymaster
+    ) public {
+        _installSpender(uint48(block.timestamp), address(_token1), 1 ether, 1 days, gasBudget);
+
+        PackedUserOperation memory userOp = _spendUserOp(preVerificationGas, maxFeePerGas);
+        if (withPaymaster) {
+            userOp.paymasterAndData = abi.encodePacked(makeAddr("paymaster"), uint128(100000), uint128(100000));
+        }
+        bytes32 userOpHash = _signUserOp(userOp);
+
+        // Operations with a paymaster are charged as well.
+        uint256 cost = (uint256(preVerificationGas) + 100000 + 100000 + (withPaymaster ? 200000 : 0)) * maxFeePerGas;
+
+        vm.prank(address(_account));
+        (address authorizer, , , ) = ERC4337Utils.parseValidationData(_spender.validateUserOp(userOp, userOpHash));
+        assertEq(authorizer == address(0), cost <= gasBudget);
+        assertEq(_spender.gasBudget(address(_account), _key), cost <= gasBudget ? gasBudget - cost : gasBudget);
+    }
+
+    function testValidateUserOpFromThirdPartyDoesNotDeduct(address caller) public {
+        vm.assume(caller != address(_account));
+        _installSpender(uint48(block.timestamp), address(_token1), 1 ether, 1 days, GAS_BUDGET);
+
+        PackedUserOperation memory userOp = _spendUserOp(100000, 1000000);
+        bytes32 userOpHash = _signUserOp(userOp);
+
+        vm.prank(caller);
+        assertEq(_spender.validateUserOp(userOp, userOpHash), ERC4337Utils.SIG_VALIDATION_FAILED);
+        assertEq(_spender.gasBudget(address(_account), _key), GAS_BUDGET);
+    }
+
+    function testAddKeysWithConfigStartsWithoutGasBudget() public {
+        _installSpender(uint48(block.timestamp), address(_token1), 1 ether, 1 days);
+
+        bytes[] memory rm = new bytes[](1);
+        rm[0] = _key;
+        vm.prank(address(_account));
+        _spender.removeKeys(rm);
+        assertEq(_spender.gasBudget(address(_account), _key), 0);
+
+        bytes[] memory keys = new bytes[](1);
+        keys[0] = _key;
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(_token1);
+        uint160[] memory limits = new uint160[](1);
+        limits[0] = 1 ether;
+        uint48[] memory renewPeriods = new uint48[](1);
+        renewPeriods[0] = 1 days;
+        vm.prank(address(_account));
+        _spender.addKeysWithConfig(keys, new uint48[](1), new uint48[](1), tokens, limits, renewPeriods);
+        assertEq(_spender.gasBudget(address(_account), _key), 0);
+
+        PackedUserOperation memory userOp = _spendUserOp(100000, 1000000);
+        bytes32 userOpHash = _signUserOp(userOp);
+        vm.prank(address(_account));
+        assertEq(_spender.validateUserOp(userOp, userOpHash), ERC4337Utils.SIG_VALIDATION_FAILED);
+
+        vm.prank(address(_account));
+        _spender.setGasBudget(_key, GAS_BUDGET);
+        vm.prank(address(_account));
+        (address authorizer, , , ) = ERC4337Utils.parseValidationData(_spender.validateUserOp(userOp, userOpHash));
+        assertEq(authorizer, address(0));
+    }
+
+    function testValidateUserOpRejectsSetGasBudgetCall() public {
+        _installSpender(uint48(block.timestamp), address(_token1), 1 ether, 1 days);
+
+        // A spending key cannot raise its own budget: the callData gate only allows spender transfers.
+        PackedUserOperation memory userOp = _spendUserOp(100000, 1000000);
+        userOp.callData = abi.encodeCall(
+            IERC7579Execution.execute,
+            (_singleMode(), _encodeSingle(abi.encodeCall(_spender.setGasBudget, (_key, type(uint256).max))))
+        );
+        bytes32 userOpHash = _signUserOp(userOp);
+
+        vm.prank(address(_account));
+        assertEq(_spender.validateUserOp(userOp, userOpHash), ERC4337Utils.SIG_VALIDATION_FAILED);
+        assertEq(_spender.gasBudget(address(_account), _key), GAS_BUDGET);
     }
 
     // ----- CallData shape decoding -----
@@ -534,7 +648,44 @@ contract ERC7579ERC20SpenderTest is Test {
 
     // ----- Helpers -----
 
+    function _spendUserOp(
+        uint256 preVerificationGas,
+        uint128 maxFeePerGas
+    ) private view returns (PackedUserOperation memory userOp) {
+        userOp.sender = address(_account);
+        userOp.callData = abi.encodeCall(
+            IERC7579Execution.execute,
+            (
+                _singleMode(),
+                _encodeSingle(
+                    abi.encodeCall(_spender.transferFrom, (address(_account), _key, address(_token1), _recipient, 1))
+                )
+            )
+        );
+        userOp.preVerificationGas = preVerificationGas;
+        userOp.accountGasLimits = bytes32(abi.encodePacked(uint128(100000), uint128(100000)));
+        userOp.gasFees = bytes32(abi.encodePacked(maxFeePerGas, maxFeePerGas));
+    }
+
+    /// @dev Signs `userOp` with the session key over an arbitrary hash, since the module is called directly.
+    function _signUserOp(PackedUserOperation memory userOp) private view returns (bytes32 userOpHash) {
+        userOpHash = keccak256(abi.encode(userOp.callData, userOp.paymasterAndData));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(_eoaKey, userOpHash);
+        userOp.signature = abi.encode(_key, abi.encodePacked(r, s, v));
+    }
+
+    function _gasBudgets(uint256 n, uint256 gasBudget) private pure returns (uint256[] memory gasBudgets) {
+        gasBudgets = new uint256[](n);
+        for (uint256 i = 0; i < n; ++i) {
+            gasBudgets[i] = gasBudget;
+        }
+    }
+
     function _installSpender(uint48 from, address token, uint160 limit, uint48 renewPeriod) private {
+        _installSpender(from, token, limit, renewPeriod, GAS_BUDGET);
+    }
+
+    function _installSpender(uint48 from, address token, uint160 limit, uint48 renewPeriod, uint256 gasBudget) private {
         bytes[] memory keys = new bytes[](1);
         keys[0] = _key;
         uint48[] memory starts = new uint48[](1);
@@ -558,7 +709,7 @@ contract ERC7579ERC20SpenderTest is Test {
         modules[0] = address(_spender);
         modules[1] = address(_spender);
         bytes[] memory initDatas = new bytes[](2);
-        initDatas[0] = abi.encode(keys, starts, ends);
+        initDatas[0] = abi.encode(keys, starts, ends, _gasBudgets(keys.length, gasBudget));
         initDatas[1] = abi.encode(configKeys, configTokens, configLimits, configRenewPeriods);
         _account.initialize(moduleTypeIds, modules, initDatas, Mode.wrap(0), bytes(""));
     }
