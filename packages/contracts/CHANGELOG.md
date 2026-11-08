@@ -10,6 +10,7 @@
 - `ERC7579SessionKeysValidator`: Add a per-key gas budget, readable through `gasBudget(account, key)` and set through `setGasBudget(key, budget)`. Validating a user operation deducts its maximum gas cost from the budget and fails when the budget is insufficient. `onInstall` takes `abi.encode(keys, starts, ends, gasBudgets)`, which also applies to the validator role of `ERC7579NativeSpender` and `ERC7579ERC20Spender`. **Breaking change**.
 - `ERC7579SessionKeys`: Track a generation per key, bumped on removal and readable through `keyGeneration(account, key)`. `_keyId(account, installation, key)` includes the key's current generation and replaces `_keyId(key)`. **Breaking change**.
 - `ERC7579SessionKeysValidator`, `ERC7579NativeSpender`, `ERC7579ERC20Spender`: Scope gas budgets, spending policies and spent amounts to the key's current generation. Removing a key invalidates all of its policies, including the `(key, token)` configs of `ERC7579ERC20Spender`, and spending history of removed keys is no longer readable through `spent`.
+- `ERC7579NativeSpender`: Track whether the executor-role `onInstall` ran per installation, so any later `onInstall` reverts with `ERC7579NativeSpenderAlreadyInstalled` regardless of key order.
 
 ## 22-10-2026
 

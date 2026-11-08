@@ -54,10 +54,15 @@ import {ERC7579Executor} from "./ERC7579Executor.sol";
  * >    At least one key must be registered, otherwise the install reverts.
  * > 2. **Executor install (second)**: `initData` is `abi.encode(bytes[] keys, uint160[] limits, uint48[] renewPeriods)`.
  * >    This writes a spending policy for each already-registered key. The `keys` array MUST be
- * >    non-empty and reconfiguration is banned: once a key has been configured, neither it nor any
- * >    other key can be reconfigured under the current installation. To change the spending policy,
- * >    the account must uninstall and reinstall the module (which bumps the installation nonce and
- * >    resets state).
+ * >    non-empty and reconfiguration is banned: once the executor install has run, further `onInstall`
+ * >    calls revert under the current installation. To change the spending policy, the account must
+ * >    uninstall and reinstall the module (which bumps the installation nonce and resets state), or
+ * >    register a fresh key with {addKeysWithConfig}.
+ * >
+ * > The order is not enforced on-chain. ERC-7579 doesn't pass the module type to `onInstall`, so the
+ * > module tells the two calls apart by whether the account already has session keys. Installing in a
+ * > different order, or reinstalling one role after a partial uninstall, decodes `initData` with the
+ * > other layout and isn't reliably rejected.
  * >
  * > Install and uninstall both module types together. Uninstalling either one resets the whole
  * > installation (session keys and spending policies) for both roles.
@@ -142,6 +147,8 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
     // associated with the account (ERC-7562).
     mapping(uint256 installation => mapping(bytes32 keyId => mapping(address account => SpendingConfig)))
         private _config;
+
+    mapping(uint256 installation => mapping(address account => bool)) private _policiesInstalled;
     mapping(address account => mapping(uint256 installation => mapping(bytes32 keyId => mapping(uint256 start => mapping(uint256 period => uint256)))))
         private _spentFor;
 
@@ -235,7 +242,8 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
      *
      * Second call requirements:
      *
-     * * The account must not have configured the keys yet. Reverts with {ERC7579NativeSpenderAlreadyInstalled} otherwise.
+     * * The executor-role install must not have run under the current installation. Reverts with
+     *   {ERC7579NativeSpenderAlreadyInstalled} otherwise.
      * * Those of {_decodeKeyConfigsInitData} for the decoding requirements.
      * * All arrays must have equal length. Reverts with {ERC7579NativeSpenderMismatchedInitDataLengths} if not.
      * * The `keys` array must be non-empty. Reverts with {ERC7579NativeSpenderEmptyKeys} otherwise.
@@ -255,12 +263,9 @@ contract ERC7579NativeSpender is ERC7579SessionKeysValidator, ERC7579Executor {
         } else {
             uint256 installation_ = installation(msg.sender);
 
-            // After the second install, there must be at least one key with non-zero spending config.
-            bytes[] memory keys = _keys(msg.sender, installation_, 0, 1);
-            require(
-                _limit(msg.sender, installation_, _keyId(msg.sender, installation_, keys[0])) == 0,
-                /* && _renewPeriod(msg.sender, installation_, _keyId(msg.sender, installation_, keys[0])) == 0 */ ERC7579NativeSpenderAlreadyInstalled()
-            );
+            // The executor-role install runs once per installation
+            require(!_policiesInstalled[installation_][msg.sender], ERC7579NativeSpenderAlreadyInstalled());
+            _policiesInstalled[installation_][msg.sender] = true;
 
             (
                 bytes[] calldata keys_,
