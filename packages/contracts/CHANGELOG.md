@@ -1,12 +1,13 @@
 ## 26-10-2026
 
 - `ERC8043Utils`: Decode `bytes[]` element offsets relative to the array, as in the ABI encoding. Malformed lengths and offsets now return an invalid result instead of reverting.
-- `CrossChainSignatureChecker`: `isValidCrossChainSignatureNow` and `isValidCrossChainSignatureNowCalldata` return false instead of reverting when `structIndex` is out of bounds or when `fields` sets bits beyond the ones defined in ERC-5267. `tryParseCrossChainSignature` and `tryParseCrossChainSignatureCalldata` return empty values instead of reverting when an encoded offset or length overflows.
+- `CrossChainSignatureChecker`: `isValidCrossChainSignatureNow` and `isValidCrossChainSignatureNowCalldata` return false instead of reverting when `structIndex` is out of bounds or when the main domain fields set bits beyond the ones defined in ERC-5267. `tryParseCrossChainSignature` and `tryParseCrossChainSignatureCalldata` return empty values instead of reverting when an encoded offset or length overflows.
 - `ERC7579SessionKeys`: Reject validity ranges whose bounds exceed 47 bits or whose start is after their end with `ERC7579SessionKeysInvalidValidity`. A zero end now maps to `type(uint48).max >> 1` instead of `type(uint48).max`.
 - `ERC7579SessionKeysValidator`: Pack a key's inclusive start as ERC-4337 `validAfter` minus one.
 - `ERC7579SessionKeys`, `ERC7579NativeSpender`, `ERC7579ERC20Spender`: Return an invalid result instead of reverting when signature or call data offsets and lengths overflow.
 - `ERC7579MultisigConfidential`: Make `_discloseOperation` `internal virtual`.
 - `ERC7579MultisigConfidentialValidator`: Check for an existing disclosure before verifying an inline decryption proof.
+- `CrossChainSignatureChecker`: Removed the `fields` byte from the ERC-7964 signature header and extended `ERC7964_MAGIC` to 10 bytes (`0x79647964796479647964`). `isValidCrossChainSignatureNow` and `isValidCrossChainSignatureNowCalldata` take a `bytes1 chainFields` argument with the EIP-712 domain fields bound in each chain-specific struct, and build the main domain from the `application` fields not in `chainFields`. `tryParseCrossChainSignature` and `tryParseCrossChainSignatureCalldata` return a leading `bool success` instead of `fields`, and an empty `crossChainSignature` is now forwarded to the signer instead of failing verification. **Breaking change** to the signature encoding and function signatures.
 
 ## 22-10-2026
 

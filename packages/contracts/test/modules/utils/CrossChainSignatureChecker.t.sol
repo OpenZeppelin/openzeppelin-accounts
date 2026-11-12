@@ -7,6 +7,23 @@ import {CrossChainAppMock} from "../../../src/mocks/CrossChainAppMock.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {IERC5267} from "@openzeppelin/contracts/interfaces/IERC5267.sol";
 
+/// @dev ERC-5267 application that reports arbitrary `fields`.
+contract ERC5267FieldsMock is IERC5267 {
+    bytes1 private immutable _fields;
+
+    constructor(bytes1 fields_) {
+        _fields = fields_;
+    }
+
+    function eip712Domain()
+        external
+        view
+        returns (bytes1, string memory, string memory, uint256, address, bytes32, uint256[] memory)
+    {
+        return (_fields, "CrossChainAppMock", "1.0.0", block.chainid, address(this), bytes32(0), new uint256[](0));
+    }
+}
+
 contract CrossChainSignatureCheckerTest is Test {
     using MessageHashUtils for *;
 
@@ -17,7 +34,7 @@ contract CrossChainSignatureCheckerTest is Test {
         external
         pure
         returns (
-            bytes1 fields,
+            bool success,
             uint16 structIndex,
             address application,
             bytes32[] memory structsArray,
@@ -34,7 +51,7 @@ contract CrossChainSignatureCheckerTest is Test {
         external
         pure
         returns (
-            bytes1 fields,
+            bool success,
             uint16 structIndex,
             address application,
             bytes32[] memory structsArray,
@@ -44,78 +61,59 @@ contract CrossChainSignatureCheckerTest is Test {
         return CrossChainSignatureChecker.tryParseCrossChainSignatureCalldata(erc7964Signature);
     }
 
-    /// @dev External function to decode the crosschain signature data in memory with try-catch.
-    function decodeCrossChainSignature(
-        bytes memory erc7964Signature
-    )
-        external
-        pure
-        returns (
-            bytes1 fields,
-            uint16 structIndex,
-            address application,
-            bytes32[] memory structsArray,
-            bytes memory crossChainSignature
-        )
-    {
-        return abi.decode(erc7964Signature, (bytes1, uint16, address, bytes32[], bytes));
-    }
-
     function testParseCrossChainSignature(
-        bytes1 fields,
         uint16 structIndex,
         address application,
         bytes32[] memory structsArray,
         bytes memory crossChainSignature
     ) public view {
         (
-            bytes1 decodedFields,
+            bool success,
             uint16 decodedStructIndex,
             address decodedApplication,
             bytes32[] memory decodedStructsArray,
             bytes memory decodedCrossChainSignature
         ) = this.tryParseCrossChainSignature(
                 abi.encode(
-                    bytes32(
-                        abi.encodePacked(CrossChainSignatureChecker.ERC7964_MAGIC, fields, structIndex, application)
-                    ),
+                    bytes32(abi.encodePacked(CrossChainSignatureChecker.ERC7964_MAGIC, structIndex, application)),
                     structsArray,
                     crossChainSignature
                 )
             );
-        assertEq(fields, decodedFields);
+        assertTrue(success);
         assertEq(structIndex, decodedStructIndex);
         assertEq(application, decodedApplication);
         assertEq(structsArray, decodedStructsArray);
         assertEq(crossChainSignature, decodedCrossChainSignature);
     }
 
+    /// @dev Parsing never reverts, the memory and calldata variants agree, and a failed parse returns empty values.
     function testParseCrossChainSignatureArbitraryData(bytes memory data) public view {
         (
-            bytes1 fields,
+            bool success,
             uint16 structIndex,
             address application,
             bytes32[] memory structsArray,
             bytes memory crossChainSignature
         ) = this.tryParseCrossChainSignature(data);
-        try this.decodeCrossChainSignature(data) returns (
-            bytes1 decodedFields,
-            uint16 decodedStructIndex,
-            address decodedApplication,
-            bytes32[] memory decodedStructsArray,
-            bytes memory decodedCrossChainSignature
-        ) {
-            assertEq(fields, decodedFields);
-            assertEq(structIndex, decodedStructIndex);
-            assertEq(application, decodedApplication);
-            assertEq(structsArray, decodedStructsArray);
-            assertEq(crossChainSignature, decodedCrossChainSignature);
-        } catch {
-            assertEq(fields, 0);
+        (
+            bool successCalldata,
+            uint16 structIndexCalldata,
+            address applicationCalldata,
+            bytes32[] memory structsArrayCalldata,
+            bytes memory crossChainSignatureCalldata
+        ) = this.tryParseCrossChainSignatureCalldata(data);
+        assertEq(success, successCalldata);
+        assertEq(structIndex, structIndexCalldata);
+        assertEq(application, applicationCalldata);
+        assertEq(structsArray, structsArrayCalldata);
+        assertEq(crossChainSignature, crossChainSignatureCalldata);
+
+        if (!success) {
             assertEq(structIndex, 0);
             assertEq(application, address(0));
             assertEq(structsArray.length, 0);
-            assertEq(crossChainSignature, bytes(""));
+            assertEq(crossChainSignature.length, 0);
         }
     }
 
@@ -143,7 +141,7 @@ contract CrossChainSignatureCheckerTest is Test {
             apps[i].setValueCalldata(
                 signer,
                 value,
-                abi.encode(_encodeERC7964Header(fields, i == 0 ? 1 : 0, apps[i]), operations, crossChainSignature)
+                abi.encode(_encodeERC7964Header(i == 0 ? 1 : 0, apps[i]), operations, crossChainSignature)
             );
 
             // Should work with the correct struct index
@@ -152,7 +150,7 @@ contract CrossChainSignatureCheckerTest is Test {
             apps[i].setValueCalldata(
                 signer,
                 value,
-                abi.encode(_encodeERC7964Header(fields, i, apps[i]), operations, crossChainSignature)
+                abi.encode(_encodeERC7964Header(i, apps[i]), operations, crossChainSignature)
             );
             assertEq(apps[i].value(signer), value);
         }
@@ -179,7 +177,7 @@ contract CrossChainSignatureCheckerTest is Test {
             apps[i].setValue(
                 signer,
                 value,
-                abi.encode(_encodeERC7964Header(fields, i == 0 ? 1 : 0, apps[i]), operations, crossChainSignature)
+                abi.encode(_encodeERC7964Header(i == 0 ? 1 : 0, apps[i]), operations, crossChainSignature)
             );
 
             // Should work with the correct struct index
@@ -188,7 +186,7 @@ contract CrossChainSignatureCheckerTest is Test {
             apps[i].setValue(
                 signer,
                 value,
-                abi.encode(_encodeERC7964Header(fields, i, apps[i]), operations, crossChainSignature)
+                abi.encode(_encodeERC7964Header(i, apps[i]), operations, crossChainSignature)
             );
             assertEq(apps[i].value(signer), value);
         }
@@ -212,7 +210,7 @@ contract CrossChainSignatureCheckerTest is Test {
         }
 
         bytes memory signature = abi.encodePacked(
-            _encodeHeader(0x03, 0, address(this)),
+            _encodeHeader(0, address(this)),
             structsArrayOffset,
             crossChainSignatureOffset,
             new bytes(uint256(tailWords) * 0x20)
@@ -234,20 +232,30 @@ contract CrossChainSignatureCheckerTest is Test {
             crossChainSignatureInBounds &&
             crossChainSignatureLength <= signature.length - crossChainSignatureOffset - 0x20;
 
-        (bytes1 fields, , address application, bytes32[] memory structsArray, bytes memory crossChainSignature) = this
+        (bool success, , address application, bytes32[] memory structsArray, bytes memory crossChainSignature) = this
             .tryParseCrossChainSignature(signature);
-        assertEq(fields, expected ? bytes1(0x03) : bytes1(0));
+        assertEq(success, expected);
         assertEq(application, expected ? address(this) : address(0));
         assertEq(structsArray.length, expected ? structsArrayLength : 0);
         assertEq(crossChainSignature.length, expected ? crossChainSignatureLength : 0);
 
-        (fields, , application, structsArray, crossChainSignature) = this.tryParseCrossChainSignatureCalldata(
+        (success, , application, structsArray, crossChainSignature) = this.tryParseCrossChainSignatureCalldata(
             signature
         );
-        assertEq(fields, expected ? bytes1(0x03) : bytes1(0));
+        assertEq(success, expected);
         assertEq(application, expected ? address(this) : address(0));
         assertEq(structsArray.length, expected ? structsArrayLength : 0);
         assertEq(crossChainSignature.length, expected ? crossChainSignatureLength : 0);
+
+        // A successful parse matches `abi.decode`
+        if (expected) {
+            (, bytes32[] memory decodedStructsArray, bytes memory decodedCrossChainSignature) = abi.decode(
+                signature,
+                (bytes32, bytes32[], bytes)
+            );
+            assertEq(structsArray, decodedStructsArray);
+            assertEq(crossChainSignature, decodedCrossChainSignature);
+        }
     }
 
     function testSetValueWithOutOfBoundsStructIndex(
@@ -266,7 +274,7 @@ contract CrossChainSignatureCheckerTest is Test {
             apps
         );
         structIndex = uint16(bound(structIndex, apps.length, type(uint16).max));
-        bytes memory signature = abi.encode(_encodeHeader(0x03, structIndex, apps[0]), operations, crossChainSignature);
+        bytes memory signature = abi.encode(_encodeHeader(structIndex, apps[0]), operations, crossChainSignature);
 
         vm.expectRevert("Invalid signature");
         apps[0].setValue(signer, value, signature);
@@ -274,8 +282,36 @@ contract CrossChainSignatureCheckerTest is Test {
         apps[0].setValueCalldata(signer, value, signature);
     }
 
-    function testSetValueWithUnsupportedFields(uint256 signerPrivateKey, uint256 value, bytes1 fields) public {
-        fields = bytes1(uint8(bound(uint8(fields), 0x20, 0xff)));
+    /// @dev A signature over any main domain other than `applicationFields & ~CHAIN_FIELDS` (0x03) is rejected.
+    function testSetValueWithMismatchedMainDomain(uint256 signerPrivateKey, uint256 value, bytes1 fields) public {
+        fields = bytes1(uint8(bound(uint8(fields), 0x00, 0x1f)));
+        vm.assume(fields != 0x03);
+        CrossChainAppMock[] memory apps = new CrossChainAppMock[](2);
+        apps[0] = new CrossChainAppMock("CrossChainAppMock", "1.0.0");
+        apps[1] = new CrossChainAppMock("CrossChainAppMock", "1.0.0");
+        (address signer, bytes memory crossChainSignature, bytes32[] memory operations) = _prepareERC7964Signature(
+            fields,
+            // secp256k1 order
+            bound(signerPrivateKey, 1, 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141 - 1),
+            value,
+            apps
+        );
+        bytes memory signature = abi.encode(_encodeHeader(0, apps[0]), operations, crossChainSignature);
+
+        vm.expectRevert("Invalid signature");
+        apps[0].setValue(signer, value, signature);
+        vm.expectRevert("Invalid signature");
+        apps[0].setValueCalldata(signer, value, signature);
+    }
+
+    /// @dev An application whose main domain fields set bits beyond ERC-5267 makes verification return false.
+    function testSetValueWithUnsupportedApplicationFields(
+        uint256 signerPrivateKey,
+        uint256 value,
+        bytes1 applicationFields
+    ) public {
+        applicationFields = bytes1(uint8(bound(uint8(applicationFields), 0x20, 0xff)));
+        ERC5267FieldsMock application = new ERC5267FieldsMock(applicationFields);
         CrossChainAppMock[] memory apps = new CrossChainAppMock[](2);
         apps[0] = new CrossChainAppMock("CrossChainAppMock", "1.0.0");
         apps[1] = new CrossChainAppMock("CrossChainAppMock", "1.0.0");
@@ -286,7 +322,7 @@ contract CrossChainSignatureCheckerTest is Test {
             value,
             apps
         );
-        bytes memory signature = abi.encode(_encodeHeader(fields, 0, apps[0]), operations, crossChainSignature);
+        bytes memory signature = abi.encode(_encodeHeader(0, address(application)), operations, crossChainSignature);
 
         vm.expectRevert("Invalid signature");
         apps[0].setValue(signer, value, signature);
@@ -314,7 +350,7 @@ contract CrossChainSignatureCheckerTest is Test {
         string memory name;
         string memory version;
         (, name, version, , , , ) = IERC5267(address(apps[0])).eip712Domain(); // All apps share the same name and version
-        bytes32 domainSeparator = fields.toDomainSeparator(name, version, 0, address(0), bytes32(0));
+        bytes32 domainSeparator = fields.toDomainSeparator(name, version, block.chainid, address(apps[0]), bytes32(0));
 
         bytes32 structHash = keccak256(
             abi.encode(apps[0].CROSS_CHAIN_SET_VALUE_TYPEHASH(), keccak256(abi.encodePacked(operations)))
@@ -325,16 +361,12 @@ contract CrossChainSignatureCheckerTest is Test {
         return (vm.addr(signerPrivateKey), abi.encodePacked(r, s, v), operations);
     }
 
-    function _encodeHeader(bytes1 fields, uint16 structIndex, address application) private pure returns (bytes32) {
-        return bytes32(abi.encodePacked(CrossChainSignatureChecker.ERC7964_MAGIC, fields, structIndex, application));
+    function _encodeHeader(uint16 structIndex, address application) private pure returns (bytes32) {
+        return bytes32(abi.encodePacked(CrossChainSignatureChecker.ERC7964_MAGIC, structIndex, application));
     }
 
-    function _encodeHeader(
-        bytes1 fields,
-        uint16 structIndex,
-        CrossChainAppMock application
-    ) private pure returns (bytes32) {
-        return _encodeHeader(fields, structIndex, address(application));
+    function _encodeHeader(uint16 structIndex, CrossChainAppMock application) private pure returns (bytes32) {
+        return _encodeHeader(structIndex, address(application));
     }
 
     function _store(bytes memory buffer, uint256 offset, uint256 value) private pure {
@@ -349,14 +381,9 @@ contract CrossChainSignatureCheckerTest is Test {
         }
     }
 
-    function _encodeERC7964Header(
-        bytes1 fields,
-        uint16 structIndex,
-        CrossChainAppMock application
-    ) private pure returns (bytes32) {
+    function _encodeERC7964Header(uint16 structIndex, CrossChainAppMock application) private pure returns (bytes32) {
         return
             CrossChainSignatureChecker.ERC7964_MAGIC |
-            (bytes32(fields) >> 72) |
             (bytes32(bytes2(structIndex)) >> 80) |
             (bytes32(bytes20(address(application))) >> 96);
     }

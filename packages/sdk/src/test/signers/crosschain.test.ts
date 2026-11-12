@@ -75,7 +75,7 @@ const makeChainMockOperation = (chainId: bigint, verifyingContract: Address, val
   message: { domain: { chainId, verifyingContract }, value },
 });
 
-test('envelope layout: magic, fields, structIndex, application, structsArray, signature', async t => {
+test('envelope layout: magic, structIndex, application, structsArray, signature', async t => {
   const eoa = privateKeyToAccount(generatePrivateKey());
   const inner = toSigner(eoa);
   const operations = [makeOperation(1n, application, 42n), makeOperation(42161n, application, 42n)];
@@ -96,8 +96,7 @@ test('envelope layout: magic, fields, structIndex, application, structsArray, si
     envelope,
   );
 
-  t.is(slice(header, 0, 9), ERC7964_MAGIC, 'magic prefix');
-  t.is(slice(header, 9, 10), '0x03', 'fields default');
+  t.is(slice(header, 0, 10), ERC7964_MAGIC, 'magic prefix');
   t.is(slice(header, 10, 12), '0x0001', 'structIndex = 1');
   t.is(slice(header, 12, 32).toLowerCase(), application.toLowerCase(), 'application');
   t.is(structsArray.length, 2);
@@ -148,7 +147,7 @@ test('signTypedData with a mismatched payload throws', async t => {
   });
 });
 
-test('domain.verifyingContract: envelope fields=0x0b, inner sig recovers against verifyingContract-included domain', async t => {
+test('domain.verifyingContract: inner sig recovers against verifyingContract-included domain', async t => {
   const eoa = privateKeyToAccount(generatePrivateKey());
   const inner = toSigner(eoa);
   const operations = [makeOperation(1n, application, 42n)];
@@ -163,11 +162,10 @@ test('domain.verifyingContract: envelope fields=0x0b, inner sig recovers against
   });
 
   const envelope = await wrapper.signTypedData(operations[0]!);
-  const [header, structsArray, crossChainSignature] = decodeAbiParameters(
+  const [, structsArray, crossChainSignature] = decodeAbiParameters(
     parseAbiParameters(['bytes32', 'bytes32[]', 'bytes']),
     envelope,
   );
-  t.is(slice(header, 9, 10), '0x0b', 'fields = name | version | verifyingContract');
 
   const outerDigest = hashTypedData({
     domain: { name: 'CrossChainApp', version: '1', verifyingContract: application },
@@ -185,102 +183,6 @@ test('domain.verifyingContract: envelope fields=0x0b, inner sig recovers against
   t.is(structsArray.length, 1);
   const recovered = await recoverAddress({ hash: outerDigest, signature: crossChainSignature });
   t.is(recovered.toLowerCase(), eoa.address.toLowerCase());
-});
-
-test('explicit fields=0x0b without domain.verifyingContract: verifyingContract defaults to application', async t => {
-  const eoa = privateKeyToAccount(generatePrivateKey());
-  const inner = toSigner(eoa);
-  const operations = [makeOperation(1n, application, 1n)];
-
-  const wrapper = toCrossChainSigner(inner, {
-    application,
-    currentChainIndex: 0,
-    operations,
-    fields: '0x0b',
-    domain: { name: 'CrossChainApp', version: '1' },
-    primaryType: 'SetValue',
-    types: crossChainTypes as unknown as TypedDataDefinition['types'],
-  });
-
-  const envelope = await wrapper.signTypedData(operations[0]!);
-  const [header, , crossChainSignature] = decodeAbiParameters(
-    parseAbiParameters(['bytes32', 'bytes32[]', 'bytes']),
-    envelope,
-  );
-  t.is(slice(header, 9, 10), '0x0b');
-
-  // The outer signed digest must include verifyingContract === application.
-  const outerDigest = hashTypedData({
-    domain: { name: 'CrossChainApp', version: '1', verifyingContract: application },
-    primaryType: 'SetValue',
-    types: {
-      EIP712Domain: [
-        { name: 'name', type: 'string' },
-        { name: 'version', type: 'string' },
-        { name: 'verifyingContract', type: 'address' },
-      ],
-      ...crossChainTypes,
-    } as unknown as TypedDataDefinition['types'],
-    message: { operations: operations.map(o => o.message) },
-  });
-  const recovered = await recoverAddress({ hash: outerDigest, signature: crossChainSignature });
-  t.is(recovered.toLowerCase(), eoa.address.toLowerCase());
-});
-
-test('explicit fields=0x03 with domain.verifyingContract set: throws (bit disagrees with domain)', t => {
-  const eoa = privateKeyToAccount(generatePrivateKey());
-  const inner = toSigner(eoa);
-  const operations = [makeOperation(1n, application, 1n)];
-
-  t.throws(
-    () =>
-      toCrossChainSigner(inner, {
-        application,
-        currentChainIndex: 0,
-        operations,
-        fields: '0x03',
-        domain: { name: 'CrossChainApp', version: '1', verifyingContract: application },
-        primaryType: 'SetValue',
-        types: crossChainTypes as unknown as TypedDataDefinition['types'],
-      }),
-    { message: /disagree/ },
-  );
-});
-
-test('fields byte with unsupported bits (chainId 0x04, salt 0x10) throws', t => {
-  const eoa = privateKeyToAccount(generatePrivateKey());
-  const inner = toSigner(eoa);
-  const operations = [makeOperation(1n, application, 1n)];
-
-  // 0x07 = name | version | chainId — chainId is forbidden by ERC-7964 outer domain.
-  t.throws(
-    () =>
-      toCrossChainSigner(inner, {
-        application,
-        currentChainIndex: 0,
-        operations,
-        fields: '0x07',
-        domain: { name: 'CrossChainApp', version: '1' },
-        primaryType: 'SetValue',
-        types: crossChainTypes as unknown as TypedDataDefinition['types'],
-      }),
-    { message: /bits outside/ },
-  );
-
-  // 0x13 = name | version | salt — salt is not emitted by the SDK.
-  t.throws(
-    () =>
-      toCrossChainSigner(inner, {
-        application,
-        currentChainIndex: 0,
-        operations,
-        fields: '0x13',
-        domain: { name: 'CrossChainApp', version: '1' },
-        primaryType: 'SetValue',
-        types: crossChainTypes as unknown as TypedDataDefinition['types'],
-      }),
-    { message: /bits outside/ },
-  );
 });
 
 test('config.operations mutation after construction does not affect the envelope', async t => {

@@ -60,17 +60,16 @@ While several solutions exist for enabling crosschain signatures, ERC-7964 provi
 Smart contracts must be able to include metadata to reconstruct the final type hash and detect when a signature is intended for crosschain validation. To solve this, ERC-7964 defines a standard encoding that packs all metadata into the leading 32 bytes of the signature:
 
 ```solidity
-bytes9  ERC7964_MAGIC = 0x796479647964796479; // bytes 0–8
-bytes1  fields        = 0x03;                  // byte 9   (ERC-5267 domain field flags)
-uint16  structIndex   = <...>;                 // bytes 10–11 (index of this chain's operation)
-address application   = 0x...;                 // bytes 12–31 (ERC-5267 provider for the domain)
+bytes10 ERC7964_MAGIC = 0x79647964796479647964; // bytes 0–9
+uint16  structIndex   = <...>;                   // bytes 10–11 (index of this chain's operation)
+address application   = 0x...;                   // bytes 12–31 (ERC-5267 provider for the domain)
 
-bytes32 header = bytes32(abi.encodePacked(ERC7964_MAGIC, fields, structIndex, application));
+bytes32 header = bytes32(abi.encodePacked(ERC7964_MAGIC, structIndex, application));
 
 bytes memory erc7964Signature = abi.encode(header, structsArray, actualSignature);
 ```
 
-The `fields` byte follows [ERC-5267](https://eips.ethereum.org/EIPS/eip-5267): each bit signals which domain fields (`name`, `version`, `chainId`, `verifyingContract`, `salt`) the domain separator includes. The `application` address is queried at verification time via `IERC5267.eip712Domain()` to reconstruct the chain-specific domain separator on the fly.
+The `application` address is queried at verification time via `IERC5267.eip712Domain()` to reconstruct the domain separator on the fly. The verifier decides which domain fields it uses: it passes a `chainFields` bitmap ([ERC-5267](https://eips.ethereum.org/EIPS/eip-5267) format) with the fields bound in each chain-specific struct, and the domain is built from the application fields that are not in `chainFields`. For an `EIP712ChainDomain(uint256 chainId,address verifyingContract)`, `chainFields` is `0x0c` and the domain of a standard `EIP712` application is reduced to `name` and `version`. All verifiers of the same crosschain message must use the same operation types and `chainFields`, and the `application` on every target chain must return the same values for the remaining domain fields. Otherwise, the signature only verifies on some of the chains.
 
 The `CrossChainSignatureChecker` library provides utilities for parsing and verifying ERC-7964 signatures in your contracts. The full verification sequence is:
 
@@ -82,12 +81,12 @@ sequenceDiagram
     participant Application
 
     Caller->>Contract: setValue(signer, value, erc7964Signature)
-    Contract->>CrossChainSignatureChecker: isValidCrossChainSignatureNowCalldata(signer, currentOpHash, sig, structHashFn)
-    CrossChainSignatureChecker->>CrossChainSignatureChecker: parse header (magic, fields, structIndex, application)
+    Contract->>CrossChainSignatureChecker: isValidCrossChainSignatureNowCalldata(signer, currentOpHash, sig, chainFields, structHashFn)
+    CrossChainSignatureChecker->>CrossChainSignatureChecker: parse header (magic, structIndex, application)
     CrossChainSignatureChecker->>CrossChainSignatureChecker: assert structsArray[structIndex] == currentOpHash
     CrossChainSignatureChecker->>Application: eip712Domain() [ERC-5267]
-    Application-->>CrossChainSignatureChecker: name, version, chainId, verifyingContract, ...
-    CrossChainSignatureChecker->>CrossChainSignatureChecker: domainSeparator = toDomainSeparator(fields, ...)
+    Application-->>CrossChainSignatureChecker: fields, name, version, chainId, verifyingContract, ...
+    CrossChainSignatureChecker->>CrossChainSignatureChecker: domainSeparator = toDomainSeparator(fields & ~chainFields, ...)
     CrossChainSignatureChecker->>CrossChainSignatureChecker: structHash = structHashFn(keccak256(structsArray))
     CrossChainSignatureChecker->>CrossChainSignatureChecker: digest = toTypedDataHash(domainSeparator, structHash)
     CrossChainSignatureChecker->>CrossChainSignatureChecker: isValidSignatureNow(signer, digest, actualSig)
@@ -119,6 +118,9 @@ contract CrossChainApp is EIP712 {
   // Chain-specific domain type hash (includes chainId)
   bytes32 public constant EIP712_CHAIN_DOMAIN_TYPEHASH =
     keccak256('EIP712ChainDomain(uint256 chainId,address verifyingContract)');
+
+  // Domain fields bound in each chain operation (chainId and verifyingContract)
+  bytes1 public constant CHAIN_FIELDS = 0x0c;
 
   // Chain operation type hash (includes nested EIP712ChainDomain type)
   bytes32 public constant CHAIN_OPERATION_TYPEHASH =
@@ -168,7 +170,7 @@ function setValue(address account, uint256 value_, bytes calldata erc7964Signatu
   bytes32 currentOpHash = _structHash(value_);
 
   require(
-    account.isValidCrossChainSignatureNowCalldata(currentOpHash, erc7964Signature, _crossChainStructHash),
+    account.isValidCrossChainSignatureNowCalldata(currentOpHash, erc7964Signature, CHAIN_FIELDS, _crossChainStructHash),
     'Invalid signature'
   );
 
@@ -182,8 +184,9 @@ The `isValidCrossChainSignatureNowCalldata` function:
 1. Parses the ERC-7964 signature encoding to extract metadata (struct index, application address, array of struct hashes)
 2. Verifies that the provided `currentOpHash` matches the struct at the correct index in the array
 3. Queries the application contract (via ERC-5267) for the EIP-712 domain information
-4. Reconstructs the full typed hash using the domain and the array of struct hashes
-5. Validates the signature against the reconstructed hash
+4. Builds the domain from the application fields that are not in `CHAIN_FIELDS`
+5. Reconstructs the full typed hash using the domain and the array of struct hashes
+6. Validates the signature against the reconstructed hash
 
 </Step>
 
@@ -205,6 +208,9 @@ contract CrossChainApp is EIP712 {
 
   bytes32 public constant EIP712_CHAIN_DOMAIN_TYPEHASH =
     keccak256('EIP712ChainDomain(uint256 chainId,address verifyingContract)');
+
+  // Domain fields bound in each chain operation (chainId and verifyingContract)
+  bytes1 public constant CHAIN_FIELDS = 0x0c;
   bytes32 public constant CHAIN_OPERATION_TYPEHASH =
     keccak256(
       'ChainOperation(EIP712ChainDomain domain,uint256 value)EIP712ChainDomain(uint256 chainId,address verifyingContract)'
@@ -226,7 +232,7 @@ contract CrossChainApp is EIP712 {
     bytes32 currentOpHash = _structHash(value_);
 
     require(
-      account.isValidCrossChainSignatureNowCalldata(currentOpHash, erc7964Signature, _crossChainStructHash),
+      account.isValidCrossChainSignatureNowCalldata(currentOpHash, erc7964Signature, CHAIN_FIELDS, _crossChainStructHash),
       'Invalid signature'
     );
 

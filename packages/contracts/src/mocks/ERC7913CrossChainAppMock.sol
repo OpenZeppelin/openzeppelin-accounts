@@ -30,6 +30,7 @@ contract ERC7913CrossChainAppMock is EIP712 {
     bytes private constant _CROSS_CHAIN_SET_VALUE_TYPE = "SetValue(ChainOperation[] operations)";
 
     bytes32 public constant EIP712_CHAIN_DOMAIN_TYPEHASH = keccak256(_EIP712_CHAIN_DOMAIN_TYPE);
+    bytes1 public constant CHAIN_FIELDS = 0x0c; // chainId and verifyingContract
     bytes32 public constant CHAIN_OPERATION_TYPEHASH =
         keccak256(abi.encodePacked(_CHAIN_OPERATION_TYPE, _EIP712_CHAIN_DOMAIN_TYPE));
     bytes32 public constant CROSS_CHAIN_SET_VALUE_TYPEHASH =
@@ -49,7 +50,12 @@ contract ERC7913CrossChainAppMock is EIP712 {
         address account = address(bytes20(signer));
 
         require(
-            account.isValidCrossChainSignatureNow(_structHash(value_), crossChainEnvelope, _crossChainStructHash),
+            account.isValidCrossChainSignatureNow(
+                _structHash(value_),
+                crossChainEnvelope,
+                CHAIN_FIELDS,
+                _crossChainStructHash
+            ),
             "Invalid signature"
         );
 

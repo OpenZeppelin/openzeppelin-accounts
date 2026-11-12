@@ -2,16 +2,7 @@ import { concat, encodeAbiParameters, hashStruct, size, toHex } from 'viem';
 import type { Address, Hex, TypedData, TypedDataDefinition } from 'viem';
 import type { Signer } from './index.js';
 
-const ERC7964_MAGIC = '0x796479647964796479' as const satisfies Hex;
-
-// ERC-5267 domain-field bit flags.
-const FIELD_NAME = 0x01;
-const FIELD_VERSION = 0x02;
-const FIELD_VERIFYING_CONTRACT = 0x08;
-// Bits the SDK's outer domain supports. `chainId` (0x04) is forbidden by ERC-7964 and
-// `salt` (0x10) is not emitted by {@link buildOuterTypedData}; setting either would make
-// the on-chain domain separator diverge from the SDK-signed one.
-const SUPPORTED_FIELDS = FIELD_NAME | FIELD_VERSION | FIELD_VERIFYING_CONTRACT;
+const ERC7964_MAGIC = '0x79647964796479647964' as const satisfies Hex;
 
 /**
  * One chain-specific operation in an ERC-7964 cross-chain signature.
@@ -42,15 +33,11 @@ type ChainOperation = TypedDataDefinition;
  *   Packed into the signature header (bytes 12..31).
  * @property operations All chain-specific operations being authorized. Each entry's
  *   `message` is hashed via EIP-712 `hashStruct` to populate the on-chain `structsArray`.
- * @property fields ERC-5267 fields byte. When omitted, defaults to `0x03` (name + version)
- *   or `0x0b` (name + version + verifyingContract) depending on `domain.verifyingContract`.
- *   Only bits in `SUPPORTED_FIELDS` (0x0b) are accepted — `chainId` (0x04) is forbidden by
- *   ERC-7964 and `salt` (0x10) is not emitted by the SDK; either would silently break
- *   verification.
- * @property domain Outer-envelope domain. `chainId` is always omitted per ERC-7964; a
- *   `verifyingContract` may be included when the application is deployed deterministically
- *   at the same address on every target chain. When bit `0x08` is set in `fields` but
- *   `verifyingContract` is omitted, it defaults to `application`.
+ * @property domain Outer-envelope domain. `chainId` is always omitted per ERC-7964. The
+ *   verifier derives the outer domain fields as the `application` ERC-5267 fields minus the
+ *   ones its chain-specific structs bind (`chainFields`), so this domain must contain exactly
+ *   those fields. Include `verifyingContract` only when the verifier doesn't bind it per chain
+ *   (e.g. the application is deployed at the same address on every target chain).
  * @property primaryType Primary type of the outer cross-chain envelope (e.g. `SetValue`).
  * @property types Full type map for the cross-chain typed data; the wrapper injects an
  *   `EIP712Domain` entry containing the domain fields it uses.
@@ -63,7 +50,6 @@ type ChainOperation = TypedDataDefinition;
 type CrossChainSignerConfig = {
   application: Address;
   operations: ChainOperation[];
-  fields?: Hex;
   domain: { name: string; version: string; verifyingContract?: Address };
   primaryType: string;
   types: TypedData;
@@ -94,34 +80,6 @@ const hashOperation = (op: ChainOperation): Hex =>
     primaryType: op.primaryType,
     types: op.types,
   });
-
-const computeFields = (domain: CrossChainSignerConfig['domain']): Hex => {
-  let bits = FIELD_NAME | FIELD_VERSION;
-  if (domain.verifyingContract !== undefined) bits |= FIELD_VERIFYING_CONTRACT;
-  return toHex(bits, { size: 1 });
-};
-
-const resolveFields = (config: Pick<CrossChainSignerConfig, 'domain' | 'fields'>): Hex => {
-  if (config.fields === undefined) return computeFields(config.domain);
-  const provided = Number(BigInt(config.fields)) & 0xff;
-  const unsupported = provided & ~SUPPORTED_FIELDS;
-  if (unsupported !== 0) {
-    throw new Error(
-      `fields byte ${config.fields} has bits outside SUPPORTED_FIELDS (0x${SUPPORTED_FIELDS.toString(16)}); ` +
-        `ERC-7964 outer domain only supports name/version/verifyingContract`,
-    );
-  }
-  const fieldsBit = provided & FIELD_VERIFYING_CONTRACT;
-  const hasVC = config.domain.verifyingContract !== undefined;
-  if (Boolean(fieldsBit) !== hasVC) {
-    throw new Error(
-      `fields byte ${config.fields} and domain.verifyingContract disagree: bit ${FIELD_VERIFYING_CONTRACT} is ${
-        fieldsBit ? 'set' : 'unset'
-      } but verifyingContract is ${hasVC ? 'set' : 'unset'}`,
-    );
-  }
-  return config.fields;
-};
 
 /**
  * Depth-first scan for a field named exactly `chainId`. Returns the first match's value
@@ -160,17 +118,9 @@ const resolveCurrentChainIndex = (config: CrossChainSignerConfig): number => {
   throw new Error('signTypedData requires currentChainIndex or chainId to identify the current chain');
 };
 
-const buildHeader = ({
-  fields,
-  currentChainIndex,
-  application,
-}: {
-  fields: Hex;
-  currentChainIndex: number;
-  application: Address;
-}): Hex => {
-  const header = concat([ERC7964_MAGIC, fields, toHex(currentChainIndex, { size: 2 }), application]);
-  // 9 (magic) + 1 (fields) + 2 (structIndex) + 20 (application) = 32.
+const buildHeader = ({ currentChainIndex, application }: { currentChainIndex: number; application: Address }): Hex => {
+  const header = concat([ERC7964_MAGIC, toHex(currentChainIndex, { size: 2 }), application]);
+  // 10 (magic) + 2 (structIndex) + 20 (application) = 32.
   if (size(header) !== 32) throw new Error(`buildHeader produced ${size(header)} bytes; expected 32`);
   return header;
 };
@@ -206,13 +156,11 @@ const buildOuterTypedData = (config: CrossChainSignerConfig): TypedDataDefinitio
 };
 
 const packEnvelope = ({
-  fields,
   currentChainIndex,
   application,
   structHashes,
   crossChainSignature,
 }: {
-  fields: Hex;
   currentChainIndex: number;
   application: Address;
   structHashes: Hex[];
@@ -220,7 +168,7 @@ const packEnvelope = ({
 }): Hex =>
   encodeAbiParameters(
     [{ type: 'bytes32' }, { type: 'bytes32[]' }, { type: 'bytes' }],
-    [buildHeader({ fields, currentChainIndex, application }), structHashes, crossChainSignature],
+    [buildHeader({ currentChainIndex, application }), structHashes, crossChainSignature],
   );
 
 /**
@@ -230,7 +178,6 @@ const packEnvelope = ({
 const snapshotConfig = (config: CrossChainSignerConfig): CrossChainSignerConfig => ({
   application: config.application,
   operations: [...config.operations],
-  fields: config.fields,
   domain: { ...config.domain },
   primaryType: config.primaryType,
   types: config.types,
@@ -238,22 +185,6 @@ const snapshotConfig = (config: CrossChainSignerConfig): CrossChainSignerConfig 
   currentChainIndex: config.currentChainIndex,
   chainId: config.chainId,
 });
-
-/**
- * Applies defensive defaults to `config.domain.verifyingContract`. When the resolved
- * `fields` byte has bit `0x08` set but the caller omitted `verifyingContract`, we default
- * it to `application` — the on-chain verifier reads `verifyingContract` from
- * `IERC5267(application).eip712Domain()`, so `application` is the natural (and usually
- * correct) value.
- */
-const applyVerifyingContractDefault = (config: CrossChainSignerConfig): CrossChainSignerConfig => {
-  if (config.fields === undefined) return config;
-  const hasVCBit = (Number(BigInt(config.fields)) & FIELD_VERIFYING_CONTRACT) !== 0;
-  if (hasVCBit && config.domain.verifyingContract === undefined) {
-    return { ...config, domain: { ...config.domain, verifyingContract: config.application } };
-  }
-  return config;
-};
 
 /**
  * Wraps `innerSigner` so it produces ERC-7964-encoded cross-chain signatures.
@@ -279,8 +210,7 @@ const applyVerifyingContractDefault = (config: CrossChainSignerConfig): CrossCha
  * the pre-configured operations, so UserOp signing always fails.
  */
 const toCrossChainSigner = (innerSigner: Signer, config: CrossChainSignerConfig): CrossChainSigner => {
-  const snapshot = applyVerifyingContractDefault(snapshotConfig(config));
-  const fields = resolveFields(snapshot);
+  const snapshot = snapshotConfig(config);
   const structHashes = snapshot.operations.map(hashOperation);
 
   return {
@@ -313,7 +243,6 @@ const toCrossChainSigner = (innerSigner: Signer, config: CrossChainSignerConfig)
       }
       return innerSigner.signTypedData(buildOuterTypedData(snapshot)).then(signature =>
         packEnvelope({
-          fields,
           currentChainIndex,
           application: snapshot.application,
           structHashes,
@@ -341,19 +270,13 @@ const signCrossChainEnvelopes = async (
   innerSigner: Signer,
   config: Omit<CrossChainSignerConfig, 'currentChainIndex' | 'chainId'>,
 ): Promise<Hex[]> => {
-  const withDefaults = applyVerifyingContractDefault({
-    ...config,
-    operations: [...config.operations],
-    domain: { ...config.domain },
-  });
-  const fields = resolveFields(withDefaults);
-  const structHashes = withDefaults.operations.map(hashOperation);
-  const crossChainSignature = await innerSigner.signTypedData(buildOuterTypedData(withDefaults));
-  return withDefaults.operations.map((_, currentChainIndex) =>
+  const snapshot = { ...config, operations: [...config.operations], domain: { ...config.domain } };
+  const structHashes = snapshot.operations.map(hashOperation);
+  const crossChainSignature = await innerSigner.signTypedData(buildOuterTypedData(snapshot));
+  return snapshot.operations.map((_, currentChainIndex) =>
     packEnvelope({
-      fields,
       currentChainIndex,
-      application: withDefaults.application,
+      application: snapshot.application,
       structHashes,
       crossChainSignature,
     }),
