@@ -1,4 +1,7 @@
 import {
+  encodeAbiParameters,
+  parseAbiParameters,
+  slice,
   type Address,
   type Hex,
   type LocalAccount,
@@ -44,23 +47,45 @@ type Signer = {
   signerBytes?: Hex;
 };
 
+const WEBAUTHN_AUTH_PARAMS = parseAbiParameters(['bytes32', 'bytes32', 'uint256', 'uint256', 'bytes', 'string']);
+
+const normalizeSignature = (result: Hex | WebAuthnSignReturnType): Hex => {
+  if (typeof result === 'object' && 'webauthn' in result) {
+    const {
+      authenticatorData,
+      clientDataJSON,
+      challengeIndex = clientDataJSON.indexOf('"challenge"'),
+      typeIndex = clientDataJSON.indexOf('"type"'),
+    } = result.webauthn;
+    return encodeAbiParameters(WEBAUTHN_AUTH_PARAMS, [
+      slice(result.signature, 0, 32),
+      slice(result.signature, 32, 64),
+      BigInt(challengeIndex),
+      BigInt(typeIndex),
+      authenticatorData,
+      clientDataJSON,
+    ]);
+  }
+  return result;
+};
+
 /**
  * Normalizes viem's signer types into the SDK's {@link Signer} interface.
  *
  * `LocalAccount.signMessage` and `signTypedData` already return `Hex`. `WebAuthnAccount`
- * returns a discriminated object whose `.signature` field carries the bytes the on-chain
- * verifier consumes; this adapter unwraps it so downstream code only sees `Hex`.
+ * returns an object with `r` and `s` in `.signature` and the WebAuthn assertion metadata
+ * in `.webauthn`; this adapter builds the six-value ABI encoding consumed by the on-chain
+ * verifier (`(bytes32, bytes32, uint256, uint256, bytes, string)`) from both fields so
+ * downstream code only sees `Hex`.
  */
 const toSigner = (account: OneOf<LocalAccount | WebAuthnAccount>): Signer => {
   return {
     address: 'address' in account ? account.address : undefined,
     async signMessage({ message }) {
-      const result = await account.signMessage({ message });
-      return typeof result === 'object' ? (result as WebAuthnSignReturnType).signature : (result as Hex);
+      return normalizeSignature(await account.signMessage({ message }));
     },
     async signTypedData(parameters) {
-      const result = await (account as LocalAccount).signTypedData(parameters);
-      return typeof result === 'object' ? (result as WebAuthnSignReturnType).signature : (result as Hex);
+      return normalizeSignature(await (account as LocalAccount).signTypedData(parameters));
     },
   };
 };
