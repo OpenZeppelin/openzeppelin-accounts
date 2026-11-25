@@ -98,7 +98,7 @@ test('toSigner encodes output from viem toWebAuthnAccount', async t => {
     rpId: 'localhost',
     async getFn(options) {
       const publicKeyOpts = options?.publicKey;
-      const challengeBytes = new Uint8Array(publicKeyOpts!.challenge as BufferSource as ArrayBuffer);
+      const challengeBytes = new Uint8Array(publicKeyOpts!.challenge as ArrayBuffer);
       const challenge = Base64.fromBytes(challengeBytes, { url: true, pad: false });
       const clientDataJSON = JSON.stringify({
         type: 'webauthn.get',
