@@ -1,3 +1,7 @@
+## 25-11-2026
+
+- `toSigner`: Encode `WebAuthnAccount` signatures as the `WebAuthnAuth` values `ERC7913WebAuthnVerifier` decodes.
+
 ## 22-10-2026
 
 - `erc1967ProxyCode`: Match the `ERC1967Clones` proxy bytecode from OpenZeppelin Contracts `v5.7.0`, used by `OpenAccountFactory` to predict account addresses.
