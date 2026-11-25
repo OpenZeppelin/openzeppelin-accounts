@@ -1,4 +1,4 @@
-import test from 'ava';
+import test, { type ExecutionContext } from 'ava';
 import { p256 } from '@noble/curves/nist.js';
 import { Base64 } from 'ox';
 import {
@@ -24,7 +24,7 @@ import { toWebAuthnSigner } from '../helpers/signers.js';
 const WEBAUTHN_AUTH_PARAMS = parseAbiParameters(['bytes32', 'bytes32', 'uint256', 'uint256', 'bytes', 'string']);
 
 const assertValidWebAuthnEncoding = (
-  t: Parameters<Parameters<typeof test>[1]>[0],
+  t: ExecutionContext,
   encoded: Hex,
   expectedHash: Hex,
   publicKey: Uint8Array,
