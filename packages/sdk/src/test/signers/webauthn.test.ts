@@ -23,12 +23,7 @@ import { toWebAuthnSigner } from '../helpers/signers.js';
 
 const WEBAUTHN_AUTH_PARAMS = parseAbiParameters(['bytes32', 'bytes32', 'uint256', 'uint256', 'bytes', 'string']);
 
-const assertValidWebAuthnEncoding = (
-  t: ExecutionContext,
-  encoded: Hex,
-  expectedHash: Hex,
-  publicKey: Uint8Array,
-) => {
+const assertValidWebAuthnEncoding = (t: ExecutionContext, encoded: Hex, expectedHash: Hex, publicKey: Uint8Array) => {
   // WebAuthn.tryDecodeAuth requires at least 6 words (0xc0 bytes) and flat head words
   // (no outer tuple offset word at 0x00; authenticatorData offset at 0x80 must be 0xc0).
   t.true(size(encoded) >= 0xc0);
