@@ -9,8 +9,6 @@ import {
   encodePacked,
   zeroHash,
   toHex,
-  encodeAbiParameters,
-  parseAbiParameters,
   stringToBytes,
   bytesToHex,
 } from 'viem';
@@ -75,17 +73,7 @@ const toWebAuthnSigner = (privateKey = p256.utils.randomSecretKey()): WebAuthnAc
           },
           getClientExtensionResults: () => ({}),
         },
-        signature: encodeAbiParameters(
-          parseAbiParameters(['bytes32', 'bytes32', 'uint256', 'uint256', 'bytes', 'string']),
-          [
-            toHex(r, { size: 32 }),
-            toHex(s, { size: 32 }),
-            BigInt(challengeIndex),
-            BigInt(typeIndex),
-            authenticatorData,
-            clientDataJSON,
-          ],
-        ),
+        signature: concat([toHex(r, { size: 32 }), toHex(s, { size: 32 })]),
       };
     },
     async signMessage({ message }) {
